@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KUNIUMI — 星をつくる景観工房</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%23d9b56c'/%3E%3Cpath d='M3 20 L11 12 L16 17 L21 10 L29 20 Z' fill='%230b0f1a'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="app">
+    <header id="bar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-ja">国産み</span>
+        <span class="brand-en">KUNIUMI</span>
+      </div>
+      <input id="world-name" class="world-name" type="text" spellcheck="false" title="この星の名前" />
+      <div class="tools">
+        <div class="group">
+          <span class="group-label">星のひな形</span>
+          <select id="preset"></select>
+        </div>
+        <div class="group">
+          <span class="group-label">シーン</span>
+          <button data-act="open-json" title="シーン（.json）を開く">開く</button>
+          <button data-act="save-json" title="シーンを .json で保存">保存</button>
+        </div>
+        <div class="group">
+          <span class="group-label">連携</span>
+          <button data-act="export-glb" title="地形・水・太陽・カメラを .glb で書き出す">glb 書出</button>
+          <button data-act="import-glb" title=".glb / .gltf を読み込む（地形はメッシュの形から取り込み）">glb 読込</button>
+          <button data-act="export-hm" title="地形を 16bit グレースケール PNG で書き出す">ハイトマップ書出</button>
+          <button data-act="import-hm" title="ハイトマップ画像（16bit PNG 推奨）を読み込む">ハイトマップ読込</button>
+          <button data-act="export-py" title="glb を読み込んで空・カメラ・レンダー設定まで整える Blender 用スクリプト">Blender 用 .py</button>
+        </div>
+      </div>
+    </header>
+    <main id="stage">
+      <canvas id="view"></canvas>
+      <div id="hud">
+        <div id="busy" hidden><span class="spinner"></span>大地を生成中</div>
+        <div class="hint">左ドラッグ: 回転　右ドラッグ: 移動　ホイール: 寄る／引く　ファイルをドロップ: 読み込み</div>
+      </div>
+      <div id="toast" hidden></div>
+      <div id="drop" hidden><div>ここに落とすと読み込みます<small>.json（シーン）／ .glb（モデル）／ .png（ハイトマップ）</small></div></div>
+    </main>
+    <aside id="panel"></aside>
+  </div>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

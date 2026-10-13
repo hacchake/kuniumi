@@ -1,0 +1,5 @@
+node_modules/
+*.glb
+*_height16.png
+*_blender.py
+.DS_Store
