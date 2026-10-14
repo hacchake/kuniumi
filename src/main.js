@@ -3,6 +3,8 @@ import { createStore } from './core/store.js';
 import { PRESETS } from './core/presets.js';
 import { RealtimeRenderer } from './render/RealtimeRenderer.js';
 import { Panel } from './ui/Panel.js';
+import { ObjectPanel } from './ui/ObjectPanel.js';
+import { createObject, newId } from './core/objects.js';
 import { sceneToJSON, sceneFromFile } from './io/sceneJson.js';
 import { exportGlb, importGlb } from './io/gltf.js';
 import { exportHeightmap, importHeightmap } from './io/heightmap.js';
@@ -30,11 +32,12 @@ store.subscribe((s) => {
     try {
       localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(s));
     } catch {
-      // 大きなハイトマップで容量を超えたときは、それを除いて残す
+      // 大きなハイトマップや画像で容量を超えたときは、それらを除いて残す
       try {
         const lite = structuredClone(s);
         lite.terrain.heightmap = null;
         lite.terrain.mode = 'noise';
+        for (const o of lite.objects) if (o.material.image) o.material.image = null;
         localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(lite));
       } catch {}
     }
@@ -52,10 +55,87 @@ function toast(msg, kind = 'info') {
   toastTimer = setTimeout(() => (toastEl.hidden = true), kind === 'error' ? 7000 : 3500);
 }
 
+// 画面上の選択はシーンデータとは別に持つ（保存しない UI 状態）
+const selection = createStore({ selected: null });
+
 const view = new RealtimeRenderer(document.getElementById('view'), store, {
   onStatus: (msg, kind) => msg && toast(msg, kind),
+  selection,
 });
 new Panel(document.getElementById('panel'), store);
+new ObjectPanel(document.getElementById('panel'), store, selection, {
+  onDelete: (id) => removeObject(id),
+  onDuplicate: (id) => duplicateObject(id),
+});
+
+// ---- 物体（創造パレット）----
+function addObject(obj) {
+  store.set('objects', [...store.get().objects, obj], { source: 'create' });
+  selection.set('selected', obj.id);
+}
+
+function createShape(type) {
+  const size = Math.round(store.get().terrain.size * 0.04);
+  // 画面中央の先の地面へ。すでに物体がある所なら、視線と直角の向きへ順にずらして空きを探す
+  const others = store.get().objects.filter((o) => !o.celestial);
+  const side = view.sideVector();
+  let p = view.groundPoint();
+  for (let k = 1; k < 12 && others.some((o) => Math.hypot(o.position[0] - p.x, o.position[2] - p.z) < size * 1.2); k++) {
+    const step = Math.ceil(k / 2) * size * 1.5 * (k % 2 ? 1 : -1);
+    p = view.groundPoint(side.clone().multiplyScalar(step));
+  }
+  // 地面に置く：中心を半分持ち上げる（平たい環・トーラスは少し浮かせる）
+  const lift = type === 'ring' || type === 'torus' ? size * 0.4 : size / 2;
+  addObject(createObject(type, { size, position: [p.x, p.y + lift, p.z].map((v) => Math.round(v)) }));
+}
+
+function createCelestial() {
+  const d = Math.round(store.get().terrain.size * 1.2);
+  const p = view.skyPoint(d);
+  const obj = createObject('sphere', { size: d, position: p.toArray().map(Math.round), material: 'lava-world', name: '天体' });
+  obj.celestial = true;
+  obj.castShadow = false;
+  addObject(obj);
+}
+
+function removeObject(id) {
+  if (!id) return;
+  store.set('objects', store.get().objects.filter((o) => o.id !== id), { source: 'create' });
+  if (selection.get().selected === id) selection.set('selected', null);
+}
+
+function duplicateObject(id) {
+  const src = store.get().objects.find((o) => o.id === id);
+  if (!src) return;
+  const off = Math.max(...src.scale) * 0.6;
+  addObject({ ...structuredClone(src), id: newId(), name: src.name, position: [src.position[0] + off, src.position[1], src.position[2] + off] });
+}
+
+for (const b of document.querySelectorAll('#create [data-shape]')) {
+  b.addEventListener('click', () => (b.dataset.shape === 'celestial' ? createCelestial() : createShape(b.dataset.shape)));
+}
+
+const gizmoButtons = document.querySelectorAll('#create [data-gizmo]');
+function setGizmo(mode) {
+  view.setGizmoMode(mode);
+  gizmoButtons.forEach((x) => x.classList.toggle('on', x.dataset.gizmo === mode));
+}
+gizmoButtons.forEach((b) => b.addEventListener('click', () => setGizmo(b.dataset.gizmo)));
+
+window.addEventListener('keydown', (e) => {
+  if (e.target.closest('input, select, textarea')) return;
+  const id = selection.get().selected;
+  const k = e.key.toLowerCase();
+  if (k === 'w') setGizmo('translate');
+  else if (k === 'e') setGizmo('rotate');
+  else if (k === 'r') setGizmo('scale');
+  else if (k === 'escape') selection.set('selected', null);
+  else if ((k === 'delete' || k === 'backspace') && id) removeObject(id);
+  else if (k === 'd' && (e.ctrlKey || e.metaKey) && id) {
+    e.preventDefault();
+    duplicateObject(id);
+  }
+});
 
 const busyEl = document.getElementById('busy');
 setInterval(() => (busyEl.hidden = !view.terrainService.busy), 120);
@@ -74,6 +154,7 @@ presetEl.onchange = () => {
   const p = PRESETS.find((x) => x.id === presetEl.value);
   presetEl.value = '';
   if (!p) return;
+  selection.set('selected', null);
   store.replace(normalizeScene(deepMerge(createDefaultScene(), p.scene)), { source: 'preset' });
   toast(`「${p.name}」を呼び出しました`);
 };
@@ -82,6 +163,7 @@ presetEl.onchange = () => {
 const baseName = () => safeName(store.get().meta.name);
 
 async function openJson(file) {
+  selection.set('selected', null);
   store.replace(await sceneFromFile(file), { source: 'io' });
   toast(`シーン「${store.get().meta.name}」を読み込みました`);
 }
@@ -93,7 +175,9 @@ async function openGlb(file) {
     resolution: store.get().terrain.resolution,
   });
   store.replace(scene, { source: 'io' });
+  selection.set('selected', null);
   const parts = [summary.fromKuniumi ? 'KUNIUMI の設定を復元' : '外部モデルの形を地形として取り込み'];
+  if (summary.objects) parts.push(`物体 ${summary.objects} 個`);
   if (summary.hasLight) parts.push('太陽');
   if (summary.hasCamera) parts.push('カメラ');
   toast(`${file.name}: ${parts.join('・')}`);
@@ -205,4 +289,4 @@ window.addEventListener('drop', async (e) => {
 });
 
 // デバッグ・自動検証用
-window.KUNIUMI = { store, view, actions, openAny };
+window.KUNIUMI = { store, view, actions, openAny, selection };

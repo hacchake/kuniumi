@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { buildPortableScene } from '../three/portableScene.js';
+import { buildPortableScene, disposables } from '../three/portableScene.js';
 import { normalizeScene } from '../core/schema.js';
 import { anglesFromDirection } from '../core/sun.js';
 import { fieldToHeightmap } from './heightmap.js';
@@ -15,7 +15,7 @@ export async function exportGlb(scene, terrainData) {
   root.userData = { kuniumi: settings };
   const result = await new GLTFExporter().parseAsync(root, { binary: true });
   root.traverse((o) => {
-    if (o.isMesh) {
+    if (o.isMesh && disposables.has(o)) {
       o.geometry.dispose();
       if (o.material.map !== terrainData.colorTexture) o.material.dispose();
     }
@@ -43,12 +43,24 @@ export async function importGlb(buffer, { renderer, current, resolution }) {
   const next = extras ? normalizeScene(extras) : structuredClone(current);
   if (extras?.terrain?.heightmap && !extras.terrain.heightmap.png) next.terrain.heightmap = null;
 
-  // 地形メッシュを探す。名前に Terrain/地形 があるものを優先、なければ水以外の全メッシュ
   const meshes = [];
   root.traverse((o) => o.isMesh && meshes.push(o));
+
+  // KUNIUMI の物体：ノードの extras（kuniumiId）か、書き出し時の名前で見分ける。
+  // Blender で動かした位置・回転・大きさはここで取り戻す
+  const objectNodes = new Map(); // id → node
+  const exportedNames = exportNames(next.objects);
+  for (const o of meshes) {
+    const id = o.userData?.kuniumiId ?? exportedNames.get(o.name) ?? exportedNames.get(o.parent?.name ?? '');
+    if (id && next.objects.some((x) => x.id === id) && !objectNodes.has(id)) objectNodes.set(id, o);
+  }
+  const objectMeshSet = new Set(objectNodes.values());
+
+  // 地形メッシュを探す。名前に Terrain/地形 があるものを優先、なければ水と物体以外の全メッシュ
   const isWater = (o) => /water|水/i.test(o.name) || /water|水/i.test(o.parent?.name ?? '');
-  let terrainMeshes = meshes.filter((o) => /terrain|地形/i.test(o.name) || /terrain|地形/i.test(o.parent?.name ?? ''));
-  if (!terrainMeshes.length) terrainMeshes = meshes.filter((o) => !isWater(o));
+  const candidates = meshes.filter((o) => !objectMeshSet.has(o));
+  let terrainMeshes = candidates.filter((o) => /terrain|地形/i.test(o.name) || /terrain|地形/i.test(o.parent?.name ?? ''));
+  if (!terrainMeshes.length) terrainMeshes = candidates.filter((o) => !isWater(o));
   if (!terrainMeshes.length) throw new Error('地形にできるメッシュが見つかりません');
 
   const box = new THREE.Box3();
@@ -76,7 +88,7 @@ export async function importGlb(buffer, { renderer, current, resolution }) {
   next.terrain.heightmap = await fieldToHeightmap(field, res, 'glb から取り込み');
 
   // 水面
-  const waterMesh = meshes.find(isWater);
+  const waterMesh = candidates.find(isWater);
   if (waterMesh) {
     const wb = new THREE.Box3().setFromObject(waterMesh);
     next.water.enabled = true;
@@ -110,7 +122,24 @@ export async function importGlb(buffer, { renderer, current, resolution }) {
     if (cam.isPerspectiveCamera) next.camera.fov = round(cam.fov, 10);
   }
 
+  // 物体の置き場所（地形の中心を原点へ寄せたぶんもずらす）
+  next.objects = next.objects.map((o) => {
+    const node = objectNodes.get(o.id);
+    if (!node) return o;
+    const p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
+    node.matrixWorld.decompose(p, q, s);
+    p.sub(offset);
+    const e = new THREE.Euler().setFromQuaternion(q, 'XYZ');
+    return {
+      ...o,
+      position: p.toArray().map((v) => round(v, 10)),
+      rotation: [e.x, e.y, e.z].map((r) => round((r * 180) / Math.PI, 10)),
+      scale: s.toArray().map((v) => round(v, 10)),
+    };
+  });
+
   const summary = {
+    objects: objectNodes.size,
     fromKuniumi: !!extras,
     meshes: terrainMeshes.length,
     hasLight: !!light,
@@ -189,3 +218,18 @@ function rasterizeHeights(renderer, meshes, box, size, res) {
 }
 
 const round = (v, f = 1) => Math.round(v * f) / f;
+
+// ObjectLayer.exportMeshes と同じ規則で、書き出し時の名前 → id の対応を作る
+function exportNames(objects) {
+  const used = new Map();
+  const out = new Map();
+  for (const o of objects) {
+    let name = o.name || 'Object';
+    const n = used.get(name) ?? 0;
+    used.set(name, n + 1);
+    if (n) name = `${name}_${n + 1}`;
+    // GLTFLoader は空白を _ に、. : / [ ] を削るので、同じ規則で揃えて照合する
+    out.set(THREE.PropertyBinding.sanitizeNodeName(name), o.id);
+  }
+  return out;
+}

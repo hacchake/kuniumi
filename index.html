@@ -49,9 +49,27 @@
     </header>
     <main id="stage">
       <canvas id="view"></canvas>
+      <nav id="create" aria-label="創造">
+        <div class="create-title">創造</div>
+        <button data-shape="sphere" title="球を置く"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><ellipse cx="12" cy="12" rx="8.5" ry="3"/></svg><span>球</span></button>
+        <button data-shape="box" title="立方体を置く"><svg viewBox="0 0 24 24"><path d="M12 3.5 20 8v8l-8 4.5L4 16V8z"/><path d="M4 8l8 4.5L20 8M12 12.5v8"/></svg><span>立方体</span></button>
+        <button data-shape="cylinder" title="円柱を置く"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="2.6"/><path d="M5 6v12c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6V6"/></svg><span>円柱</span></button>
+        <button data-shape="cone" title="円錐を置く"><svg viewBox="0 0 24 24"><path d="M12 3 5 18c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6z"/><path d="M5 18c0-1.4 3.1-2.6 7-2.6s7 1.2 7 2.6" opacity=".5"/></svg><span>円錐</span></button>
+        <button data-shape="pyramid" title="角錐を置く"><svg viewBox="0 0 24 24"><path d="M12 3 3.5 17l8.5 3.5 8.5-3.5z"/><path d="M12 3v17.5"/></svg><span>角錐</span></button>
+        <button data-shape="torus" title="トーラスを置く"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="9" ry="5"/><ellipse cx="12" cy="11.4" rx="4" ry="1.7"/></svg><span>トーラス</span></button>
+        <button data-shape="ring" title="平たい環を置く（惑星の環に）"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="10" ry="4"/><ellipse cx="12" cy="12" rx="5.5" ry="2"/></svg><span>環</span></button>
+        <div class="create-sep"></div>
+        <button data-shape="celestial" class="celestial" title="空に浮かぶ天体を置く"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5.5"/><ellipse cx="12" cy="12" rx="10.5" ry="3.2" transform="rotate(-18 12 12)"/><path d="M4 4.5h.01M20 5h.01M18.5 20h.01" stroke-width="2.4" stroke-linecap="round"/></svg><span>天体</span></button>
+        <div class="create-sep"></div>
+        <div class="gizmo-modes" role="group" aria-label="選んだ物体の操作">
+          <button data-gizmo="translate" class="on" title="移動（W）">移</button>
+          <button data-gizmo="rotate" title="回転（E）">回</button>
+          <button data-gizmo="scale" title="拡大縮小（R）">拡</button>
+        </div>
+      </nav>
       <div id="hud">
         <div id="busy" hidden><span class="spinner"></span>大地を生成中</div>
-        <div class="hint">左ドラッグ: 回転　右ドラッグ: 移動　ホイール: 寄る／引く　ファイルをドロップ: 読み込み</div>
+        <div class="hint">左ドラッグ: 回転　右ドラッグ: 移動　ホイール: 寄る／引く　クリック: 物体を選ぶ　W/E/R: 移動/回転/拡大　Delete: 削除　Ctrl+D: 複製</div>
       </div>
       <div id="toast" hidden></div>
       <div id="drop" hidden><div>ここに落とすと読み込みます<small>.json（シーン）／ .glb（モデル）／ .png（ハイトマップ）</small></div></div>

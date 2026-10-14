@@ -8,10 +8,13 @@ import { sunDirection, sunLight } from '../core/sun.js';
 
 export const NAMES = { terrain: 'Terrain', water: 'Water', sun: 'Sun', camera: 'Camera' };
 
+// 書き出しのためだけに作ったメッシュ（書き出し後に捨ててよいもの）。extras に余計な印を残さないよう外で覚える
+export const disposables = new WeakSet();
+
 // Blender の glTF 読み込みは 683 lm/W で W/m² に換算するので、それを見越した照度にする
 const LUX_PER_UNIT = 683;
 
-export function buildPortableScene(scene, { field, res, colorTexture }) {
+export function buildPortableScene(scene, { field, res, colorTexture, objectMeshes = [] }) {
   const root = new THREE.Scene();
   root.name = scene.meta.name || 'KUNIUMI';
   const t = scene.terrain;
@@ -21,6 +24,7 @@ export function buildPortableScene(scene, { field, res, colorTexture }) {
   applyHeights(geo, field, res, t);
   const terrain = new THREE.Mesh(geo, createTerrainMaterial(colorTexture));
   terrain.name = NAMES.terrain;
+  disposables.add(terrain);
   root.add(terrain);
 
   // 水面：有限の板。透過・屈折率を持つ PBR 素材にしておくと Blender でそのままガラス状の水になる
@@ -43,8 +47,12 @@ export function buildPortableScene(scene, { field, res, colorTexture }) {
     const water = new THREE.Mesh(wgeo, mat);
     water.name = NAMES.water;
     water.position.y = scene.water.level;
+    disposables.add(water);
     root.add(water);
   }
+
+  // 物体（球・立方体など）。形と素材はリアルタイム表示と共有している（書き出し後に捨てない）
+  for (const m of objectMeshes) root.add(m);
 
   // 太陽：glTF の平行光源はノードの -Z 方向へ光る。向きはノードの回転だけで表す
   // （three の target は書き出さない。子にすると Blender に余計な空オブジェクトが出るため）

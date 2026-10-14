@@ -2,6 +2,8 @@
 // 描画処理はすべてこのデータを読んで絵を作る。ここには Three.js を持ち込まない。
 // リアルタイム表示・高画質書き出し・外部ソフト連携が、同じデータを共有するための「正本」。
 
+import { normalizeObject } from './objects.js';
+
 export const FORMAT = 'kuniumi.scene';
 export const VERSION = 1;
 
@@ -71,6 +73,8 @@ export function createDefaultScene() {
       target: [0, 150, 0],
       fov: 50,
     },
+    // 球・立方体などの物体（core/objects.js）。追加項目なので version 1 のまま、無ければ空
+    objects: [],
     render: {
       // 将来の高画質一枚絵モード用。第1段階では書き出し時のカメラ縦横比に使う
       still: { width: 1920, height: 1080, samples: 256 },
@@ -96,6 +100,7 @@ export function normalizeScene(input) {
     t.resolution = RESOLUTIONS.reduce((a, b) => (Math.abs(b - t.resolution) < Math.abs(a - t.resolution) ? b : a));
   }
   if (t.mode === 'heightmap' && !t.heightmap?.png) t.mode = 'noise';
+  merged.objects = (Array.isArray(merged.objects) ? merged.objects : []).map(normalizeObject);
   return merged;
 }
 
