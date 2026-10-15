@@ -19,6 +19,13 @@ import { downloadBlob, pickFile, safeName, extOf } from './io/files.js';
 import { encodeRadianceHDR } from './core/tonemap.js';
 import { createHistory } from './core/history.js';
 import { registerSW } from 'virtual:pwa-register';
+import { t, lang, setLang, translateDom, watchDom } from './i18n/index.js';
+
+// 表示言語（英語のときは画面の文言を置き換え続ける）
+document.documentElement.lang = lang;
+document.title = t('KUNIUMI — 星をつくる景観工房');
+translateDom();
+watchDom();
 
 const AUTOSAVE_KEY = 'kuniumi.autosave.v1';
 
@@ -150,7 +157,7 @@ presetEl.onchange = () => {
   if (!p) return;
   selection.set('selected', null);
   store.replace(normalizeScene(deepMerge(createDefaultScene(), p.scene)), { source: 'preset' });
-  toast(`「${p.name}」を呼び出しました（元に戻すで戻せます）`);
+  toast(t('「{name}」を呼び出しました（元に戻すで戻せます）', { name: t(p.name) }));
 };
 
 // ---- ファイル操作 ----
@@ -159,7 +166,7 @@ const baseName = () => safeName(store.get().meta.name);
 async function openJson(file) {
   selection.set('selected', null);
   store.replace(await sceneFromFile(file), { source: 'io' });
-  toast(`シーン「${store.get().meta.name}」を読み込みました`);
+  toast(t('シーン「{name}」を読み込みました', { name: store.get().meta.name }));
 }
 
 async function openGlb(file) {
@@ -170,11 +177,11 @@ async function openGlb(file) {
   });
   store.replace(scene, { source: 'io' });
   selection.set('selected', null);
-  const parts = [summary.fromKuniumi ? 'KUNIUMI の設定を復元' : '外部モデルの形を地形として取り込み'];
-  if (summary.objects) parts.push(`物体 ${summary.objects} 個`);
-  if (summary.hasLight) parts.push('太陽');
-  if (summary.hasCamera) parts.push('カメラ');
-  toast(`${file.name}: ${parts.join('・')}`);
+  const parts = [t(summary.fromKuniumi ? 'KUNIUMI の設定を復元' : '外部モデルの形を地形として取り込み')];
+  if (summary.objects) parts.push(t('物体 {n} 個', { n: summary.objects }));
+  if (summary.hasLight) parts.push(t('太陽'));
+  if (summary.hasCamera) parts.push(t('カメラ'));
+  toast(`${file.name}: ${parts.join(t('・'))}`);
 }
 
 async function openHeightmap(file) {
@@ -190,7 +197,7 @@ async function openHeightmap(file) {
     if (r.info.baseHeight != null) changes['terrain.baseHeight'] = r.info.baseHeight;
   }
   store.patch(changes, { source: 'io' });
-  toast(`${file.name}（${r.heightmap.width}×${r.heightmap.height}, ${r.heightmap.bitDepth}bit）を地形にしました${r.info ? '・実寸も復元' : ''}`);
+  toast(t('{file}（{w}×{h}, {bit}bit）を地形にしました', { file: file.name, w: r.heightmap.width, h: r.heightmap.height, bit: r.heightmap.bitDepth }) + (r.info ? t('・実寸も復元') : ''));
 }
 
 async function openAny(file) {
@@ -198,14 +205,14 @@ async function openAny(file) {
   if (ext === 'json') return openJson(file);
   if (ext === 'glb' || ext === 'gltf') return openGlb(file);
   if (['png', 'jpg', 'jpeg', 'webp'].includes(ext)) return openHeightmap(file);
-  throw new Error(`.${ext} は読み込めません`);
+  throw new Error(t('.{ext} は読み込めません', { ext }));
 }
 
 const actions = {
   'new-scene': async () => {
     selection.set('selected', null);
     store.replace(createDefaultScene(), { source: 'io' });
-    toast('新しい星にしました（元に戻すで戻せます）');
+    toast(t('新しい星にしました（元に戻すで戻せます）'));
   },
   'open-json': async () => {
     const f = await pickFile('.json,application/json');
@@ -213,13 +220,13 @@ const actions = {
   },
   'save-json': async () => {
     downloadBlob(new Blob([sceneToJSON(store.get())], { type: 'application/json' }), `${baseName()}.kuniumi.json`);
-    toast('シーンを保存しました');
+    toast(t('シーンを保存しました'));
   },
   'export-glb': async () => {
-    toast('glb を書き出しています…');
+    toast(t('glb を書き出しています…'));
     const blob = await exportGlb(store.get(), await view.ready());
     downloadBlob(blob, `${baseName()}.glb`);
-    toast(`glb を書き出しました（${(blob.size / 1048576).toFixed(1)} MB）`);
+    toast(t('glb を書き出しました（{mb} MB）', { mb: (blob.size / 1048576).toFixed(1) }));
   },
   'import-glb': async () => {
     const f = await pickFile('.glb,.gltf,model/gltf-binary');
@@ -230,28 +237,37 @@ const actions = {
     const s = store.get();
     const blob = await exportHeightmap(field, res, s.terrain, s.water.level);
     downloadBlob(blob, `${baseName()}_height16.png`);
-    toast(`ハイトマップを書き出しました（${res}×${res}, 16bit）`);
+    toast(t('ハイトマップを書き出しました（{res}×{res}, 16bit）', { res }));
   },
   'import-hm': async () => {
     const f = await pickFile('.png,.jpg,.jpeg,.webp,image/*');
     if (f) await openHeightmap(f);
   },
+  'toggle-lang': async () => {
+    setLang(lang === 'ja' ? 'en' : 'ja');
+    location.reload();
+  },
+  'export-view': async () => {
+    const blob = await view.capture();
+    downloadBlob(blob, `${baseName()}_view.png`);
+    toast(t('表示中の画面を保存しました'));
+  },
   'export-py': async () => {
     const s = store.get();
     const py = blenderScript(s, `${baseName()}.glb`);
     downloadBlob(new Blob([py], { type: 'text/x-python' }), `${baseName()}_blender.py`);
-    toast('Blender 用スクリプトを書き出しました（同名の .glb と同じフォルダへ）');
+    toast(t('Blender 用スクリプトを書き出しました（同名の .glb と同じフォルダへ）'));
   },
 };
 
 async function runAction(name, btn) {
-  if (stillJob) return toast('一枚絵を描いている間はできません', 'error');
+  if (stillJob) return toast(t('一枚絵を描いている間はできません'), 'error');
   if (btn) btn.disabled = true;
   try {
     await actions[name]();
   } catch (err) {
     console.error(err);
-    toast(`失敗しました: ${err.message ?? err}`, 'error');
+    toast(t('失敗しました: {msg}', { msg: err.message ?? err }), 'error');
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -291,11 +307,11 @@ const history = createHistory(store, {
 });
 function undo() {
   if (stillJob) return;
-  if (history.undo()) toast('元に戻しました');
+  if (history.undo()) toast(t('元に戻しました'));
 }
 function redo() {
   if (stillJob) return;
-  if (history.redo()) toast('やり直しました');
+  if (history.redo()) toast(t('やり直しました'));
 }
 undoBtn.addEventListener('click', undo);
 redoBtn.addEventListener('click', redo);
@@ -330,12 +346,12 @@ window.addEventListener('drop', async (e) => {
   dropEl.hidden = true;
   const file = e.dataTransfer?.files?.[0];
   if (!file) return;
-  if (stillJob) return toast('一枚絵を描いている間は読み込めません', 'error');
+  if (stillJob) return toast(t('一枚絵を描いている間は読み込めません'), 'error');
   try {
     await openAny(file);
   } catch (err) {
     console.error(err);
-    toast(`読み込めませんでした: ${err.message ?? err}`, 'error');
+    toast(t('読み込めませんでした: {msg}', { msg: err.message ?? err }), 'error');
   }
 });
 
@@ -351,17 +367,17 @@ const stillClose = document.getElementById('still-close');
 let stillJob = null;
 let stillResult = null;
 
-const fmtSec = (t) => (t >= 60 ? `${Math.floor(t / 60)}分${Math.round(t % 60)}秒` : `${Math.round(t)}秒`);
+const fmtSec = (sec) => (sec >= 60 ? t('{m}分{s}秒', { m: Math.floor(sec / 60), s: Math.round(sec % 60) }) : t('{s}秒', { s: Math.round(sec) }));
 
 async function renderStill() {
   if (stillJob) return;
   selection.set('selected', null);
   stillEl.hidden = false;
   stillActions.hidden = true;
-  stillClose.textContent = '中止';
+  stillClose.textContent = t('中止');
   stillBar.style.width = '0%';
   stillInfo.textContent = '';
-  stillStatus.textContent = '描画器を読み込んでいます…';
+  stillStatus.textContent = t('描画器を読み込んでいます…');
   const canvas = document.createElement('canvas');
   stillView.replaceChildren(canvas);
   stillResult = null;
@@ -370,11 +386,11 @@ async function renderStill() {
     const s = structuredClone(store.get());
     stillJob = new StillJob(s, { view }, {
       canvas,
-      onStatus: (t) => (stillStatus.textContent = t),
+      onStatus: (text) => (stillStatus.textContent = text),
       onProgress: (done, total, info) => {
         stillBar.style.width = `${(done / total) * 100}%`;
-        stillStatus.textContent = info.denoising ? 'AI でノイズを取り除いています…' : '光を追いかけています…';
-        stillInfo.textContent = `${Math.floor(done)} / ${total} サンプル　経過 ${fmtSec(info.sec)}${info.denoising ? '' : `　残り約 ${fmtSec(info.left)}`}`;
+        stillStatus.textContent = t(info.denoising ? 'AI でノイズを取り除いています…' : '光を追いかけています…');
+        stillInfo.textContent = t('{done} / {total} サンプル　経過 {sec}', { done: Math.floor(done), total, sec: fmtSec(info.sec) }) + (info.denoising ? '' : t('　残り約 {left}', { left: fmtSec(info.left) }));
       },
     });
     const r = await stillJob.run();
@@ -386,19 +402,19 @@ async function renderStill() {
     stillView.replaceChildren(out);
     stillResult.canvas = out;
     stillBar.style.width = '100%';
-    stillStatus.textContent = '描けました';
-    stillInfo.textContent = `${r.width}×${r.height}　${r.samples} サンプル${r.denoised ? '・ノイズ除去' : ''}　${fmtSec(r.traceSec)}`;
+    stillStatus.textContent = t('描けました');
+    stillInfo.textContent = `${t('{w}×{h}　{n} サンプル', { w: r.width, h: r.height, n: r.samples })}${r.denoised ? t('・ノイズ除去') : ''}　${fmtSec(r.traceSec)}`;
     stillActions.hidden = false;
   } catch (err) {
     if (stillJob?.cancelled) {
-      stillStatus.textContent = '中止しました';
+      stillStatus.textContent = t('中止しました');
     } else {
       console.error(err);
-      stillStatus.textContent = `描けませんでした: ${err.message ?? err}`;
+      stillStatus.textContent = t('描けませんでした: {msg}', { msg: err.message ?? err });
     }
   } finally {
     stillJob = null;
-    stillClose.textContent = '閉じる';
+    stillClose.textContent = t('閉じる');
   }
 }
 
@@ -474,7 +490,7 @@ window.addEventListener('keydown', (e) => {
   else if (k === 'escape') selection.set('selected', null);
   else if ((k === 'delete' || k === 'backspace') && id) removeObject(id);
   else if (k === 'f') {
-    if (!id || !view.frameObject(id)) toast('寄る物体を選んでください（クリック）');
+    if (!id || !view.frameObject(id)) toast(t('寄る物体を選んでください（クリック）'));
   } else if (k === 'home') view.frameAll();
   else if (e.key === '?') openHelp();
 });
@@ -485,7 +501,7 @@ const reportError = (msg) => {
   if (!msg || msg === lastError) return;
   lastError = msg;
   setTimeout(() => (lastError = ''), 5000);
-  toast(`問題が起きました: ${msg}`, 'error');
+  toast(t('問題が起きました: {msg}', { msg }), 'error');
 };
 window.addEventListener('error', (e) => e.message && reportError(e.message));
 window.addEventListener('unhandledrejection', (e) => reportError(e.reason?.message ?? String(e.reason)));
@@ -504,7 +520,7 @@ const bootWait = setInterval(() => {
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   registerSW({
     immediate: true,
-    onOfflineReady: () => toast('ネットにつながっていなくても使えるようになりました'),
+    onOfflineReady: () => toast(t('ネットにつながっていなくても使えるようになりました')),
     onRegisterError: (e) => console.warn('オフライン対応の登録に失敗:', e),
   });
 }

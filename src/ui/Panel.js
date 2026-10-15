@@ -1,4 +1,5 @@
 import { getIn, RESOLUTIONS, createDefaultScene } from '../core/schema.js';
+import { t } from '../i18n/index.js';
 
 // 項目の説明（マウスを乗せると出る）
 const HINTS = {
@@ -38,6 +39,7 @@ const HINTS = {
   'atmosphere.rays': '霧が日光を前へ散らす度合い。逆光で光の筋がはっきりする',
   'water.level': '水面の標高',
   'water.distortion': '水面の揺らぎ・映り込みの崩れ',
+  'render.still.size': '一枚絵の大きさのひな形。選ぶと幅と高さが変わる',
   'render.still.samples': '1 画素あたりの光の計算回数。多いほどなめらかで時間がかかる（ノイズ除去があれば 32〜128 で十分）',
   'render.still.terrainDetail': '一枚絵の地形の細かさの上限',
   'render.still.denoise': 'AI（Intel Open Image Denoise）でざらつきを取る',
@@ -158,6 +160,20 @@ const SECTIONS = [
     sub: 'Still',
     fields: [
       { path: 'camera.fov', label: '画角', min: 10, max: 100, step: 0.5, unit: '°' },
+      {
+        path: 'render.still.size',
+        label: '大きさ',
+        type: 'sizePreset',
+        options: [
+          [1280, 720, 'HD（1280×720）'],
+          [1920, 1080, 'フル HD（1920×1080）'],
+          [2560, 1440, 'WQHD（2560×1440）'],
+          [3840, 2160, '4K（3840×2160）'],
+          [2048, 2048, '正方形（2048×2048）'],
+          [1080, 1920, '縦長（1080×1920）'],
+          [3508, 2480, 'A4 横・300dpi（3508×2480）'],
+        ],
+      },
       { path: 'render.still.width', label: '幅', min: 320, max: 7680, step: 16, unit: 'px' },
       { path: 'render.still.height', label: '高さ', min: 240, max: 4320, step: 16, unit: 'px' },
       { path: 'render.still.samples', label: 'サンプル数', min: 8, max: 1024, step: 8 },
@@ -188,7 +204,7 @@ export class Panel {
     const el = document.createElement('details');
     el.className = 'sec';
     el.open = !!sec.open;
-    el.innerHTML = `<summary><span class="sec-title">${sec.title}</span><span class="sec-sub">${sec.sub}</span><button type="button" class="sec-reset" title="この項目を既定値に戻す（元に戻すで戻せる）" aria-label="${sec.title}を既定値に戻す">↺</button></summary>`;
+    el.innerHTML = `<summary><span class="sec-title">${sec.title}</span><span class="sec-sub">${sec.sub}</span><button type="button" class="sec-reset" title="この項目を既定値に戻す（元に戻すで戻せる）" aria-label="${t('{title}を既定値に戻す', { title: t(sec.title) })}">↺</button></summary>`;
     el.querySelector('.sec-reset').addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -208,7 +224,7 @@ export class Panel {
     const changes = {};
     for (const f of sec.fields) {
       // 種と生成方法は作品の中身そのものなので戻さない
-      if (f.type === 'seed' || f.path === 'terrain.mode') continue;
+      if (f.type === 'seed' || f.type === 'sizePreset' || f.path === 'terrain.mode') continue;
       changes[f.path] = getIn(def, f.path);
     }
     this.store.patch(changes, { source: 'ui-reset' });
@@ -225,7 +241,23 @@ export class Panel {
     row.appendChild(name);
     const set = (v) => this.store.set(f.path, v, { source: 'ui' });
 
-    if (f.type === 'select') {
+    if (f.type === 'sizePreset') {
+      // 幅と高さをまとめて選ぶ（どれにも当てはまらなければ「指定の大きさ」）
+      const sel = document.createElement('select');
+      sel.add(new Option('指定の大きさ', ''));
+      for (const [w, h, t] of f.options) sel.add(new Option(t, `${w}x${h}`));
+      sel.onchange = () => {
+        if (!sel.value) return;
+        const [w, h] = sel.value.split('x').map(Number);
+        this.store.patch({ 'render.still.width': w, 'render.still.height': h }, { source: 'ui' });
+      };
+      row.appendChild(sel);
+      this.bindings.push({
+        f: { ...f, path: 'render.still' },
+        el: sel,
+        read: (st) => (sel.value = f.options.some(([w, h]) => w === st.width && h === st.height) ? `${st.width}x${st.height}` : ''),
+      });
+    } else if (f.type === 'select') {
       const sel = document.createElement('select');
       for (const [v, t] of f.options) sel.add(new Option(t, v));
       sel.onchange = () => set(f.number ? Number(sel.value) : sel.value);
@@ -319,7 +351,7 @@ export class Panel {
     for (const { sec, el } of this.sections) if (sec.noiseOnly) el.classList.toggle('dim', !noise);
     const modeSel = this.bindings.find((b) => b.f.path === 'terrain.mode').el;
     modeSel.options[1].disabled = !s.terrain.heightmap;
-    modeSel.options[1].text = s.terrain.heightmap ? `ハイトマップ（${s.terrain.heightmap.name}）` : 'ハイトマップ（未読込）';
+    modeSel.options[1].text = s.terrain.heightmap ? t('ハイトマップ（{name}）', { name: s.terrain.heightmap.name }) : t('ハイトマップ（未読込）');
     const seed = this.bindings.find((b) => b.f.path === 'terrain.noise.seed');
     seed.el.closest('.row').classList.toggle('dim', !noise);
     for (const b of this.bindings) {

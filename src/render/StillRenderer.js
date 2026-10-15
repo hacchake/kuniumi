@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { t } from '../i18n/index.js';
 import { ShaderMaterial, WebGLRenderTarget } from 'three';
 import { WebGPUPathTracer, OIDNDenoiser, TRANSMISSIVE_BACKGROUND_ENVIRONMENT } from 'three-gpu-pathtracer/webgpu';
 import { initUNetFromURL } from 'oidn-web';
@@ -59,10 +60,10 @@ export class StillJob {
     const s = this.scene;
     const st = s.render.still;
     const W = Math.round(st.width), H = Math.round(st.height);
-    if (!navigator.gpu) throw new Error('このブラウザは WebGPU に対応していません（Chrome / Edge の最新版で開いてください）');
+    if (!navigator.gpu) throw new Error(t('このブラウザは WebGPU に対応していません（Chrome / Edge の最新版で開いてください）'));
 
     // ---- 1. 地形を作り直す ----
-    this.ui.onStatus('大地を細かく作り直しています…');
+    this.ui.onStatus(t('大地を細かく作り直しています…'));
     // 地形は「近いほど細かい」区画で作り直す（ノイズ地形・ハイトマップ地形とも）
     const mark = (k) => (this.stats.timings[k] = Math.round(performance.now() - tStart));
     const tStart = performance.now();
@@ -72,7 +73,7 @@ export class StillJob {
     this.#check();
 
     // ---- 2. シーンを組む ----
-    this.ui.onStatus('光の通り道を組み立てています…');
+    this.ui.onStatus(t('光の通り道を組み立てています…'));
     await this.view.objects.ready();
     const objectMeshes = this.view.objects.exportMeshes();
     const celestial = new Set(s.objects.filter((o) => o.celestial).map((o) => o.id));
@@ -138,7 +139,7 @@ export class StillJob {
     const device = renderer.backend?.device;
     for (;;) {
       this.#check();
-      if (this.gpuError) throw new Error(`GPU でエラーが出ました（地形の細かさや解像度を下げてください）: ${this.gpuError.split(/\r?\n/)[0]}`);
+      if (this.gpuError) throw new Error(t('GPU でエラーが出ました（地形の細かさや解像度を下げてください）: {msg}', { msg: this.gpuError.split(/\r?\n/)[0] }));
       pt.renderSample();
       frame++;
       if (frame === 1) {
@@ -177,7 +178,7 @@ export class StillJob {
 
     // ---- 4. HDR を読み出して仕上げる ----
     mark('trace');
-    this.ui.onStatus('かすみと光を仕上げています…');
+    this.ui.onStatus(t('かすみと光を仕上げています…'));
     const hdr = await this.#readHDR(renderer, pt, W, H);
     this.#applyAtmosphere(hdr, s, built, objectMeshes, celestial, camera, W, H);
     mark('atmosphere');
@@ -195,11 +196,11 @@ export class StillJob {
       this.disposers.push(() => w.terminate());
       w.onmessage = (e) => {
         if (e.data.progress !== undefined) {
-          this.ui.onStatus(`大地を細かく作り直しています… ${Math.round(e.data.progress * 100)}%`);
+          this.ui.onStatus(t('大地を細かく作り直しています… {p}%', { p: Math.round(e.data.progress * 100) }));
           return;
         }
         w.terminate();
-        if (e.data.error) reject(new Error(`地形の生成に失敗: ${e.data.error}`));
+        if (e.data.error) reject(new Error(t('地形の生成に失敗: {msg}', { msg: e.data.error })));
         else resolve({ lod: e.data.result });
       };
       w.postMessage({

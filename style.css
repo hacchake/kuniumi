@@ -352,3 +352,7 @@ button, select, input { font: inherit; color: inherit; }
 .sec summary:hover .sec-reset, .sec summary .sec-reset:focus-visible { opacity: 1; }
 .sec summary .sec-reset:hover { border-color: var(--line); color: var(--gold-2); }
 .sec-objects summary .obj-count + .sec-reset, .sec-objects summary .sec-reset { display: none; }
+
+/* 英語表示では、見出しの下の英字の小見出しは同じ語の繰り返しになるので出さない */
+html[lang='en'] .sec-sub { display: none; }
+html[lang='en'] .create-title { letter-spacing: 0.08em; }

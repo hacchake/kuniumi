@@ -23,6 +23,14 @@
     // 起動の失敗（モジュールの読み込み失敗・WebGL 非対応）を利用者に伝える
     (function () {
       var msg = document.getElementById('boot-msg');
+      // 表示言語（src/i18n と同じ決め方）
+      var en = false;
+      try {
+        var saved = localStorage.getItem('kuniumi.lang');
+        en = saved ? saved === 'en' : !/^ja/i.test(navigator.language || 'ja');
+      } catch (e) {}
+      if (en) msg.textContent = 'Preparing your world…';
+      var T = function (ja, english) { return en ? english : ja; };
       var fail = function (text) {
         if (window.__kuniumiReady) return;
         msg.innerHTML = text;
@@ -30,13 +38,13 @@
       };
       try {
         var c = document.createElement('canvas');
-        if (!c.getContext('webgl2')) fail('このブラウザでは 3D 表示（WebGL2）が使えません。<br>Chrome・Edge・Firefox・Safari の最新版で開いてください。');
+        if (!c.getContext('webgl2')) fail(T('このブラウザでは 3D 表示（WebGL2）が使えません。<br>Chrome・Edge・Firefox・Safari の最新版で開いてください。', 'This browser cannot show 3D (WebGL2).<br>Please use the latest Chrome, Edge, Firefox or Safari.'));
       } catch (e) {}
       window.addEventListener('error', function (e) {
-        if (e.target && (e.target.tagName === 'SCRIPT')) fail('部品の読み込みに失敗しました。再読み込みしてください。');
+        if (e.target && (e.target.tagName === 'SCRIPT')) fail(T('部品の読み込みに失敗しました。再読み込みしてください。', 'Failed to load the app. Please reload.'));
       }, true);
       setTimeout(function () {
-        fail('起動に時間がかかっています。再読み込みしてください。');
+        fail(T('起動に時間がかかっています。再読み込みしてください。', 'Startup is taking long. Please reload.'));
       }, 45000);
     })();
   </script>
@@ -65,10 +73,13 @@
             <div class="menu-sep">書き出し</div>
             <button role="menuitem" data-act="export-glb" title="地形・水・太陽・カメラ・物体を .glb で書き出す">glTF（.glb）</button>
             <button role="menuitem" data-act="export-hm" title="地形を 16bit グレースケール PNG で書き出す">ハイトマップ（16bit PNG）</button>
+            <button role="menuitem" data-act="export-view" title="いまリアルタイム表示に映っている画面をそのまま保存">表示中の画面（PNG）</button>
             <button role="menuitem" data-act="export-py" title="glb を読み込んで空・カメラ・レンダー設定まで整える Blender 用スクリプト">Blender 用スクリプト（.py）</button>
             <div class="menu-sep">読み込み</div>
             <button role="menuitem" data-act="import-glb" title=".glb / .gltf を読み込む（地形はメッシュの形から取り込み）">glTF（.glb / .gltf）…</button>
             <button role="menuitem" data-act="import-hm" title="ハイトマップ画像（16bit PNG 推奨）を読み込む">ハイトマップ画像…</button>
+            <div class="menu-sep"></div>
+            <button role="menuitem" data-act="toggle-lang">表示言語：English</button>
           </div>
         </div>
         <div class="group">

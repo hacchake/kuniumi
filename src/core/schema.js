@@ -4,6 +4,7 @@
 
 import { normalizeObject } from './objects.js';
 import { defaultVegetation } from './vegetation.js';
+import { t } from '../i18n/index.js';
 
 export const FORMAT = 'kuniumi.scene';
 export const VERSION = 1;
@@ -16,7 +17,7 @@ export function createDefaultScene() {
     format: FORMAT,
     version: VERSION,
     meta: {
-      name: '名もなき星',
+      name: t('名もなき星'),
       created: new Date().toISOString(),
       modified: new Date().toISOString(),
     },
@@ -109,7 +110,7 @@ export function normalizeScene(input) {
   const base = createDefaultScene();
   if (!input || typeof input !== 'object') return base;
   if (input.format && input.format !== FORMAT) {
-    throw new Error(`KUNIUMI のシーンではありません (format: ${input.format})`);
+    throw new Error(t('KUNIUMI のシーンではありません (format: {f})', { f: input.format }));
   }
   if ((input.version ?? 1) > VERSION) {
     console.warn('新しい版のシーンです。読めない項目は無視します');

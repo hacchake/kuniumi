@@ -1,3 +1,5 @@
+import { t } from '../i18n/index.js';
+
 // シーンに置く物体（球・立方体など）のデータ定義。Three.js 非依存。
 // 物体は scene.objects 配列に入り、描画器はこれを読んで形と素材を作る。
 
@@ -67,7 +69,7 @@ export function createObject(type, { position = [0, 0, 0], size = 300, material 
   const shape = shapeOf(type);
   return {
     id: newId(),
-    name: name ?? shape.label,
+    name: name ?? t(shape.label),
     type: shape.type,
     position,
     rotation: [0, 0, 0], // 度（XYZ）

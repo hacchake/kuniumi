@@ -4,6 +4,7 @@ import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { Water } from 'three/addons/objects/Water.js';
 import { touches } from '../core/schema.js';
+import { t } from '../i18n/index.js';
 import { sunDirection, sunLight, hazeColor } from '../core/sun.js';
 import { TerrainService } from '../three/TerrainService.js';
 import { createTerrainGeometry, applyHeights, createColorTexture, createTerrainMaterial, DETAIL_TILE } from '../three/terrainMesh.js';
@@ -25,7 +26,10 @@ export class RealtimeRenderer {
     this.onStatus = onStatus ?? (() => {});
 
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // 画質（解像度の倍率）。重いときは自動で下げ、軽いときは上げる（#adaptQuality）
+    this.maxRatio = Math.min(window.devicePixelRatio, 2);
+    this.quality = { ratio: this.maxRatio, frames: 0, sum: 0 };
+    renderer.setPixelRatio(this.maxRatio);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -95,7 +99,7 @@ export class RealtimeRenderer {
     this.terrainData = null; // { field, res }
     this.terrainService = new TerrainService(
       (r) => this.#onTerrain(r),
-      (err) => this.onStatus(`地形の生成に失敗: ${err}`, 'error'),
+      (err) => this.onStatus(t('地形の生成に失敗: {msg}', { msg: err }), 'error'),
     );
 
     // 物体（球・立方体など）と、その模様テクスチャ
@@ -461,10 +465,39 @@ export class RealtimeRenderer {
     this._paused = v;
   }
 
+  // 1 秒ほどの平均の描画間隔を見て、解像度の倍率を上げ下げする（目安 30〜50 fps）
+  #adaptQuality(dt) {
+    const q = this.quality;
+    if (dt <= 0 || dt > 0.5) return; // 画面が隠れていた・止まっていた間は数えない
+    q.frames++;
+    q.sum += dt;
+    if (q.sum < 1) return;
+    const avg = q.sum / q.frames;
+    q.frames = 0;
+    q.sum = 0;
+    let next = q.ratio;
+    if (avg > 1 / 28) next = Math.max(0.5, q.ratio * 0.85);
+    else if (avg < 1 / 50) next = Math.min(this.maxRatio, q.ratio * 1.12);
+    if (Math.abs(next - q.ratio) > 0.02) {
+      q.ratio = next;
+      this.renderer.setPixelRatio(next);
+      this.#resize();
+    }
+  }
+
+  // 表示中の画面を PNG にする（同じ処理の中で描いてすぐ読み出す）
+  capture() {
+    this.controls.update();
+    if (this.atmosphere.enabled) this.atmosphere.render(this.scene, this.camera);
+    else this.renderer.render(this.scene, this.camera);
+    return new Promise((r) => this.renderer.domElement.toBlob(r, 'image/png'));
+  }
+
   #frame() {
     if (this._paused) return;
     this.timer.update();
     const dt = this.timer.getDelta();
+    this.#adaptQuality(dt);
     if (this.envDirty) this.#updateEnvironment();
     this.water.material.uniforms.time.value += dt * 0.6;
     this.#updateFlight();

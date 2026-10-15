@@ -1,6 +1,7 @@
 import { shapeOf, MATERIAL_PRESETS, applyMaterialPreset } from '../core/objects.js';
 import { PATTERNS } from '../core/texgen.js';
 import { drawMaterialBall } from './materialBall.js';
+import { t } from '../i18n/index.js';
 import { pickFile, blobToDataURL } from '../io/files.js';
 
 // 物体の一覧と、選んだ物体の「変形」「素材」を編集するパネル。
@@ -176,7 +177,7 @@ export class ObjectPanel {
     if (!o || !this.preview) return;
     drawMaterialBall(this.preview, o.material);
     const p = MATERIAL_PRESETS.find((x) => x.id === o.material.preset);
-    this.previewNote.innerHTML = `<b>${p ? p.name : '調整した素材'}</b><span>${shapeOf(o.type).label}・${Math.round(Math.max(...o.scale)).toLocaleString()} m</span>`;
+    this.previewNote.innerHTML = `<b>${t(p ? p.name : '調整した素材')}</b><span>${t('{shape}・{size} m', { shape: t(shapeOf(o.type).label), size: Math.round(Math.max(...o.scale)).toLocaleString() })}</span>`;
     for (const b of this.list.querySelectorAll('.obj-item.on .obj-name')) b.textContent = o.name;
   }
 
