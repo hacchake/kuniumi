@@ -312,7 +312,10 @@ export class StillJob {
       return tex;
     };
     scene.environment = mkEnv(renderSkyEquirect(p, ew, eh, { ...opts, discScale }));
-    scene.background = discScale > 1 ? mkEnv(renderSkyEquirect(p, ew, eh, opts)) : scene.environment;
+    // 背景は見た目だけなので、半精度に収まるよう太陽の芯だけ頭打ちにする（眩しさは変わらない）
+    const bg = renderSkyEquirect(p, ew, eh, opts);
+    for (let i = 0; i < bg.length; i++) if (bg[i] > 65000) bg[i] = 65000;
+    scene.background = discScale > 1 ? mkEnv(bg) : scene.environment;
 
     scene.updateMatrixWorld(true);
     return { scene, terrainMesh, water, plants, textures, skyP: p };

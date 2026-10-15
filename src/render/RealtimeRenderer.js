@@ -43,6 +43,8 @@ export class RealtimeRenderer {
     this.controls.zoomToCursor = true;
     // 視点を動かし終えたらシーンへ書き戻す（自分由来の変更なので再構築はしない）
     this.controls.addEventListener('end', () => this.#commitCamera());
+    // 自分で視点を動かし始めたら、進行中の移動（F / Home）はやめる
+    this.controls.addEventListener('start', () => (this.flight = null));
 
     // 空
     this.sky = new Sky();
@@ -164,6 +166,57 @@ export class RealtimeRenderer {
     return this.camera.position.clone().addScaledVector(dir, dist);
   }
 
+  // ---- 視点の移動（なめらかに）----
+
+  // 選んだ物体に寄る（向きは今のまま、物体が画面に収まる距離まで）
+  frameObject(id) {
+    const mesh = this.objects.meshOf(id);
+    if (!mesh) return false;
+    const box = new THREE.Box3().setFromObject(mesh);
+    const center = box.getCenter(new THREE.Vector3());
+    const r = box.getSize(new THREE.Vector3()).length() / 2;
+    const dist = r / Math.sin(((this.camera.fov / 2) * Math.PI) / 180) * 1.3;
+    const dir = this.camera.position.clone().sub(this.controls.target).normalize();
+    this.#flyTo(center.clone().addScaledVector(dir, dist), center);
+    return true;
+  }
+
+  // 大地全体を見渡す（今の方角から、斜め上より）
+  frameAll() {
+    const t = this.store.get().terrain;
+    const center = new THREE.Vector3(0, t.baseHeight + t.heightScale * 0.35, 0);
+    const flat = this.camera.position.clone().sub(this.controls.target).setY(0);
+    if (flat.lengthSq() < 1) flat.set(-1, 0, 1);
+    flat.normalize();
+    const dist = t.size * 0.95;
+    const pos = center.clone().addScaledVector(flat, dist * Math.cos(0.42)).setY(center.y + dist * Math.sin(0.42));
+    this.#flyTo(pos, center);
+  }
+
+  #flyTo(position, target) {
+    this.flight = {
+      p0: this.camera.position.clone(),
+      t0: this.controls.target.clone(),
+      p1: position,
+      t1: target,
+      start: performance.now(),
+      dur: 700,
+    };
+  }
+
+  #updateFlight() {
+    const f = this.flight;
+    if (!f) return;
+    const k = Math.min(1, (performance.now() - f.start) / f.dur);
+    const e = k * k * (3 - 2 * k);
+    this.camera.position.lerpVectors(f.p0, f.p1, e);
+    this.controls.target.lerpVectors(f.t0, f.t1, e);
+    if (k >= 1) {
+      this.flight = null;
+      this.#commitCamera();
+    }
+  }
+
   setGizmoMode(mode) {
     this.gizmo.setMode(mode);
   }
@@ -180,7 +233,12 @@ export class RealtimeRenderer {
     this.water.onBeforeRender = (...args) => {
       const vis = helper.visible;
       helper.visible = false;
+      // 映り込みの中では空の雲（2D）を描く。画面の雲は立体として後から重ねるので、映り込みにも雲が要る
+      const cov = this.sky.material.uniforms.cloudCoverage;
+      const saved = cov.value;
+      cov.value = this.reflectClouds ?? saved;
       waterBefore.apply(this.water, args);
+      cov.value = saved;
       helper.visible = vis;
     };
     this.gizmo.addEventListener('dragging-changed', (e) => {
@@ -250,8 +308,13 @@ export class RealtimeRenderer {
       u.rayleigh.value = a.rayleigh;
       u.mieCoefficient.value = a.mieCoefficient;
       u.mieDirectionalG.value = a.mieDirectionalG;
-      // 雲は厚みのある立体として RealtimeAtmosphere が描くので、Sky の 2D の雲は消しておく
-      u.cloudCoverage.value = 0;
+      // 雲は厚みのある立体として RealtimeAtmosphere が描くので、Sky の 2D の雲は消しておく（水面の映り込みでだけ使う）
+      u.cloudCoverage.value = this.atmosphere.enabled ? 0 : a.clouds;
+      u.cloudDensity.value = a.cloudDensity;
+      u.cloudScale.value = a.cloudScale;
+      u.cloudElevation.value = a.cloudElevation;
+      u.time.value = 0;
+      this.reflectClouds = a.clouds;
       const dir = new THREE.Vector3(...sunDirection(s.sun.elevation, s.sun.azimuth));
       u.sunPosition.value.copy(dir);
       this.water.material.uniforms.sunDirection.value.copy(dir).normalize();
@@ -260,7 +323,8 @@ export class RealtimeRenderer {
       const { color, strength } = sunLight(s.sun, a);
       this.sun.color.setRGB(...color);
       this.sun.intensity = strength;
-      this.water.material.uniforms.sunColor.value.setRGB(...color).multiplyScalar(Math.min(1, strength / 25));
+      // 照り返しは強すぎると遠くの波が粒状にちらつくので控えめに
+      this.water.material.uniforms.sunColor.value.setRGB(...color).multiplyScalar(Math.min(1, strength / 25) * 0.35);
       this.#placeSun(s);
 
       this.renderer.toneMappingExposure = a.exposure;
@@ -403,6 +467,7 @@ export class RealtimeRenderer {
     const dt = this.timer.getDelta();
     if (this.envDirty) this.#updateEnvironment();
     this.water.material.uniforms.time.value += dt * 0.6;
+    this.#updateFlight();
     this.controls.update();
     if (this.atmosphere.enabled) {
       // 影の地図は、物を動かしている最中は作り直さない（離したら作り直す）

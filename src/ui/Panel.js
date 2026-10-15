@@ -1,4 +1,49 @@
-import { getIn, RESOLUTIONS } from '../core/schema.js';
+import { getIn, RESOLUTIONS, createDefaultScene } from '../core/schema.js';
+
+// 項目の説明（マウスを乗せると出る）
+const HINTS = {
+  'terrain.noise.seed': '地形の元になる乱数。数字を変えると別の大地になる（⟳ で無作為に）',
+  'terrain.size': '大地の一辺の長さ',
+  'terrain.heightScale': '一番低い所から一番高い所までの差',
+  'terrain.baseHeight': '一番低い所の標高。水位 0 m より下なら海の底になる',
+  'terrain.resolution': 'リアルタイム表示の地形の細かさ。一枚絵では近いほど自動で細かくなる',
+  'terrain.noise.frequency': '大きな山のかたまりの数の目安',
+  'terrain.noise.octaves': '大きな形に重ねる細かい起伏の段数',
+  'terrain.noise.persistence': '細かい起伏をどれだけ強く重ねるか（大きいほどごつごつ）',
+  'terrain.noise.lacunarity': '段ごとに起伏がどれだけ細かくなるか',
+  'terrain.noise.ridged': '0 = なだらかな丘、1 = 鋭い稜線の山脈',
+  'terrain.noise.warp': '地形をねじって、川筋や入り江のような流れる形にする',
+  'terrain.noise.valley': '大きいほど低い所が平らになり、山がそびえる',
+  'terrain.noise.falloff': '外周を沈めて島や大陸にする',
+  'terrain.noise.erosion': '雨が削る谷筋と、土砂がたまる扇状地をつくる',
+  'terrain.palette.snowLine': '水面〜最高点のうち、雪が乗り始める高さの割合',
+  'terrain.palette.rockSlope': 'この傾きより急な斜面に岩肌が出る',
+  'vegetation.trees': '森の広さと密度。リアルタイムでは森の色、一枚絵では木そのものが描かれる',
+  'vegetation.grass': '一枚絵で、カメラが地面に近いときに足元へ草を置く',
+  'sun.elevation': '地平線からの太陽の高さ。マイナスは日没後',
+  'sun.azimuth': '北を 0° として東回りの方角（90° = 東、180° = 南）',
+  'atmosphere.rayleigh': '空の青さ。大きいほど深い青、夕焼けは赤く',
+  'atmosphere.turbidity': '空気の濁り（ちり・水蒸気）。大きいほど白っぽい空',
+  'atmosphere.mieCoefficient': '太陽のまわりの明るいにじみの強さ',
+  'atmosphere.mieDirectionalG': '太陽のにじみの広がり（大きいほど太陽の近くに集まる）',
+  'atmosphere.haze': '地表付近の霧・かすみの濃さ',
+  'atmosphere.ambient': '空から降りそそぐ光の強さ（1 = 物理的に正しい）',
+  'atmosphere.exposure': '写真の露出。明るすぎ・暗すぎを調整する',
+  'atmosphere.clouds': '雲の量（0 = 快晴）',
+  'atmosphere.cloudDensity': '雲の詰まり具合。大きいほど白く厚く、影も濃い',
+  'atmosphere.cloudScale': '雲のかたまりの細かさ',
+  'atmosphere.cloudAltitude': '雲の底の標高。山より低くすると山頂が雲の上に出る',
+  'atmosphere.cloudThickness': '雲の厚み。大きいほどもくもくと高く盛り上がる',
+  'atmosphere.fogHeight': '霧が薄まっていく高さの目安',
+  'atmosphere.rays': '霧が日光を前へ散らす度合い。逆光で光の筋がはっきりする',
+  'water.level': '水面の標高',
+  'water.distortion': '水面の揺らぎ・映り込みの崩れ',
+  'render.still.samples': '1 画素あたりの光の計算回数。多いほどなめらかで時間がかかる（ノイズ除去があれば 32〜128 で十分）',
+  'render.still.terrainDetail': '一枚絵の地形の細かさの上限',
+  'render.still.denoise': 'AI（Intel Open Image Denoise）でざらつきを取る',
+  'render.still.exposure': 'リアルタイムの露出に対する補正',
+  'render.still.bloom': '明るい所の光のにじみ',
+};
 
 // 設定パネル。項目は「シーン JSON のパス」と結びついた宣言的な一覧で作る。
 // パネルは描画のことを知らない（ストアに書くだけ）。
@@ -143,7 +188,12 @@ export class Panel {
     const el = document.createElement('details');
     el.className = 'sec';
     el.open = !!sec.open;
-    el.innerHTML = `<summary><span class="sec-title">${sec.title}</span><span class="sec-sub">${sec.sub}</span></summary>`;
+    el.innerHTML = `<summary><span class="sec-title">${sec.title}</span><span class="sec-sub">${sec.sub}</span><button type="button" class="sec-reset" title="この項目を既定値に戻す（元に戻すで戻せる）" aria-label="${sec.title}を既定値に戻す">↺</button></summary>`;
+    el.querySelector('.sec-reset').addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.#resetSection(sec);
+    });
     const body = document.createElement('div');
     body.className = 'sec-body';
     el.appendChild(body);
@@ -152,9 +202,23 @@ export class Panel {
     this.sections.push({ sec, el });
   }
 
+  // 1 つのセクションの項目を既定値へ（1 回の操作として元に戻せる）
+  #resetSection(sec) {
+    const def = createDefaultScene();
+    const changes = {};
+    for (const f of sec.fields) {
+      // 種と生成方法は作品の中身そのものなので戻さない
+      if (f.type === 'seed' || f.path === 'terrain.mode') continue;
+      changes[f.path] = getIn(def, f.path);
+    }
+    this.store.patch(changes, { source: 'ui-reset' });
+  }
+
   #buildField(f) {
     const row = document.createElement('label');
     row.className = `row row-${f.type ?? 'range'}`;
+    const hint = f.hint ?? HINTS[f.path];
+    if (hint) row.title = hint;
     const name = document.createElement('span');
     name.className = 'row-label';
     name.textContent = f.label;

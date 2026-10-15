@@ -27,6 +27,35 @@
   </script>
 </head>
 <body>
+  <!-- 起動中の表示。ライブラリ（CDN）の読み込みに失敗したときはここに理由を出す -->
+  <div id="boot" role="status" aria-live="polite">
+    <div class="boot-box">
+      <span class="brand-mark big" aria-hidden="true"></span>
+      <div class="boot-title">国産み <span>KUNIUMI</span></div>
+      <div id="boot-msg">星を用意しています…</div>
+    </div>
+  </div>
+  <script>
+    // 起動の失敗（モジュールの読み込み失敗・WebGL 非対応）を利用者に伝える
+    (function () {
+      var msg = document.getElementById('boot-msg');
+      var fail = function (text) {
+        if (window.__kuniumiReady) return;
+        msg.innerHTML = text;
+        msg.className = 'boot-error';
+      };
+      try {
+        var c = document.createElement('canvas');
+        if (!c.getContext('webgl2')) fail('このブラウザでは 3D 表示（WebGL2）が使えません。<br>Chrome・Edge・Firefox・Safari の最新版で開いてください。');
+      } catch (e) {}
+      window.addEventListener('error', function (e) {
+        if (e.target && (e.target.tagName === 'SCRIPT')) fail('部品の読み込みに失敗しました。ネットに接続されているか確かめて、再読み込みしてください。');
+      }, true);
+      setTimeout(function () {
+        fail('起動に時間がかかっています。ネット接続を確かめて再読み込みしてください。<br><small>（初回は部品のダウンロードに数十秒かかることがあります）</small>');
+      }, 45000);
+    })();
+  </script>
   <div id="app">
     <header id="bar">
       <div class="brand">
@@ -36,25 +65,31 @@
       </div>
       <input id="world-name" class="world-name" type="text" spellcheck="false" title="この星の名前" />
       <div class="tools">
-        <div class="group">
-          <span class="group-label">星のひな形</span>
-          <select id="preset"></select>
+        <div class="group history">
+          <button id="undo" class="icon" title="元に戻す（Ctrl+Z）" aria-label="元に戻す" disabled><svg viewBox="0 0 24 24"><path d="M9 7 4 12l5 5"/><path d="M4 12h10a6 6 0 0 1 0 12h-2" transform="translate(0 -6)"/></svg></button>
+          <button id="redo" class="icon" title="やり直す（Ctrl+Shift+Z / Ctrl+Y）" aria-label="やり直す" disabled><svg viewBox="0 0 24 24"><path d="m15 7 5 5-5 5"/><path d="M20 12H10a6 6 0 0 0 0 12h2" transform="translate(0 -6)"/></svg></button>
         </div>
         <div class="group">
-          <button id="render-still" class="primary" title="パストレースで実写調の一枚絵を描く（WebGPU）">✦ 一枚絵を描く</button>
+          <select id="preset" title="星のひな形：選ぶとシーンを差し替える（元に戻すで戻せる）"></select>
+        </div>
+        <div class="group menu-wrap">
+          <button id="file-menu-btn" aria-haspopup="true" aria-expanded="false">ファイル ▾</button>
+          <div id="file-menu" class="menu" role="menu" hidden>
+            <button role="menuitem" data-act="new-scene">新しい星<kbd>Ctrl+Alt+N</kbd></button>
+            <button role="menuitem" data-act="open-json">シーンを開く…<kbd>Ctrl+O</kbd></button>
+            <button role="menuitem" data-act="save-json">シーンを保存<kbd>Ctrl+S</kbd></button>
+            <div class="menu-sep">書き出し</div>
+            <button role="menuitem" data-act="export-glb" title="地形・水・太陽・カメラ・物体を .glb で書き出す">glTF（.glb）</button>
+            <button role="menuitem" data-act="export-hm" title="地形を 16bit グレースケール PNG で書き出す">ハイトマップ（16bit PNG）</button>
+            <button role="menuitem" data-act="export-py" title="glb を読み込んで空・カメラ・レンダー設定まで整える Blender 用スクリプト">Blender 用スクリプト（.py）</button>
+            <div class="menu-sep">読み込み</div>
+            <button role="menuitem" data-act="import-glb" title=".glb / .gltf を読み込む（地形はメッシュの形から取り込み）">glTF（.glb / .gltf）…</button>
+            <button role="menuitem" data-act="import-hm" title="ハイトマップ画像（16bit PNG 推奨）を読み込む">ハイトマップ画像…</button>
+          </div>
         </div>
         <div class="group">
-          <span class="group-label">シーン</span>
-          <button data-act="open-json" title="シーン（.json）を開く">開く</button>
-          <button data-act="save-json" title="シーンを .json で保存">保存</button>
-        </div>
-        <div class="group">
-          <span class="group-label">連携</span>
-          <button data-act="export-glb" title="地形・水・太陽・カメラを .glb で書き出す">glb 書出</button>
-          <button data-act="import-glb" title=".glb / .gltf を読み込む（地形はメッシュの形から取り込み）">glb 読込</button>
-          <button data-act="export-hm" title="地形を 16bit グレースケール PNG で書き出す">ハイトマップ書出</button>
-          <button data-act="import-hm" title="ハイトマップ画像（16bit PNG 推奨）を読み込む">ハイトマップ読込</button>
-          <button data-act="export-py" title="glb を読み込んで空・カメラ・レンダー設定まで整える Blender 用スクリプト">Blender 用 .py</button>
+          <button id="render-still" class="primary" title="パストレースで実写調の一枚絵を描く（WebGPU）（Ctrl+Enter）">✦ 一枚絵を描く</button>
+          <button id="help-btn" class="icon" title="使い方とショートカット（?）" aria-label="使い方">?</button>
         </div>
       </div>
     </header>
@@ -80,12 +115,70 @@
       </nav>
       <div id="hud">
         <div id="busy" hidden><span class="spinner"></span>大地を生成中</div>
-        <div class="hint">左ドラッグ: 回転　右ドラッグ: 移動　ホイール: 寄る／引く　クリック: 物体を選ぶ　W/E/R: 移動/回転/拡大　Delete: 削除　Ctrl+D: 複製</div>
+        <div class="hint">左ドラッグ: 回転　右ドラッグ: 移動　ホイール: 寄る／引く　クリック: 物体を選ぶ　F: 寄る　Home: 全体　?: 使い方</div>
       </div>
       <div id="toast" hidden></div>
       <div id="drop" hidden><div>ここに落とすと読み込みます<small>.json（シーン）／ .glb（モデル）／ .png（ハイトマップ）</small></div></div>
     </main>
     <aside id="panel"></aside>
+  </div>
+  <div id="help" class="modal" hidden>
+    <div class="modal-box help-box" role="dialog" aria-label="使い方">
+      <div class="still-head">
+        <span class="still-title">使い方</span>
+        <span></span>
+        <button type="button" data-close>閉じる</button>
+      </div>
+      <div class="help-body">
+        <section>
+          <h3>視点</h3>
+          <dl>
+            <dt>左ドラッグ</dt><dd>まわりを回る</dd>
+            <dt>右ドラッグ</dt><dd>平行に動く</dd>
+            <dt>ホイール</dt><dd>寄る／引く（カーソルの方へ）</dd>
+            <dt>F</dt><dd>選んだ物体に寄る</dd>
+            <dt>Home</dt><dd>大地全体を見渡す</dd>
+          </dl>
+        </section>
+        <section>
+          <h3>物体</h3>
+          <dl>
+            <dt>創造パレット</dt><dd>形を画面中央の先の地面に置く。「天体」は空に浮かぶ星</dd>
+            <dt>クリック</dt><dd>選ぶ（何もない所で解除）</dd>
+            <dt>W / E / R</dt><dd>移動 / 回転 / 拡大のハンドル</dd>
+            <dt>Delete</dt><dd>削除</dd>
+            <dt>Ctrl+D</dt><dd>複製</dd>
+            <dt>Esc</dt><dd>選択を解除</dd>
+          </dl>
+        </section>
+        <section>
+          <h3>ファイル・編集</h3>
+          <dl>
+            <dt>Ctrl+Z / Ctrl+Shift+Z</dt><dd>元に戻す / やり直す（Ctrl+Y も可）</dd>
+            <dt>Ctrl+S / Ctrl+O</dt><dd>シーンを保存 / 開く（.json）</dd>
+            <dt>Ctrl+Alt+N</dt><dd>新しい星</dd>
+            <dt>ファイルをドロップ</dt><dd>.json（シーン）・.glb（モデル）・.png/.jpg（ハイトマップ）</dd>
+            <dt>自動保存</dt><dd>作業中のシーンはこのブラウザに自動で残る</dd>
+          </dl>
+        </section>
+        <section>
+          <h3>一枚絵</h3>
+          <dl>
+            <dt>Ctrl+Enter</dt><dd>実写調の一枚絵を描く（Chrome / Edge。WebGPU を使う）</dd>
+            <dt>時間の目安</dt><dd>1280×720・64 サンプルで 1〜2 分。右パネル「一枚絵」で大きさ・サンプル数を変えられる</dd>
+            <dt>保存</dt><dd>PNG のほか、合成ソフト向けに HDR（.hdr）も保存できる</dd>
+          </dl>
+        </section>
+        <section>
+          <h3>他のソフトへ</h3>
+          <dl>
+            <dt>glTF（.glb）</dt><dd>地形・水・太陽・カメラ・物体。Blender などでそのまま開ける</dd>
+            <dt>Blender 用 .py</dt><dd>.glb と同じフォルダに置いて実行すると、空・カメラ・レンダー設定まで整う</dd>
+            <dt>ハイトマップ</dt><dd>16bit PNG。実寸も PNG の中に記録される</dd>
+          </dl>
+        </section>
+      </div>
+    </div>
   </div>
   <div id="still" hidden>
     <div class="still-box" role="dialog" aria-label="一枚絵">

@@ -11,6 +11,7 @@ import { exportHeightmap, importHeightmap } from './io/heightmap.js';
 import { blenderScript } from './io/blenderScript.js';
 import { downloadBlob, pickFile, safeName, extOf } from './io/files.js';
 import { encodeRadianceHDR } from './core/tonemap.js';
+import { createHistory } from './core/history.js';
 
 const AUTOSAVE_KEY = 'kuniumi.autosave.v1';
 
@@ -123,21 +124,6 @@ function setGizmo(mode) {
 }
 gizmoButtons.forEach((b) => b.addEventListener('click', () => setGizmo(b.dataset.gizmo)));
 
-window.addEventListener('keydown', (e) => {
-  if (e.target.closest('input, select, textarea')) return;
-  const id = selection.get().selected;
-  const k = e.key.toLowerCase();
-  if (k === 'w') setGizmo('translate');
-  else if (k === 'e') setGizmo('rotate');
-  else if (k === 'r') setGizmo('scale');
-  else if (k === 'escape') selection.set('selected', null);
-  else if ((k === 'delete' || k === 'backspace') && id) removeObject(id);
-  else if (k === 'd' && (e.ctrlKey || e.metaKey) && id) {
-    e.preventDefault();
-    duplicateObject(id);
-  }
-});
-
 const busyEl = document.getElementById('busy');
 setInterval(() => (busyEl.hidden = !view.terrainService.busy), 120);
 
@@ -157,7 +143,7 @@ presetEl.onchange = () => {
   if (!p) return;
   selection.set('selected', null);
   store.replace(normalizeScene(deepMerge(createDefaultScene(), p.scene)), { source: 'preset' });
-  toast(`「${p.name}」を呼び出しました`);
+  toast(`「${p.name}」を呼び出しました（元に戻すで戻せます）`);
 };
 
 // ---- ファイル操作 ----
@@ -209,6 +195,11 @@ async function openAny(file) {
 }
 
 const actions = {
+  'new-scene': async () => {
+    selection.set('selected', null);
+    store.replace(createDefaultScene(), { source: 'io' });
+    toast('新しい星にしました（元に戻すで戻せます）');
+  },
   'open-json': async () => {
     const f = await pickFile('.json,application/json');
     if (f) await openJson(f);
@@ -246,19 +237,70 @@ const actions = {
   },
 };
 
+async function runAction(name, btn) {
+  if (stillJob) return toast('一枚絵を描いている間はできません', 'error');
+  if (btn) btn.disabled = true;
+  try {
+    await actions[name]();
+  } catch (err) {
+    console.error(err);
+    toast(`失敗しました: ${err.message ?? err}`, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
 for (const btn of document.querySelectorAll('[data-act]')) {
-  btn.addEventListener('click', async () => {
-    btn.disabled = true;
-    try {
-      await actions[btn.dataset.act]();
-    } catch (err) {
-      console.error(err);
-      toast(`失敗しました: ${err.message ?? err}`, 'error');
-    } finally {
-      btn.disabled = false;
-    }
+  btn.addEventListener('click', () => {
+    closeMenu();
+    runAction(btn.dataset.act, btn);
   });
 }
+
+// ---- ファイルメニュー ----
+const menuBtn = document.getElementById('file-menu-btn');
+const menuEl = document.getElementById('file-menu');
+function closeMenu() {
+  menuEl.hidden = true;
+  menuBtn.setAttribute('aria-expanded', 'false');
+}
+menuBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  menuEl.hidden = !menuEl.hidden;
+  menuBtn.setAttribute('aria-expanded', String(!menuEl.hidden));
+  if (!menuEl.hidden) menuEl.querySelector('button')?.focus();
+});
+document.addEventListener('pointerdown', (e) => {
+  if (!menuEl.hidden && !(e.target instanceof Element && e.target.closest('.menu-wrap'))) closeMenu();
+});
+
+// ---- 元に戻す／やり直す ----
+const undoBtn = document.getElementById('undo');
+const redoBtn = document.getElementById('redo');
+const history = createHistory(store, {
+  onChange: () => {
+    undoBtn.disabled = !history.canUndo();
+    redoBtn.disabled = !history.canRedo();
+  },
+});
+function undo() {
+  if (stillJob) return;
+  if (history.undo()) toast('元に戻しました');
+}
+function redo() {
+  if (stillJob) return;
+  if (history.redo()) toast('やり直しました');
+}
+undoBtn.addEventListener('click', undo);
+redoBtn.addEventListener('click', redo);
+
+// ---- 使い方 ----
+const helpEl = document.getElementById('help');
+const openHelp = () => (helpEl.hidden = false);
+const closeHelp = () => (helpEl.hidden = true);
+document.getElementById('help-btn').addEventListener('click', openHelp);
+helpEl.addEventListener('click', (e) => {
+  if (e.target === helpEl || e.target.closest('[data-close]')) closeHelp();
+});
 
 // ---- ドラッグ＆ドロップ ----
 const dropEl = document.getElementById('drop');
@@ -281,6 +323,7 @@ window.addEventListener('drop', async (e) => {
   dropEl.hidden = true;
   const file = e.dataTransfer?.files?.[0];
   if (!file) return;
+  if (stillJob) return toast('一枚絵を描いている間は読み込めません', 'error');
   try {
     await openAny(file);
   } catch (err) {
@@ -340,8 +383,12 @@ async function renderStill() {
     stillInfo.textContent = `${r.width}×${r.height}　${r.samples} サンプル${r.denoised ? '・ノイズ除去' : ''}　${fmtSec(r.traceSec)}`;
     stillActions.hidden = false;
   } catch (err) {
-    console.error(err);
-    stillStatus.textContent = `描けませんでした: ${err.message ?? err}`;
+    if (stillJob?.cancelled) {
+      stillStatus.textContent = '中止しました';
+    } else {
+      console.error(err);
+      stillStatus.textContent = `描けませんでした: ${err.message ?? err}`;
+    }
   } finally {
     stillJob = null;
     stillClose.textContent = '閉じる';
@@ -366,5 +413,85 @@ stillActions.addEventListener('click', async (e) => {
   }
 });
 
+// ---- キーボード ----
+const modalOpen = () => !stillEl.hidden || !helpEl.hidden;
+window.addEventListener('keydown', (e) => {
+  const k = e.key.toLowerCase();
+  const mod = e.ctrlKey || e.metaKey;
+  // ダイアログ・メニュー：Esc で閉じる。開いている間はほかの操作を受け付けない（後ろの物体を消したりしない）
+  if (k === 'escape') {
+    if (!menuEl.hidden) return closeMenu();
+    if (!helpEl.hidden) return closeHelp();
+    if (!stillEl.hidden) {
+      if (stillJob) stillJob.cancel();
+      else stillEl.hidden = true;
+      return;
+    }
+  }
+  if (modalOpen()) return;
+  if (e.target instanceof Element && e.target.closest('input, select, textarea')) return;
+  const id = selection.get().selected;
+
+  if (mod && k === 'z') {
+    e.preventDefault();
+    return e.shiftKey ? redo() : undo();
+  }
+  if (mod && k === 'y') {
+    e.preventDefault();
+    return redo();
+  }
+  if (mod && k === 's') {
+    e.preventDefault();
+    return runAction('save-json');
+  }
+  if (mod && k === 'o') {
+    e.preventDefault();
+    return runAction('open-json');
+  }
+  if (mod && e.altKey && k === 'n') {
+    e.preventDefault();
+    return runAction('new-scene');
+  }
+  if (mod && k === 'enter') {
+    e.preventDefault();
+    return renderStill();
+  }
+  if (mod && k === 'd' && id) {
+    e.preventDefault();
+    return duplicateObject(id);
+  }
+  if (mod || e.altKey) return;
+  if (k === 'w') setGizmo('translate');
+  else if (k === 'e') setGizmo('rotate');
+  else if (k === 'r') setGizmo('scale');
+  else if (k === 'escape') selection.set('selected', null);
+  else if ((k === 'delete' || k === 'backspace') && id) removeObject(id);
+  else if (k === 'f') {
+    if (!id || !view.frameObject(id)) toast('寄る物体を選んでください（クリック）');
+  } else if (k === 'home') view.frameAll();
+  else if (e.key === '?') openHelp();
+});
+
+// ---- 予期しないエラーは知らせる（同じ内容を何度も出さない）----
+let lastError = '';
+const reportError = (msg) => {
+  if (!msg || msg === lastError) return;
+  lastError = msg;
+  setTimeout(() => (lastError = ''), 5000);
+  toast(`問題が起きました: ${msg}`, 'error');
+};
+window.addEventListener('error', (e) => e.message && reportError(e.message));
+window.addEventListener('unhandledrejection', (e) => reportError(e.reason?.message ?? String(e.reason)));
+
+// ---- 起動中の表示を消す（最初の地形が届いたら）----
+const bootEl = document.getElementById('boot');
+const bootWait = setInterval(() => {
+  if (!view.terrain) return;
+  clearInterval(bootWait);
+  window.__kuniumiReady = true;
+  bootEl.classList.add('done');
+  setTimeout(() => bootEl.remove(), 600);
+}, 100);
+
 // デバッグ・自動検証用
-window.KUNIUMI = { store, view, actions, openAny, selection, renderStill, get stillResult() { return stillResult; } };
+window.KUNIUMI = { store, view, actions, openAny, selection, renderStill, history, get stillResult() { return stillResult; } };
