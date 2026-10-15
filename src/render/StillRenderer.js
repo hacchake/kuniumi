@@ -2,6 +2,8 @@ import * as THREE from 'three/webgpu';
 import { ShaderMaterial, WebGLRenderTarget } from 'three';
 import { WebGPUPathTracer, OIDNDenoiser, TRANSMISSIVE_BACKGROUND_ENVIRONMENT } from 'three-gpu-pathtracer/webgpu';
 import { initUNetFromURL } from 'oidn-web';
+// OIDN の学習済み重み（HDR・アルベド・法線つき）。同梱してオフラインでも使えるようにする
+import OIDN_WEIGHTS from 'oidn-weights/rt_hdr_alb_nrm.tza?url';
 import { sunDirection } from '../core/sun.js';
 import { skyParams, renderSkyEquirect } from '../core/skyModel.js';
 import { toneMapToRGBA8 } from '../core/tonemap.js';
@@ -17,8 +19,6 @@ import { coniferGeometry, broadleafGeometry, grassGeometry, fillInstances } from
 //   3. WebGPU のパストレーサで光の反射・屈折・間接光を計算し、AI ノイズ除去（OIDN）で仕上げる
 //   4. 深度から遠景のかすみ（空気遠近）を足し、光のにじみ・トーンマップ（AgX）を掛けて書き出す
 
-// OIDN の学習済み重み（HDR・アルベド・法線つき）。oidn-web の作者が npm に置いているもの
-const OIDN_WEIGHTS = 'https://cdn.jsdelivr.net/npm/oidn-weights@2.3.0-1/rt_hdr_alb_nrm.tza';
 const ENV_SIZE = [2048, 1024];
 
 export class StillJob {

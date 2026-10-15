@@ -1,3 +1,9 @@
+// 文字（同梱のフォント。日本語は文字範囲ごとに分かれていて、使う分だけ読み込まれる）
+import '@fontsource/shippori-mincho/500.css';
+import '@fontsource/shippori-mincho/700.css';
+import '@fontsource/zen-kaku-gothic-new/400.css';
+import '@fontsource/zen-kaku-gothic-new/500.css';
+import '@fontsource/zen-kaku-gothic-new/700.css';
 import { createDefaultScene, normalizeScene, deepMerge } from './core/schema.js';
 import { createStore } from './core/store.js';
 import { PRESETS } from './core/presets.js';
@@ -12,6 +18,7 @@ import { blenderScript } from './io/blenderScript.js';
 import { downloadBlob, pickFile, safeName, extOf } from './io/files.js';
 import { encodeRadianceHDR } from './core/tonemap.js';
 import { createHistory } from './core/history.js';
+import { registerSW } from 'virtual:pwa-register';
 
 const AUTOSAVE_KEY = 'kuniumi.autosave.v1';
 
@@ -492,6 +499,15 @@ const bootWait = setInterval(() => {
   bootEl.classList.add('done');
   setTimeout(() => bootEl.remove(), 600);
 }, 100);
+
+// ---- アプリとしてのインストール・オフライン（組み立て後の版だけで動く）----
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  registerSW({
+    immediate: true,
+    onOfflineReady: () => toast('ネットにつながっていなくても使えるようになりました'),
+    onRegisterError: (e) => console.warn('オフライン対応の登録に失敗:', e),
+  });
+}
 
 // デバッグ・自動検証用
 window.KUNIUMI = { store, view, actions, openAny, selection, renderStill, history, get stillResult() { return stillResult; } };

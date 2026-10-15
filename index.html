@@ -4,30 +4,14 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>KUNIUMI — 星をつくる景観工房</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%23d9b56c'/%3E%3Cpath d='M3 20 L11 12 L16 17 L21 10 L29 20 Z' fill='%230b0f1a'/%3E%3C/svg%3E" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css" />
-  <script type="importmap">
-    {
-      "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js",
-        "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.webgpu.js",
-        "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.tsl.js",
-        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/",
-        "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/",
-        "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.9.15/src/index.js",
-        "three-mesh-bvh/webgpu": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.9.15/src/webgpu/index.js",
-        "three-gpu-pathtracer": "https://cdn.jsdelivr.net/npm/three-gpu-pathtracer@0.0.26/src/index.js",
-        "three-gpu-pathtracer/webgpu": "https://cdn.jsdelivr.net/npm/three-gpu-pathtracer@0.0.26/src/webgpu/index.js",
-        "oidn-web": "https://cdn.jsdelivr.net/npm/oidn-web@0.4.0/dist/oidn.js"
-      }
-    }
-  </script>
+  <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="./icon-192.png" />
+  <meta name="theme-color" content="#0b0f1a" />
+  <meta name="description" content="地形・空・水・雲を組み合わせて、壮大な風景や星そのものをデザインする 3D 景観ソフト" />
+  <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
-  <!-- 起動中の表示。ライブラリ（CDN）の読み込みに失敗したときはここに理由を出す -->
+  <!-- 起動中の表示。部品の読み込みに失敗したときはここに理由を出す -->
   <div id="boot" role="status" aria-live="polite">
     <div class="boot-box">
       <span class="brand-mark big" aria-hidden="true"></span>
@@ -49,10 +33,10 @@
         if (!c.getContext('webgl2')) fail('このブラウザでは 3D 表示（WebGL2）が使えません。<br>Chrome・Edge・Firefox・Safari の最新版で開いてください。');
       } catch (e) {}
       window.addEventListener('error', function (e) {
-        if (e.target && (e.target.tagName === 'SCRIPT')) fail('部品の読み込みに失敗しました。ネットに接続されているか確かめて、再読み込みしてください。');
+        if (e.target && (e.target.tagName === 'SCRIPT')) fail('部品の読み込みに失敗しました。再読み込みしてください。');
       }, true);
       setTimeout(function () {
-        fail('起動に時間がかかっています。ネット接続を確かめて再読み込みしてください。<br><small>（初回は部品のダウンロードに数十秒かかることがあります）</small>');
+        fail('起動に時間がかかっています。再読み込みしてください。');
       }, 45000);
     })();
   </script>
@@ -199,6 +183,6 @@
       </div>
     </div>
   </div>
-  <script type="module" src="src/main.js"></script>
+  <script type="module" src="./src/main.js"></script>
 </body>
 </html>

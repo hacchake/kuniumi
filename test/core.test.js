@@ -1,0 +1,160 @@
+import { describe, it, expect } from 'vitest';
+import { createDefaultScene, normalizeScene, setIn, getIn } from '../src/core/schema.js';
+import { createStore } from '../src/core/store.js';
+import { createHistory } from '../src/core/history.js';
+import { encodeGray16, decodePng } from '../src/core/png16.js';
+import { generateNoiseField } from '../src/core/heightfield.js';
+import { applyErosion } from '../src/core/erosion.js';
+import { skyParams, renderSkyEquirect, sunIrradiance, discScaleFor } from '../src/core/skyModel.js';
+import { sunDirection, anglesFromDirection } from '../src/core/sun.js';
+import { buildLodTerrain } from '../src/core/terrainLod.js';
+import { toneMapToRGBA8 } from '../src/core/tonemap.js';
+import { createObject, normalizeObject } from '../src/core/objects.js';
+
+describe('シーン JSON', () => {
+  it('既定値で欠けた項目を補う', () => {
+    const s = normalizeScene({ format: 'kuniumi.scene', version: 1, sun: { elevation: 5 } });
+    expect(s.sun.elevation).toBe(5);
+    expect(s.sun.azimuth).toBe(createDefaultScene().sun.azimuth);
+    expect(s.objects).toEqual([]);
+    expect(s.vegetation.trees).toBeGreaterThan(0);
+  });
+  it('別形式の JSON は拒む', () => {
+    expect(() => normalizeScene({ format: 'other' })).toThrow();
+  });
+  it('雲の項目が無い古いシーンは露出を換算する', () => {
+    const s = normalizeScene({ format: 'kuniumi.scene', atmosphere: { exposure: 0.5 } });
+    expect(s.atmosphere.exposure).toBeCloseTo(0.125, 3);
+  });
+  it('解像度は用意した値に丸める', () => {
+    expect(normalizeScene({ terrain: { resolution: 300 } }).terrain.resolution).toBe(257);
+  });
+  it('setIn は元を書き換えない', () => {
+    const a = createDefaultScene();
+    const b = setIn(a, 'sun.elevation', 77);
+    expect(getIn(a, 'sun.elevation')).not.toBe(77);
+    expect(getIn(b, 'sun.elevation')).toBe(77);
+    expect(b.terrain).toBe(a.terrain); // 変えていない枝は共有
+  });
+  it('物体は既定値で補われる', () => {
+    const o = normalizeObject({ type: 'box', position: [1, 2] });
+    expect(o.position).toEqual([0, 0, 0]);
+    expect(createObject('torus').type).toBe('torus');
+  });
+});
+
+describe('元に戻す／やり直す', () => {
+  it('連続した同じ項目の変更は 1 回分、視点は含めない', async () => {
+    const store = createStore(createDefaultScene());
+    const h = createHistory(store);
+    for (let v = 1000; v <= 1500; v += 100) store.set('terrain.heightScale', v, { source: 'ui' });
+    store.set('camera.fov', 30, { source: 'view' });
+    store.set('sun.elevation', 40, { source: 'ui' });
+    expect(h.undo()).toBe(true);
+    expect(store.get().sun.elevation).toBe(createDefaultScene().sun.elevation);
+    expect(store.get().camera.fov).toBe(30); // 視点はそのまま
+    h.undo();
+    expect(store.get().terrain.heightScale).toBe(createDefaultScene().terrain.heightScale);
+    h.redo();
+    expect(store.get().terrain.heightScale).toBe(1500);
+  });
+});
+
+describe('16bit PNG', () => {
+  it('書いて読むと 16bit の精度で一致し、文字情報も戻る', async () => {
+    const w = 37, h = 23;
+    const v = new Float32Array(w * h).map((_, i) => (i * 7919) % 65536 / 65535);
+    const blob = await encodeGray16(v, w, h, { kuniumi: '{"size":8000,"名":"星"}' });
+    const img = await decodePng(await blob.arrayBuffer());
+    expect(img.width).toBe(w);
+    expect(img.bitDepth).toBe(16);
+    let err = 0;
+    for (let i = 0; i < v.length; i++) err = Math.max(err, Math.abs(img.data[i] - v[i]));
+    expect(err).toBeLessThan(1 / 65535 + 1e-9);
+    // 日本語は \uXXXX に逃がして書いてあり、JSON.parse がそのまま元に戻す
+    const info = JSON.parse(img.text.kuniumi);
+    expect(info.size).toBe(8000);
+    expect(info['名']).toBe('星');
+  });
+});
+
+describe('地形', () => {
+  const noise = createDefaultScene().terrain.noise;
+  it('同じ設定なら同じ地形（再現性）', () => {
+    const a = generateNoiseField(noise, 65), b = generateNoiseField(noise, 65);
+    expect(a).toEqual(b);
+    expect(Math.min(...a)).toBeGreaterThanOrEqual(0);
+    expect(Math.max(...a)).toBeLessThanOrEqual(1);
+  });
+  it('外周の沈みがあれば四辺は底まで下がる', () => {
+    const res = 129, f = generateNoiseField(noise, res);
+    for (let i = 0; i < res; i++) {
+      expect(f[i]).toBeLessThan(1e-6);
+      expect(f[(res - 1) * res + i]).toBeLessThan(1e-6);
+    }
+  });
+  it('侵食は解像度によらず同じ量になり、値は範囲内', () => {
+    const f1 = generateNoiseField(noise, 129), f2 = generateNoiseField(noise, 257);
+    const m = (f, r) => {
+      const { wear } = applyErosion(f, r, 0.5, noise.seed);
+      return wear.reduce((s, x) => s + Math.abs(x), 0) / wear.length;
+    };
+    expect(m(f1, 129)).toBeCloseTo(m(f2, 257), 2);
+  });
+  it('近いほど細かい地形は、区画の継ぎ目に隙間がない', () => {
+    const s = createDefaultScene();
+    const r = buildLodTerrain(s.terrain, s.water, { position: [-3300, 200, 3900], target: [-2300, 60, 2700], fov: 50, aspect: 16 / 9, height: 360 }, { maxTriangles: 600_000 });
+    const seen = new Map();
+    let worst = 0;
+    for (let i = 0; i < r.positions.length; i += 3) {
+      const key = `${r.positions[i].toFixed(2)},${r.positions[i + 2].toFixed(2)}`;
+      const y = r.positions[i + 1];
+      if (seen.has(key)) worst = Math.max(worst, Math.abs(seen.get(key) - y));
+      else seen.set(key, y);
+    }
+    expect(worst).toBeLessThan(1e-3);
+    expect(r.triangles).toBeLessThanOrEqual(600_000);
+  });
+});
+
+describe('太陽と空', () => {
+  it('方位と高度の変換は往復で一致', () => {
+    const { elevation, azimuth } = anglesFromDirection(sunDirection(23, 211));
+    expect(elevation).toBeCloseTo(23, 6);
+    expect(azimuth).toBeCloseTo(211, 6);
+  });
+  it('全天画像の太陽円盤の明るさの総量は、円盤を広げても解析値と一致', () => {
+    const a = createDefaultScene().atmosphere;
+    const sd = sunDirection(35, 140);
+    const p = skyParams(a, sd);
+    const k = discScaleFor(Math.max(...sunIrradiance(p)));
+    const W = 1024, H = 512;
+    const env = renderSkyEquirect(p, W, H, { clouds: false, discScale: k });
+    let E = 0, max = 0;
+    for (let r = 0; r < H; r++) {
+      const lat = ((r + 0.5) / H - 0.5) * Math.PI;
+      for (let c = 0; c < W; c++) {
+        const phi = ((c + 0.5) / W - 0.5) * 2 * Math.PI;
+        const d = [Math.cos(phi) * Math.cos(lat), Math.sin(lat), Math.sin(phi) * Math.cos(lat)];
+        const cs = d[0] * sd[0] + d[1] * sd[1] + d[2] * sd[2];
+        const o = (r * W + c) * 4;
+        max = Math.max(max, env[o], env[o + 1], env[o + 2]);
+        if (cs > 0.998) E += env[o + 1] * cs * Math.cos(lat) * (Math.PI / H) * ((2 * Math.PI) / W);
+      }
+    }
+    expect(E / sunIrradiance(p)[1]).toBeGreaterThan(0.97);
+    expect(E / sunIrradiance(p)[1]).toBeLessThan(1.08);
+    expect(max).toBeLessThan(65504); // パストレーサの半精度に収まる
+  });
+});
+
+describe('トーンマップ', () => {
+  it('黒は黒、明るいほど明るく、範囲内', () => {
+    const hdr = new Float32Array([0, 0, 0, 1, 0.1, 0.1, 0.1, 1, 10, 10, 10, 1]);
+    const out = toneMapToRGBA8(hdr, 3, 1);
+    expect(out[0]).toBeLessThan(3);
+    expect(out[4]).toBeGreaterThan(out[0]);
+    expect(out[8]).toBeGreaterThan(out[4]);
+    expect(out[8]).toBeLessThanOrEqual(255);
+  });
+});
