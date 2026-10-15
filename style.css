@@ -264,3 +264,34 @@ button, select, input { font: inherit; color: inherit; }
   .create-title, .create-sep { display: none; }
   .gizmo-modes { grid-template-columns: repeat(3, 1fr); }
 }
+
+/* ---- 一枚絵 ---- */
+#bar button.primary {
+  background: linear-gradient(180deg, #e2c27c, #b88f45); color: #1a1408; border-color: #e9cf8f; font-weight: 700;
+}
+#bar button.primary:hover { background: linear-gradient(180deg, #f0d592, #c99e52); }
+#still {
+  position: fixed; inset: 0; z-index: 20; display: grid; place-items: center;
+  background: rgba(5, 7, 12, 0.82); backdrop-filter: blur(6px); padding: 16px;
+}
+#still[hidden] { display: none; }
+.still-box {
+  width: min(1280px, 100%); max-height: 100%; display: flex; flex-direction: column; gap: 10px;
+  background: var(--ink-2); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px 16px;
+}
+.still-head { display: flex; align-items: baseline; gap: 14px; }
+.still-title { font-family: 'Shippori Mincho', serif; font-size: 18px; font-weight: 700; letter-spacing: 0.15em; color: var(--gold-2); }
+#still-status { font-size: 12.5px; color: var(--muted); flex: 1; }
+.still-head button, .still-actions button {
+  background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); border-radius: 6px; padding: 5px 14px; cursor: pointer; font-size: 12.5px;
+}
+.still-head button:hover, .still-actions button:hover { border-color: var(--gold); }
+.still-view { position: relative; min-height: 0; flex: 1; display: grid; place-items: center; background: #000; border-radius: 8px; overflow: hidden; }
+.still-view canvas, .still-view img { display: block; max-width: 100%; max-height: calc(100vh - 190px); width: auto; height: auto; }
+.still-bar { display: flex; align-items: center; gap: 12px; }
+.still-progress { flex: 1; height: 4px; background: rgba(255, 255, 255, 0.08); border-radius: 2px; overflow: hidden; }
+.still-progress i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--gold), var(--gold-2)); transition: width 0.3s; }
+#still-info { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 240px; text-align: right; }
+.still-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.still-actions[hidden] { display: none; }
+.still-actions button[data-still='png'] { background: linear-gradient(180deg, #e2c27c, #b88f45); color: #1a1408; border-color: #e9cf8f; font-weight: 700; }

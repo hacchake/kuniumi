@@ -2,8 +2,10 @@
 import { generateNoiseField, resampleImage } from '../core/heightfield.js';
 import { computeTerrainColors } from '../core/terrainColor.js';
 import { decodePng } from '../core/png16.js';
+import { applyErosion } from '../core/erosion.js';
 
 let field = null;
+let wear = null; // 侵食で盛った(+)・削った(−)量
 let fieldRes = 0;
 let fieldKey = null;
 const decoded = new Map(); // heightmap.id → 解釈済み画像
@@ -13,12 +15,12 @@ self.onmessage = async (e) => {
   try {
     let fieldChanged = false;
     if (key !== fieldKey) {
-      field = await buildField(terrain);
+      ({ field, wear } = await buildField(terrain));
       fieldRes = terrain.resolution;
       fieldKey = key;
       fieldChanged = true;
     }
-    const colors = computeTerrainColors(field, fieldRes, color);
+    const colors = computeTerrainColors(field, fieldRes, color, wear);
     const msg = { id, key, res: fieldRes, colors: colors.data, texSize: colors.size };
     const transfer = [colors.data.buffer];
     if (fieldChanged) {
@@ -41,8 +43,9 @@ async function buildField(t) {
       decoded.clear();
       decoded.set(t.heightmap.id, img);
     }
-    return resampleImage(img.data, img.width, img.height, t.resolution);
+    return { field: resampleImage(img.data, img.width, img.height, t.resolution), wear: null };
   }
-  return generateNoiseField(t.noise, t.resolution);
+  const f = generateNoiseField(t.noise, t.resolution);
+  return applyErosion(f, t.resolution, t.noise.erosion ?? 0, t.noise.seed);
 }
 

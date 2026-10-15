@@ -1,6 +1,8 @@
 // 太陽と大気の計算（Three.js 非依存）。
 // 座標系: Y が上、北 = -Z、東 = +X（glTF と同じ。Blender では北 = +Y、東 = +X になる）
 
+import { skyParams, skyRadiance, sunIrradiance } from './skyModel.js';
+
 const D2R = Math.PI / 180;
 
 // 地面から太陽へ向かう単位ベクトル
@@ -18,27 +20,28 @@ export function anglesFromDirection([x, y, z]) {
   return { elevation, azimuth };
 }
 
-const smooth = (a, b, x) => {
-  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-};
-const lerp3 = (p, q, t) => p.map((v, i) => v + (q[i] - v) * t);
+// 日光（平行光源）の色と強さ、遠景のかすみの色は、空の物理モデル（skyModel.js）から求める。
+// リアルタイム表示と静止画（空そのものを光源にする）で、太陽と空の明るさの釣り合いをそろえるため。
 
-// 日光の色（線形RGB）と強さ。低い太陽ほど赤く、地平線の下では消える
-export function sunLight(elevationDeg, intensity = 1) {
-  const warm = [1.0, 0.45, 0.2];
-  const noon = [1.0, 0.96, 0.9];
-  const color = lerp3(warm, noon, smooth(-2, 35, elevationDeg));
-  const strength = 3.2 * intensity * smooth(-3, 6, elevationDeg);
-  return { color, strength };
+// 太陽の放射照度（法線入射、線形 RGB）。強さ = 最大成分、色 = それで割った値
+export function sunLight(sun, atmosphere) {
+  const dir = sunDirection(sun.elevation, sun.azimuth);
+  const p = skyParams(atmosphere, dir);
+  const e = sunIrradiance(p).map((v) => v * sun.intensity);
+  const strength = Math.max(...e);
+  const color = strength > 0 ? e.map((v) => v / strength) : [1, 1, 1];
+  return { color, strength, dir };
 }
 
-// 遠景のかすみの色（線形RGB）。空の地平線付近の色の近似
-export function hazeColor(elevationDeg, rayleigh = 2) {
-  const night = [0.01, 0.015, 0.03];
-  const dusk = [0.55, 0.32, 0.22];
-  const day = [0.45 - rayleigh * 0.03, 0.58 - rayleigh * 0.01, 0.75];
-  let c = lerp3(dusk, day, smooth(2, 30, elevationDeg));
-  c = lerp3(night, c, smooth(-8, 2, elevationDeg));
-  return c;
+// 遠景のかすみの色（線形 RGB）。地平線すぐ上の空の明るさを全方位で平均したもの
+export function hazeColor(sun, atmosphere) {
+  const p = skyParams(atmosphere, sunDirection(sun.elevation, sun.azimuth));
+  const sum = [0, 0, 0], c = [0, 0, 0];
+  const n = 16;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    skyRadiance(p, [Math.cos(a) * 0.9987, 0.05, Math.sin(a) * 0.9987], c, { sunDisc: false, clouds: false });
+    for (let k = 0; k < 3; k++) sum[k] += c[k] / n;
+  }
+  return sum;
 }

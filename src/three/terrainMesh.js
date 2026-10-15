@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { generateMaterialMaps } from '../core/texgen.js';
 
 // 高さ場 → 地形メッシュ。リアルタイム表示と書き出し用シーンの両方で使う。
 
@@ -92,10 +93,31 @@ export function createColorTexture(rgba, size, existing) {
   return tex;
 }
 
-export function createTerrainMaterial(map) {
+// 近景で効く細かな岩の凹凸。DETAIL_TILE m ごとに繰り返す法線マップ（地形全体で共有）
+export const DETAIL_TILE = 48;
+let detailNormal = null;
+export function terrainDetailNormal() {
+  if (!detailNormal) {
+    const maps = generateMaterialMaps({ pattern: 'rock', color: '#808080', color2: '#808080', scale: 4, seed: 7, bump: 0.7 }, 512, 512);
+    const c = document.createElement('canvas');
+    c.width = c.height = 512;
+    c.getContext('2d').putImageData(new ImageData(maps.normal, 512, 512), 0, 0);
+    detailNormal = new THREE.CanvasTexture(c);
+    detailNormal.wrapS = detailNormal.wrapT = THREE.RepeatWrapping;
+    detailNormal.anisotropy = 8;
+    detailNormal.name = 'TerrainDetailNormal';
+  }
+  return detailNormal;
+}
+
+export function createTerrainMaterial(map, size = 8000) {
+  const normalMap = terrainDetailNormal();
+  normalMap.repeat.set(size / DETAIL_TILE, size / DETAIL_TILE);
   return new THREE.MeshStandardMaterial({
     name: 'Terrain',
     map,
+    normalMap,
+    normalScale: new THREE.Vector2(0.55, 0.55),
     roughness: 0.92,
     metalness: 0,
   });

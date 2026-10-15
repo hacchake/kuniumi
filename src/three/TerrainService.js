@@ -7,7 +7,9 @@ export function fieldKeyOf(t) {
 }
 
 export class TerrainService {
-  constructor(onResult, onError) {
+  // options.textureSize: 地表テクスチャの一辺（静止画用に大きくするとき）
+  constructor(onResult, onError, options = {}) {
+    this.textureSize = options.textureSize ?? null;
     this.worker = new Worker(new URL('../workers/terrainWorker.js', import.meta.url), { type: 'module' });
     this.worker.onmessage = (e) => this.#receive(e.data);
     this.onResult = onResult;
@@ -57,8 +59,13 @@ export class TerrainService {
         waterEnabled: scene.water.enabled,
         palette: t.palette,
         seed: t.mode === 'noise' ? t.noise.seed : 0,
+        textureSize: this.textureSize ?? undefined,
       },
     });
+  }
+
+  dispose() {
+    this.worker.terminate();
   }
 
   #receive(msg) {

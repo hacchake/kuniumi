@@ -10,6 +10,7 @@ import { exportGlb, importGlb } from './io/gltf.js';
 import { exportHeightmap, importHeightmap } from './io/heightmap.js';
 import { blenderScript } from './io/blenderScript.js';
 import { downloadBlob, pickFile, safeName, extOf } from './io/files.js';
+import { encodeRadianceHDR } from './core/tonemap.js';
 
 const AUTOSAVE_KEY = 'kuniumi.autosave.v1';
 
@@ -288,5 +289,82 @@ window.addEventListener('drop', async (e) => {
   }
 });
 
+// ---- 一枚絵（パストレース）----
+// 重い描画器は使うときだけ読み込む（WebGPU・パストレーサ・ノイズ除去の読み込みを起動時に待たせない）
+const stillEl = document.getElementById('still');
+const stillStatus = document.getElementById('still-status');
+const stillInfo = document.getElementById('still-info');
+const stillBar = document.getElementById('still-progress');
+const stillView = document.getElementById('still-view');
+const stillActions = document.getElementById('still-actions');
+const stillClose = document.getElementById('still-close');
+let stillJob = null;
+let stillResult = null;
+
+const fmtSec = (t) => (t >= 60 ? `${Math.floor(t / 60)}分${Math.round(t % 60)}秒` : `${Math.round(t)}秒`);
+
+async function renderStill() {
+  if (stillJob) return;
+  selection.set('selected', null);
+  stillEl.hidden = false;
+  stillActions.hidden = true;
+  stillClose.textContent = '中止';
+  stillBar.style.width = '0%';
+  stillInfo.textContent = '';
+  stillStatus.textContent = '描画器を読み込んでいます…';
+  const canvas = document.createElement('canvas');
+  stillView.replaceChildren(canvas);
+  stillResult = null;
+  try {
+    const { StillJob } = await import('./render/StillRenderer.js');
+    const s = structuredClone(store.get());
+    stillJob = new StillJob(s, { view }, {
+      canvas,
+      onStatus: (t) => (stillStatus.textContent = t),
+      onProgress: (done, total, info) => {
+        stillBar.style.width = `${(done / total) * 100}%`;
+        stillStatus.textContent = info.denoising ? 'AI でノイズを取り除いています…' : '光を追いかけています…';
+        stillInfo.textContent = `${Math.floor(done)} / ${total} サンプル　経過 ${fmtSec(info.sec)}${info.denoising ? '' : `　残り約 ${fmtSec(info.left)}`}`;
+      },
+    });
+    const r = await stillJob.run();
+    stillResult = { ...r, name: baseName() };
+    const out = document.createElement('canvas');
+    out.width = r.width;
+    out.height = r.height;
+    out.getContext('2d').putImageData(new ImageData(r.rgba, r.width, r.height), 0, 0);
+    stillView.replaceChildren(out);
+    stillResult.canvas = out;
+    stillBar.style.width = '100%';
+    stillStatus.textContent = '描けました';
+    stillInfo.textContent = `${r.width}×${r.height}　${r.samples} サンプル${r.denoised ? '・ノイズ除去' : ''}　${fmtSec(r.traceSec)}`;
+    stillActions.hidden = false;
+  } catch (err) {
+    console.error(err);
+    stillStatus.textContent = `描けませんでした: ${err.message ?? err}`;
+  } finally {
+    stillJob = null;
+    stillClose.textContent = '閉じる';
+  }
+}
+
+document.getElementById('render-still').addEventListener('click', renderStill);
+stillClose.addEventListener('click', () => {
+  if (stillJob) stillJob.cancel();
+  else stillEl.hidden = true;
+});
+stillActions.addEventListener('click', async (e) => {
+  const act = e.target.closest('[data-still]')?.dataset.still;
+  if (!act) return;
+  if (act === 'again') return renderStill();
+  if (!stillResult) return;
+  if (act === 'png') {
+    const blob = await new Promise((r) => stillResult.canvas.toBlob(r, 'image/png'));
+    downloadBlob(blob, `${stillResult.name}.png`);
+  } else if (act === 'hdr') {
+    downloadBlob(encodeRadianceHDR(stillResult.hdr, stillResult.width, stillResult.height), `${stillResult.name}.hdr`);
+  }
+});
+
 // デバッグ・自動検証用
-window.KUNIUMI = { store, view, actions, openAny, selection };
+window.KUNIUMI = { store, view, actions, openAny, selection, renderStill, get stillResult() { return stillResult; } };

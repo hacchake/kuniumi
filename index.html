@@ -12,8 +12,16 @@
   <script type="importmap">
     {
       "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+        "three": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js",
+        "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.webgpu.js",
+        "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.tsl.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/",
+        "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/",
+        "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.9.15/src/index.js",
+        "three-mesh-bvh/webgpu": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.9.15/src/webgpu/index.js",
+        "three-gpu-pathtracer": "https://cdn.jsdelivr.net/npm/three-gpu-pathtracer@0.0.26/src/index.js",
+        "three-gpu-pathtracer/webgpu": "https://cdn.jsdelivr.net/npm/three-gpu-pathtracer@0.0.26/src/webgpu/index.js",
+        "oidn-web": "https://cdn.jsdelivr.net/npm/oidn-web@0.4.0/dist/oidn.js"
       }
     }
   </script>
@@ -31,6 +39,9 @@
         <div class="group">
           <span class="group-label">星のひな形</span>
           <select id="preset"></select>
+        </div>
+        <div class="group">
+          <button id="render-still" class="primary" title="パストレースで実写調の一枚絵を描く（WebGPU）">✦ 一枚絵を描く</button>
         </div>
         <div class="group">
           <span class="group-label">シーン</span>
@@ -75,6 +86,25 @@
       <div id="drop" hidden><div>ここに落とすと読み込みます<small>.json（シーン）／ .glb（モデル）／ .png（ハイトマップ）</small></div></div>
     </main>
     <aside id="panel"></aside>
+  </div>
+  <div id="still" hidden>
+    <div class="still-box" role="dialog" aria-label="一枚絵">
+      <div class="still-head">
+        <span class="still-title">一枚絵</span>
+        <span id="still-status"></span>
+        <button id="still-close" type="button">中止</button>
+      </div>
+      <div class="still-view" id="still-view"></div>
+      <div class="still-bar">
+        <div class="still-progress"><i id="still-progress"></i></div>
+        <span id="still-info"></span>
+      </div>
+      <div class="still-actions" id="still-actions" hidden>
+        <button type="button" data-still="png">PNG を保存</button>
+        <button type="button" data-still="hdr" title="線形 HDR（Radiance .hdr）。合成ソフトでの調整に">HDR を保存</button>
+        <button type="button" data-still="again">もう一度描く</button>
+      </div>
+    </div>
   </div>
   <script type="module" src="src/main.js"></script>
 </body>

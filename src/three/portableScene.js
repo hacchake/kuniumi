@@ -13,6 +13,7 @@ export const disposables = new WeakSet();
 
 // Blender の glTF 読み込みは 683 lm/W で W/m² に換算するので、それを見越した照度にする
 const LUX_PER_UNIT = 683;
+const BLENDER_SUN_SCALE = 0.06;
 
 export function buildPortableScene(scene, { field, res, colorTexture, objectMeshes = [] }) {
   const root = new THREE.Scene();
@@ -22,7 +23,7 @@ export function buildPortableScene(scene, { field, res, colorTexture, objectMesh
   // 地形
   const geo = createTerrainGeometry(res);
   applyHeights(geo, field, res, t);
-  const terrain = new THREE.Mesh(geo, createTerrainMaterial(colorTexture));
+  const terrain = new THREE.Mesh(geo, createTerrainMaterial(colorTexture, t.size));
   terrain.name = NAMES.terrain;
   disposables.add(terrain);
   root.add(terrain);
@@ -57,8 +58,9 @@ export function buildPortableScene(scene, { field, res, colorTexture, objectMesh
   // 太陽：glTF の平行光源はノードの -Z 方向へ光る。向きはノードの回転だけで表す
   // （three の target は書き出さない。子にすると Blender に余計な空オブジェクトが出るため）
   const dir = new THREE.Vector3(...sunDirection(scene.sun.elevation, scene.sun.azimuth));
-  const { color, strength } = sunLight(scene.sun.elevation, scene.sun.intensity);
-  const sun = new THREE.DirectionalLight(new THREE.Color(...color), Math.max(strength, 0.0001) * LUX_PER_UNIT);
+  // 空のモデルの放射照度（真昼で 50 前後）を、Blender でちょうどよい太陽の強さ（真昼で 3 W/m² 前後）に縮める
+  const { color, strength } = sunLight(scene.sun, scene.atmosphere);
+  const sun = new THREE.DirectionalLight(new THREE.Color(...color), Math.max(strength * BLENDER_SUN_SCALE, 0.0001) * LUX_PER_UNIT);
   sun.name = NAMES.sun;
   sun.position.copy(dir).multiplyScalar(t.size);
   sun.lookAt(0, 0, 0);

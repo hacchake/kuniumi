@@ -6,7 +6,7 @@ import { Water } from 'three/addons/objects/Water.js';
 import { touches } from '../core/schema.js';
 import { sunDirection, sunLight, hazeColor } from '../core/sun.js';
 import { TerrainService } from '../three/TerrainService.js';
-import { createTerrainGeometry, applyHeights, createColorTexture, createTerrainMaterial } from '../three/terrainMesh.js';
+import { createTerrainGeometry, applyHeights, createColorTexture, createTerrainMaterial, DETAIL_TILE } from '../three/terrainMesh.js';
 import { createWaterNormals } from '../three/waterNormals.js';
 import { TextureService } from '../three/TextureService.js';
 import { ObjectLayer } from '../three/objectLayer.js';
@@ -25,7 +25,7 @@ export class RealtimeRenderer {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer = renderer;
 
     this.scene = new THREE.Scene();
@@ -69,6 +69,15 @@ export class RealtimeRenderer {
       fog: true,
     });
     this.water.rotation.x = -Math.PI / 2;
+    // Water シェーダは霧をトーンマップの「後」に混ぜる。霧の色は物理的な明るさ（1 を超える）なので、
+    // そのままでは遠くの水面が白く飛ぶ。霧を先に混ぜてから、ほかの物体と同じようにトーンマップする
+    const wfs = this.water.material.fragmentShader;
+    const fogInc = '#include <fog_fragment>';
+    const toneInc = '#include <tonemapping_fragment>';
+    if (wfs.includes(fogInc) && wfs.includes(toneInc)) {
+      this.water.material.fragmentShader = wfs.replace(fogInc, '').replace(toneInc, `${fogInc}\n${toneInc}`);
+      this.water.material.needsUpdate = true;
+    }
     this.scene.add(this.water);
 
     // 地形（高さ場はワーカーから届く）
@@ -85,7 +94,7 @@ export class RealtimeRenderer {
     this.objects = new ObjectLayer(this.scene, this.textureService);
     this.#setupGizmo(canvas);
 
-    this.clock = new THREE.Clock();
+    this.timer = new THREE.Timer();
     this.#resize();
     new ResizeObserver(() => this.#resize()).observe(canvas.parentElement);
 
@@ -230,19 +239,26 @@ export class RealtimeRenderer {
       u.rayleigh.value = a.rayleigh;
       u.mieCoefficient.value = a.mieCoefficient;
       u.mieDirectionalG.value = a.mieDirectionalG;
+      // 雲（r186 の Sky に入った 2D の雲層）。時間は止めておき、静止画と同じ雲にする
+      u.cloudCoverage.value = a.clouds;
+      u.cloudDensity.value = a.cloudDensity;
+      u.cloudScale.value = a.cloudScale;
+      u.cloudElevation.value = a.cloudElevation;
+      u.time.value = 0;
       const dir = new THREE.Vector3(...sunDirection(s.sun.elevation, s.sun.azimuth));
       u.sunPosition.value.copy(dir);
       this.water.material.uniforms.sunDirection.value.copy(dir).normalize();
 
-      const { color, strength } = sunLight(s.sun.elevation, s.sun.intensity);
+      // 太陽光の強さ・色は空の物理モデルから（空の明るさとの釣り合いが静止画と同じになる）
+      const { color, strength } = sunLight(s.sun, a);
       this.sun.color.setRGB(...color);
       this.sun.intensity = strength;
-      this.water.material.uniforms.sunColor.value.setRGB(...color).multiplyScalar(Math.min(1, strength / 2));
+      this.water.material.uniforms.sunColor.value.setRGB(...color).multiplyScalar(Math.min(1, strength / 25));
       this.#placeSun(s);
 
       this.renderer.toneMappingExposure = a.exposure;
       this.scene.environmentIntensity = a.ambient;
-      const hz = hazeColor(s.sun.elevation, a.rayleigh);
+      const hz = hazeColor(s.sun, a);
       this.scene.fog.color.setRGB(...hz);
       this.scene.fog.density = a.haze * 2.2e-4;
       this.envDirty = true;
@@ -282,12 +298,13 @@ export class RealtimeRenderer {
         this.terrain.geometry.dispose();
         this.scene.remove(this.terrain);
       }
-      this.terrain = new THREE.Mesh(createTerrainGeometry(res), createTerrainMaterial(this.colorTexture));
+      this.terrain = new THREE.Mesh(createTerrainGeometry(res), createTerrainMaterial(this.colorTexture, s.terrain.size));
       this.terrain.castShadow = true;
       this.terrain.receiveShadow = true;
       this.scene.add(this.terrain);
     }
     this.terrain.material.map = this.colorTexture;
+    this.terrain.material.normalMap.repeat.setScalar(s.terrain.size / DETAIL_TILE);
     // 計算中に起伏や大きさが変わっていても、最新のシーンで形を合わせる
     applyHeights(this.terrain.geometry, field, res, s.terrain);
     this.#updateShadowCamera(s);
@@ -328,10 +345,14 @@ export class RealtimeRenderer {
 
   #updateEnvironment() {
     // 空を事前フィルタした環境マップにして、地形の環境光に使う
+    // 太陽円盤は平行光源で別に照らすので、環境光からは外す（二重に明るくならないように）
     this.envTarget?.dispose();
+    const disc = this.sky.material.uniforms.showSunDisc;
+    disc.value = 0;
     this.envScene.add(this.sky);
     this.envTarget = this.pmrem.fromScene(this.envScene);
     this.scene.add(this.sky);
+    disc.value = 1;
     this.scene.environment = this.envTarget.texture;
     this.envDirty = false;
   }
@@ -344,8 +365,15 @@ export class RealtimeRenderer {
     this.camera.updateProjectionMatrix();
   }
 
+  // 一枚絵を描いている間は止めて、GPU をパストレーサに譲る
+  set paused(v) {
+    this._paused = v;
+  }
+
   #frame() {
-    const dt = this.clock.getDelta();
+    if (this._paused) return;
+    this.timer.update();
+    const dt = this.timer.getDelta();
     if (this.envDirty) this.#updateEnvironment();
     this.water.material.uniforms.time.value += dt * 0.6;
     this.controls.update();

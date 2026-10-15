@@ -33,11 +33,10 @@ function valueNoise(x, y, seed) {
   return (a + (b - a) * fx) * (1 - fy) + (c + (d - c) * fx) * fy;
 }
 
-export function computeTerrainColors(field, res, opts) {
-  const { size, heightScale, baseHeight, waterLevel, waterEnabled, palette, seed = 0 } = opts;
-  const tex = textureSizeFor(res);
-  const out = new Uint8ClampedArray(tex * tex * 4);
-
+// 1 点の地表の色（線形 RGB）を決める関数を作る。テクスチャを焼くときも、静止画の近景で頂点ごとに塗るときも同じ規則。
+// shade(H: 標高 m, slope: 勾配 tan, wv: 侵食で盛った(+)/削った(−)量, jitter: −0.5..0.5 のゆらぎ, out: [r,g,b])
+export function createTerrainShader(opts) {
+  const { heightScale, baseHeight, waterLevel, waterEnabled, palette } = opts;
   const P = {
     shore: lin(palette.shore),
     low: lin(palette.low),
@@ -45,17 +44,75 @@ export function computeTerrainColors(field, res, opts) {
     rock: lin(palette.rock),
     snow: lin(palette.snow),
   };
+  // 土砂の色：水辺と高地の中間
+  P.soil = P.shore.map((v, i) => (v + P.high[i]) * 0.5);
   const sea = waterEnabled ? waterLevel : baseHeight - 1;
   const top = baseHeight + heightScale;
-  const cell = size / (res - 1);
   const shoreBand = Math.max(4, heightScale * 0.012);
+  const rs = palette.rockSlope;
+  const sl = palette.snowLine;
+  const rockCol = [0, 0, 0];
 
-  const col = [0, 0, 0];
-  const mix = (c, t) => {
-    col[0] += (c[0] - col[0]) * t;
-    col[1] += (c[1] - col[1]) * t;
-    col[2] += (c[2] - col[2]) * t;
+  return function shade(H, slope, wv, jitter, col) {
+    const mix = (c, t) => {
+      col[0] += (c[0] - col[0]) * t;
+      col[1] += (c[1] - col[1]) * t;
+      col[2] += (c[2] - col[2]) * t;
+    };
+    const alt = (H - sea) / Math.max(1, top - sea); // 水面=0, 最高点=1
+    // 低地 → 高地
+    col[0] = P.low[0];
+    col[1] = P.low[1];
+    col[2] = P.low[2];
+    mix(P.high, smooth(0.3, 0.75, alt + jitter * 0.12));
+    const veg = 1 + jitter * 0.5;
+    col[0] *= veg * (1 + jitter * 0.25);
+    col[1] *= veg;
+    col[2] *= veg * (1 - jitter * 0.2);
+    // 侵食の跡：土砂のたまった所は土の色（植物が薄い）、強く削られた谷筋は岩肌
+    if (wv) {
+      mix(P.soil, smooth(0.002, 0.02, wv) * 0.7);
+      mix(P.rock, smooth(0.004, 0.04, -wv) * 0.45);
+    }
+    // 岩肌：明るさにむらと地層の縞を付ける（一様な灰色だと作り物に見える）
+    const strata = Math.sin((H / Math.max(8, heightScale * 0.03) + jitter * 2.5) * Math.PI * 2) * 0.16;
+    const tone = Math.max(0.35, 1 + jitter * 0.9 + strata);
+    rockCol[0] = P.rock[0] * tone * (1 + strata * 0.4);
+    rockCol[1] = P.rock[1] * tone;
+    rockCol[2] = P.rock[2] * tone * (1 - strata * 0.3);
+    mix(rockCol, smooth(rs * 0.7, rs * 1.25, slope + jitter * 0.15));
+    // 雪（急斜面には積もりにくい）
+    mix(P.snow, smooth(sl - 0.04, sl + 0.06, alt + jitter * 0.08) * (1 - smooth(rs * 1.1, rs * 1.9, slope)));
+    // 水際の砂浜と水中
+    if (waterEnabled) {
+      const above = H - sea;
+      mix(P.shore, (1 - smooth(shoreBand * 0.5, shoreBand * 1.6, above + jitter * shoreBand)) * (1 - smooth(0.4, 0.9, slope)));
+      if (above < 0) {
+        const deep = smooth(0, shoreBand * 6, -above);
+        col[0] *= 1 - deep * 0.55;
+        col[1] *= 1 - deep * 0.45;
+        col[2] *= 1 - deep * 0.35;
+      }
+    }
+    // ゆらぎで明るさにも少しムラ
+    const lum = 1 + jitter * 0.18;
+    col[0] = Math.min(1, col[0] * lum);
+    col[1] = Math.min(1, col[1] * lum);
+    col[2] = Math.min(1, col[2] * lum);
+    return col;
   };
+}
+
+export { valueNoise };
+
+// wear: 侵食で盛った(+)・削った(−)量（null なら侵食なし）
+export function computeTerrainColors(field, res, opts, wear = null) {
+  const { size, heightScale, baseHeight, seed = 0 } = opts;
+  const tex = opts.textureSize ?? textureSizeFor(res);
+  const out = new Uint8ClampedArray(tex * tex * 4);
+  const shade = createTerrainShader(opts);
+  const cell = size / (res - 1);
+  const col = [0, 0, 0];
 
   for (let ty = 0; ty < tex; ty++) {
     const gy = (ty / (tex - 1)) * (res - 1);
@@ -71,47 +128,17 @@ export function computeTerrainColors(field, res, opts) {
       const c = field[k + res];
       const d = field[k + res + 1];
       const h01 = (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy;
-      const H = baseHeight + h01 * heightScale;
       // 格子セル内の勾配（双一次面の偏微分）
       const dhx = ((b - a) * (1 - fy) + (d - c) * fy) * heightScale / cell;
       const dhz = ((c - a) * (1 - fx) + (d - b) * fx) * heightScale / cell;
-      const slope = Math.sqrt(dhx * dhx + dhz * dhz);
-
+      const wv = wear ? (wear[k] * (1 - fx) + wear[k + 1] * fx) * (1 - fy) + (wear[k + res] * (1 - fx) + wear[k + res + 1] * fx) * fy : 0;
       // 色のゆらぎ（2段の格子ノイズ）
-      const n1 = valueNoise(tx / 24, ty / 24, seed) - 0.5;
-      const n2 = valueNoise(tx / 5, ty / 5, seed + 7) - 0.5;
-      const jitter = n1 * 0.75 + n2 * 0.25;
-
-      const alt = (H - sea) / Math.max(1, top - sea); // 水面=0, 最高点=1
-      // 低地 → 高地
-      col[0] = P.low[0];
-      col[1] = P.low[1];
-      col[2] = P.low[2];
-      mix(P.high, smooth(0.3, 0.75, alt + jitter * 0.12));
-      // 岩肌
-      const rs = palette.rockSlope;
-      mix(P.rock, smooth(rs * 0.7, rs * 1.25, slope + jitter * 0.15));
-      // 雪（急斜面には積もりにくい）
-      const sl = palette.snowLine;
-      const snow = smooth(sl - 0.04, sl + 0.06, alt + jitter * 0.08) * (1 - smooth(rs * 1.1, rs * 1.9, slope));
-      mix(P.snow, snow);
-      // 水際の砂浜と水中
-      if (waterEnabled) {
-        const above = H - sea;
-        mix(P.shore, (1 - smooth(shoreBand * 0.5, shoreBand * 1.6, above + jitter * shoreBand)) * (1 - smooth(0.4, 0.9, slope)));
-        if (above < 0) {
-          const deep = smooth(0, shoreBand * 6, -above);
-          col[0] *= 1 - deep * 0.55;
-          col[1] *= 1 - deep * 0.45;
-          col[2] *= 1 - deep * 0.35;
-        }
-      }
-      // ゆらぎで明るさにも少しムラ
-      const lum = 1 + jitter * 0.18;
+      const jitter = (valueNoise(tx / 24, ty / 24, seed) - 0.5) * 0.75 + (valueNoise(tx / 5, ty / 5, seed + 7) - 0.5) * 0.25;
+      shade(baseHeight + h01 * heightScale, Math.sqrt(dhx * dhx + dhz * dhz), wv, jitter, col);
       const o = (ty * tex + tx) * 4;
-      out[o] = toSrgb(Math.min(1, col[0] * lum)) * 255;
-      out[o + 1] = toSrgb(Math.min(1, col[1] * lum)) * 255;
-      out[o + 2] = toSrgb(Math.min(1, col[2] * lum)) * 255;
+      out[o] = toSrgb(col[0]) * 255;
+      out[o + 1] = toSrgb(col[1]) * 255;
+      out[o + 2] = toSrgb(col[2]) * 255;
       out[o + 3] = 255;
     }
   }
