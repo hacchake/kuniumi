@@ -7,6 +7,10 @@ import { createTerrainGeometry, applyHeights, createColorTexture, createTerrainM
 import { sunDirection } from '../core/sun.js';
 import { skyParams, renderSkyEquirect } from '../core/skyModel.js';
 import { toneMapToRGBA8 } from '../core/tonemap.js';
+import { sunIrradiance } from '../core/skyModel.js';
+import { hazeColor } from '../core/sun.js';
+import { computeAtmosphere } from './atmospherePass.js';
+import { coniferGeometry, broadleafGeometry, grassGeometry, fillInstances } from '../three/vegetationMeshes.js';
 
 // 高画質の一枚絵モード。リアルタイム表示と同じシーン JSON を、別の描画器（パストレーサ）で解釈する。
 //
@@ -147,8 +151,7 @@ export class StillJob {
     // ---- 4. HDR を読み出して仕上げる ----
     this.ui.onStatus('かすみと光を仕上げています…');
     const hdr = await this.#readHDR(renderer, pt, W, H);
-    const depth = this.#depthPass(s, built, objectMeshes, celestial, camera, W, H);
-    applyAerialPerspective(hdr, depth, s, camera, W, H);
+    this.#applyAtmosphere(hdr, s, built, objectMeshes, celestial, camera, W, H);
     if (st.bloom > 0) applyBloom(hdr, W, H, st.bloom);
     const rgba = toneMapToRGBA8(hdr, W, H, { mode: st.tone, exposure: s.atmosphere.exposure * st.exposure });
     for (const t of built.textures) t.dispose();
@@ -195,6 +198,7 @@ export class StillJob {
         water: s.water,
         view: { position: s.camera.position, target: s.camera.target, fov: s.camera.fov, aspect, height },
         maxTriangles,
+        vegetation: s.vegetation,
       });
     });
   }
@@ -256,13 +260,38 @@ export class StillJob {
       const bgeo = new THREE.PlaneGeometry(span, span, 1, 1);
       bgeo.rotateX(-Math.PI / 2);
       const bed = new THREE.Mesh(bgeo, new THREE.MeshStandardMaterial({ color: 0x1a1612, roughness: 1 }));
-      bed.position.y = Math.min(t.baseHeight, s.water.level) - 30;
+      bed.position.y = Math.min(t.baseHeight, s.water.level) - 3; // 地形の最低点のすぐ下（縁の段差を作らない）
       scene.add(bed);
       this.disposers.push(() => (wgeo.dispose(), wmat.dispose(), bgeo.dispose(), bed.material.dispose()));
     }
 
     // 物体（リアルタイム表示と同じ形と素材）
     for (const m of objectMeshes) scene.add(m);
+
+    // 木と草（同じ形を位置だけ変えて大量に置く）
+    const plants = [];
+    if (terrain.lod?.plants) {
+      const P = terrain.lod.plants;
+      const add = (geo, color, list, opts = {}) => {
+        if (!list.length) return;
+        const mat = new THREE.MeshStandardMaterial({ color, roughness: opts.roughness ?? 0.85, metalness: 0, side: opts.side ?? THREE.FrontSide });
+        const mesh = new THREE.InstancedMesh(geo, mat, list.length / 5);
+        fillInstances(mesh, list, opts.colorVar ?? 0, opts.seed ?? 1);
+        scene.add(mesh);
+        plants.push(mesh);
+        this.disposers.push(() => (geo.dispose(), mat.dispose()));
+      };
+      const con = coniferGeometry(), brd = broadleafGeometry();
+      const trunk = new THREE.Color('#3a2b20');
+      add(con.trunk, trunk, P.conifer);
+      add(con.crown, new THREE.Color('#1b3317'), P.conifer, { colorVar: 0.35, seed: 3 });
+      add(brd.trunk, trunk, P.broadleaf);
+      add(brd.crown, new THREE.Color('#2e4d1f'), P.broadleaf, { colorVar: 0.4, seed: 5 });
+      const grassCol = new THREE.Color(s.terrain.palette.low).lerp(new THREE.Color('#b7b05a'), 0.15);
+      add(grassGeometry(), grassCol, P.grass, { side: THREE.DoubleSide, roughness: 0.7, colorVar: 0.45, seed: 9 });
+      this.stats.trees = (P.conifer.length + P.broadleaf.length) / 5;
+      this.stats.grass = P.grass.length / 5;
+    }
 
     // 空：全天の HDR 画像を光源と背景にする（太陽円盤を含む）
     const dir = sunDirection(s.sun.elevation, s.sun.azimuth);
@@ -279,7 +308,7 @@ export class StillJob {
     scene.background = env;
 
     scene.updateMatrixWorld(true);
-    return { scene, terrainMesh, water, textures, skyP: p };
+    return { scene, terrainMesh, water, plants, textures, skyP: p };
   }
 
   #camera(s, aspect) {
@@ -304,101 +333,41 @@ export class StillJob {
     return out;
   }
 
-  // 各画素の「カメラから最初に当たる面までの距離」。かすみの計算に使う（WebGL で描く）。
-  // 空 = 0、かすみを受けない天体 = -1。行0 = 画像の上にそろえて返す
-  #depthPass(s, built, objectMeshes, celestial, camera, W, H) {
-    const gl = this.view.renderer;
-    const scene = new THREE.Scene();
-    const mk = (flag) =>
-      new ShaderMaterial({
-        side: THREE.DoubleSide,
-        vertexShader: /* glsl */ `
-          varying vec3 vW;
-          void main() {
-            vec4 w = modelMatrix * vec4(position, 1.0);
-            vW = w.xyz;
-            gl_Position = projectionMatrix * viewMatrix * w;
-          }`,
-        fragmentShader: /* glsl */ `
-          varying vec3 vW;
-          void main() { gl_FragColor = vec4(${flag ? '-1.0' : 'distance(vW, cameraPosition)'}, 0.0, 0.0, 1.0); }`,
-      });
-    const solid = mk(false), sky = mk(true);
-    const add = (src, mat) => {
-      const m = new THREE.Mesh(src.geometry, mat);
-      m.matrixAutoUpdate = false;
-      m.matrix.copy(src.matrixWorld);
-      m.matrixWorld.copy(src.matrixWorld);
-      scene.add(m);
-    };
-    add(built.terrainMesh, solid);
-    if (built.water) add(built.water, solid);
-    for (const m of objectMeshes) add(m, celestial.has(m.userData.kuniumiId) ? sky : solid);
-
-    const rt = new WebGLRenderTarget(W, H, { type: THREE.FloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
-    const prev = gl.getRenderTarget();
-    const prevColor = gl.getClearColor(new THREE.Color());
-    const prevAlpha = gl.getClearAlpha();
-    gl.setRenderTarget(rt);
-    gl.setClearColor(0x000000, 0);
-    gl.clear();
-    gl.render(scene, camera);
-    const px = new Float32Array(W * H * 4);
-    gl.readRenderTargetPixels(rt, 0, 0, W, H, px);
-    gl.setRenderTarget(prev);
-    gl.setClearColor(prevColor, prevAlpha);
-    rt.dispose();
-    solid.dispose();
-    sky.dispose();
-    // WebGL の読み出しは下の行から。上から並べ直し、距離だけ取り出す
-    const depth = new Float32Array(W * H);
-    for (let y = 0; y < H; y++) {
-      const src = (H - 1 - y) * W;
-      for (let x = 0; x < W; x++) depth[y * W + x] = px[(src + x) * 4 + 3] > 0.5 ? px[(src + x) * 4] : 0;
+  // 雲の影・立体的な霧（光の筋）を GPU で計算し、パストレースの結果に重ねる
+  #applyAtmosphere(hdr, s, built, objectMeshes, celestial, camera, W, H) {
+    const a = s.atmosphere;
+    const p = built.skyP;
+    const sunE = sunIrradiance(p).map((v) => v * s.sun.intensity);
+    // 空からの光（水平面への放射照度）：全天画像の上半分を積分
+    const LW = 128, LH = 64;
+    const lut = renderSkyEquirect(p, LW, LH, { sunDisc: false, clouds: true, skyScale: a.ambient });
+    let skyE = 0;
+    for (let r = LH / 2; r < LH; r++) {
+      const lat = ((r + 0.5) / LH - 0.5) * Math.PI;
+      const dw = Math.cos(lat) * (Math.PI / LH) * ((2 * Math.PI) / LW);
+      for (let c = 0; c < LW; c++) {
+        const o = (r * LW + c) * 4;
+        skyE += (lut[o] * 0.2126 + lut[o + 1] * 0.7152 + lut[o + 2] * 0.0722) * Math.sin(lat) * dw;
+      }
     }
-    return depth;
-  }
-}
-
-// 空気遠近：遠いものほど、その方向の地平線近くの空の色に溶ける（リアルタイムの霧と同じ濃さの式）
-function applyAerialPerspective(hdr, depth, s, camera, W, H) {
-  const density = s.atmosphere.haze * 2.2e-4;
-  if (density <= 0) return;
-  // かすみの色は「その画素の向き（ただし地平線より少し上）」の空の明るさ。太陽円盤と雲は含めない
-  const p = skyParams(s.atmosphere, sunDirection(s.sun.elevation, s.sun.azimuth));
-  const LW = 256, LH = 128;
-  const lut = renderSkyEquirect(p, LW, LH, { sunDisc: false, clouds: false, skyScale: s.atmosphere.ambient });
-  const e = camera.matrixWorld.elements;
-  const right = [e[0], e[1], e[2]], up = [e[4], e[5], e[6]], fwd = [-e[8], -e[9], -e[10]];
-  const tanH = Math.tan((camera.fov * Math.PI) / 360);
-  const aspect = W / H;
-  for (let y = 0; y < H; y++) {
-    const ny = (1 - ((y + 0.5) / H) * 2) * tanH;
-    for (let x = 0; x < W; x++) {
-      const d = depth[y * W + x];
-      if (d <= 0) continue; // 空・天体はそのまま
-      const k = density * d;
-      const T = Math.exp(-k * k);
-      if (T > 0.999) continue;
-      const nx = (((x + 0.5) / W) * 2 - 1) * tanH * aspect;
-      let dx = fwd[0] + right[0] * nx + up[0] * ny;
-      let dy = fwd[1] + right[1] * nx + up[1] * ny;
-      let dz = fwd[2] + right[2] * nx + up[2] * ny;
-      const len = Math.hypot(dx, dy, dz);
-      dx /= len;
-      dz /= len;
-      dy = Math.max(dy / len, 0.03);
-      const hl = Math.hypot(dx, dz) || 1;
-      // 正距円筒 LUT を引く（行0 = 真下）
-      const lat = Math.asin(Math.min(1, dy));
-      const phi = Math.atan2(dz / hl, dx / hl);
-      const ly = Math.min(LH - 1, Math.max(0, Math.floor((lat / Math.PI + 0.5) * LH)));
-      const lx = Math.min(LW - 1, Math.max(0, Math.floor((phi / (2 * Math.PI) + 0.5) * LW)));
-      const li = (ly * LW + lx) * 4;
-      const o = (y * W + x) * 4;
-      hdr[o] = hdr[o] * T + lut[li] * (1 - T);
-      hdr[o + 1] = hdr[o + 1] * T + lut[li + 1] * (1 - T);
-      hdr[o + 2] = hdr[o + 2] * T + lut[li + 2] * (1 - T);
+    const meshes = [{ object: built.terrainMesh }];
+    if (built.water) meshes.push({ object: built.water, noShadow: true });
+    for (const m of built.plants) meshes.push({ object: m });
+    for (const m of objectMeshes) meshes.push({ object: m, celestial: celestial.has(m.userData.kuniumiId) });
+    const terrainTop = s.terrain.baseHeight + s.terrain.heightScale;
+    const hc = Math.max(camera.position.y + 800, terrainTop + 600, 2200); // 雲の層の高さ
+    const fogBase = s.water.enabled ? s.water.level : s.terrain.baseHeight;
+    const res = computeAtmosphere(this.view.renderer, meshes, camera, W, H, {
+      sunDir: p.sunDir,
+      sunE,
+      skyE,
+      ambient: hazeColor(s.sun, a).map((v) => v * a.ambient * 0.8),
+      fog: { density: a.haze * 1e-4, height: a.fogHeight, base: fogBase, g: a.rays, maxDist: Math.max(40000, s.terrain.size * 5) },
+      clouds: { coverage: a.clouds, density: a.cloudDensity, scale: a.cloudScale, elevation: a.cloudElevation, hc, hrel: hc - camera.position.y },
+    });
+    for (let i = 0, n = W * H; i < n; i++) {
+      const o = i * 4, m = res.surface[i], T = res.inscatter[o + 3];
+      for (let c = 0; c < 3; c++) hdr[o + c] = hdr[o + c] * m * T + res.inscatter[o + c];
     }
   }
 }

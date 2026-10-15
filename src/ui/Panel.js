@@ -51,6 +51,18 @@ const SECTIONS = [
     ],
   },
   {
+    id: 'vegetation',
+    title: '植生',
+    sub: 'Vegetation',
+    fields: [
+      { path: 'vegetation.trees', label: '森の量', min: 0, max: 1, step: 0.01 },
+      { path: 'vegetation.treeHeight', label: '木の高さ', min: 3, max: 60, step: 0.5, unit: 'm' },
+      { path: 'vegetation.conifer', label: '針葉樹の割合', min: 0, max: 1, step: 0.01 },
+      { path: 'vegetation.grass', label: '草（一枚絵）', min: 0, max: 1, step: 0.01 },
+      { path: 'terrain.palette.forest', label: '森の地面の色', type: 'color' },
+    ],
+  },
+  {
     id: 'sun',
     title: '太陽',
     sub: 'Sun',
@@ -77,6 +89,8 @@ const SECTIONS = [
       { path: 'atmosphere.cloudDensity', label: '雲の厚さ', min: 0, max: 1, step: 0.01 },
       { path: 'atmosphere.cloudScale', label: '雲の細かさ', min: 0.00005, max: 0.001, step: 0.00001 },
       { path: 'atmosphere.cloudElevation', label: '雲の高さ', min: 0, max: 1, step: 0.01 },
+      { path: 'atmosphere.fogHeight', label: '霧の厚み', min: 100, max: 4000, step: 10, unit: 'm' },
+      { path: 'atmosphere.rays', label: '光の筋', min: 0, max: 0.9, step: 0.01 },
     ],
   },
   {

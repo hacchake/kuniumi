@@ -222,7 +222,7 @@ export class RealtimeRenderer {
   #apply(s, changed, meta) {
     const has = (p) => touches(changed, p);
 
-    if (has('terrain') || has('water.level') || has('water.enabled')) {
+    if (has('terrain') || has('water.level') || has('water.enabled') || has('vegetation')) {
       this.terrainService.request(s);
       if (this.terrainData && has('terrain.size')) this.#updateShadowCamera(s);
     }

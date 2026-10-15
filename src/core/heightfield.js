@@ -69,6 +69,15 @@ export function createNoiseSampler(params, { refNyquist, extraOctaves = 0 } = {}
   };
 }
 
+// 「外周の沈み」があるとき、正規化した高さに掛ける縁の減衰（四辺の際で 0）。
+// 縁に山がかかったまま正方形で切れると、断崖や水越しの直線の境目になるため
+export function edgeFade(u, v, falloff) {
+  if (!(falloff > 0)) return 1;
+  const e = Math.max(Math.abs(u * 2 - 1), Math.abs(v * 2 - 1));
+  const t = Math.min(1, Math.max(0, (e - 0.78) / 0.22));
+  return 1 - t * t * (3 - 2 * t) * Math.min(1, falloff * 2);
+}
+
 // res×res の格子で生成し、0..1 に正規化して谷の平らさ（指数）を掛ける。
 // 戻り値の min/max は正規化前の範囲（静止画の近景で同じ正規化を再現するのに使う）
 export function generateNoiseFieldWithRange(params, res) {
@@ -84,6 +93,9 @@ export function generateNoiseFieldWithRange(params, res) {
   const { min, max } = normalize(field);
   if (params.valley !== 1) {
     for (let k = 0; k < field.length; k++) field[k] = Math.pow(field[k], params.valley);
+  }
+  if (params.falloff > 0) {
+    for (let j = 0; j < res; j++) for (let i = 0; i < res; i++) field[j * res + i] *= edgeFade(i / (res - 1), j / (res - 1), params.falloff);
   }
   return { field, min, max };
 }

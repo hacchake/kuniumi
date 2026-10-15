@@ -3,6 +3,7 @@
 // リアルタイム表示・高画質書き出し・外部ソフト連携が、同じデータを共有するための「正本」。
 
 import { normalizeObject } from './objects.js';
+import { defaultVegetation } from './vegetation.js';
 
 export const FORMAT = 'kuniumi.scene';
 export const VERSION = 1;
@@ -44,6 +45,7 @@ export function createDefaultScene() {
         high: '#7a6a48',
         rock: '#5e554c',
         snow: '#f2f4f7',
+        forest: '#1f3018', // 森の地面（遠くから見た森の色）
         snowLine: 0.72, // 水面〜最高点のうち、雪が乗り始める割合
         rockSlope: 0.95, // 岩肌が出始める傾斜（勾配 tan）
       },
@@ -72,12 +74,16 @@ export function createDefaultScene() {
       cloudDensity: 0.5, // 雲の厚さ
       cloudScale: 0.0002, // 雲の模様の細かさ（大きいほど細かい）
       cloudElevation: 0.5, // 雲の高さ（見かけ）
+      fogHeight: 900, // 霧が薄くなる高さの目安 (m)。一枚絵の立体的な霧
+      rays: 0.65, // 光の筋の強さ（霧が日光を前へ散らす度合い 0..0.9）
     },
     camera: {
       position: [-5600, 2100, 6400],
       target: [0, 150, 0],
       fov: 50,
     },
+    // 森と草（core/vegetation.js）。一枚絵では木と草を実際に置き、リアルタイム表示では森の色になる
+    vegetation: defaultVegetation(),
     // 球・立方体などの物体（core/objects.js）。追加項目なので version 1 のまま、無ければ空
     objects: [],
     render: {

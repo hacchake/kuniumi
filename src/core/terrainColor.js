@@ -1,4 +1,5 @@
 import { hash2 } from './noise.js';
+import { createVegetationRules } from './vegetation.js';
 
 // 高さ場から地表の色テクスチャ（RGBA, 行0 = 北）を作る。
 // リアルタイム表示と glTF 書き出しで同じ絵を使うため、シェーダではなく CPU で焼く。
@@ -52,8 +53,11 @@ export function createTerrainShader(opts) {
   const rs = palette.rockSlope;
   const sl = palette.snowLine;
   const rockCol = [0, 0, 0];
+  const rules = createVegetationRules(opts);
+  P.forest = lin(palette.forest ?? '#1f3018');
 
-  return function shade(H, slope, wv, jitter, col) {
+  // x, z（世界座標）を渡すと、森の所を森の色にする
+  return function shade(H, slope, wv, jitter, col, x, z) {
     const mix = (c, t) => {
       col[0] += (c[0] - col[0]) * t;
       col[1] += (c[1] - col[1]) * t;
@@ -74,6 +78,8 @@ export function createTerrainShader(opts) {
       mix(P.soil, smooth(0.002, 0.02, wv) * 0.7);
       mix(P.rock, smooth(0.004, 0.04, -wv) * 0.45);
     }
+    // 森：木の密度ぶん、遠くから見た森の色（暗い緑）へ
+    if (x !== undefined) mix(P.forest, rules.forest(H, slope, wv, x, z) * 0.85);
     // 岩肌：明るさにむらと地層の縞を付ける（一様な灰色だと作り物に見える）
     const strata = Math.sin((H / Math.max(8, heightScale * 0.03) + jitter * 2.5) * Math.PI * 2) * 0.16;
     const tone = Math.max(0.35, 1 + jitter * 0.9 + strata);
@@ -134,7 +140,8 @@ export function computeTerrainColors(field, res, opts, wear = null) {
       const wv = wear ? (wear[k] * (1 - fx) + wear[k + 1] * fx) * (1 - fy) + (wear[k + res] * (1 - fx) + wear[k + res + 1] * fx) * fy : 0;
       // 色のゆらぎ（2段の格子ノイズ）
       const jitter = (valueNoise(tx / 24, ty / 24, seed) - 0.5) * 0.75 + (valueNoise(tx / 5, ty / 5, seed + 7) - 0.5) * 0.25;
-      shade(baseHeight + h01 * heightScale, Math.sqrt(dhx * dhx + dhz * dhz), wv, jitter, col);
+      const wx = (tx / (tex - 1) - 0.5) * size, wz = (ty / (tex - 1) - 0.5) * size;
+      shade(baseHeight + h01 * heightScale, Math.sqrt(dhx * dhx + dhz * dhz), wv, jitter, col, wx, wz);
       const o = (ty * tex + tx) * 4;
       out[o] = toSrgb(col[0]) * 255;
       out[o + 1] = toSrgb(col[1]) * 255;

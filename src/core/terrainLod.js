@@ -1,6 +1,7 @@
-import { createNoiseSampler, generateNoiseFieldWithRange, sampleField } from './heightfield.js';
+import { createNoiseSampler, generateNoiseFieldWithRange, sampleField, edgeFade } from './heightfield.js';
 import { applyErosion } from './erosion.js';
 import { createTerrainShader, valueNoise } from './terrainColor.js';
+import { createVegetationRules, placeVegetation } from './vegetation.js';
 
 // 静止画用の地形：カメラに近いほど細かい区画（四分木）に分け、ノイズを直接計算して作る。
 // 格子の地形は遠景には十分だが、近景では 1 マス数 m の多角形が角張って見える。
@@ -14,7 +15,8 @@ const BASE = 513; // 侵食と正規化の基準格子（リアルタイム表�
 
 // view: { position:[x,y,z], target:[x,y,z], fov(度), aspect, height(px) }
 // 戻り値: { positions, normals, colors, uvs, index, tiles, triangles }
-export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000, onProgress } = {}) {
+// vegetation: シーンの植生設定（森の色づけと、木・草の配置に使う）
+export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000, onProgress, vegetation } = {}) {
   const { size, heightScale, baseHeight, noise } = terrain;
 
   // 基準格子：正規化の範囲と侵食の結果を取る
@@ -28,7 +30,7 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
     const u = x / size + 0.5, v = z / size + 0.5;
     const nyq = size / spacing / 3;
     let h = (raw(u, v, nyq) - base.min) / span;
-    h = Math.pow(Math.max(0, h), noise.valley);
+    h = Math.pow(Math.max(0, h), noise.valley) * edgeFade(u, v, noise.falloff);
     if (wear) h += sampleField(wear, BASE, u, v);
     return baseHeight + Math.max(0, h) * heightScale;
   };
@@ -138,6 +140,7 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
     waterLevel: water.level,
     waterEnabled: water.enabled,
     palette: terrain.palette,
+    vegetation,
   });
   const col = [0, 0, 0];
   const G = N + 3; // 法線用に 1 マス外側も計算する
@@ -180,7 +183,7 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
           (valueNoise(x / 9.5, z / 9.5, 18) - 0.5) * 0.22 +
           (valueNoise(x / 1.9, z / 1.9, 25) - 0.5) * 0.12 +
           (valueNoise(x / 0.37, z / 0.37, 32) - 0.5) * 0.06;
-        shade(y, Math.hypot(gx, gz), wearAt(x, z), jitter, col);
+        shade(y, Math.hypot(gx, gz), wearAt(x, z), jitter, col, x, z);
         colors.set(col, vo * 3);
         vo++;
       }
@@ -195,7 +198,24 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
     if (onProgress && ti % 16 === 0) onProgress(ti / tiles.length);
   });
 
-  return { positions, normals, colors, uvs, index, tiles: tiles.length, triangles: io / 3, detail };
+  // ---- 木と草 ----
+  let plants = null;
+  if (vegetation) {
+    const rules = createVegetationRules({ heightScale, baseHeight, waterLevel: water.level, waterEnabled: water.enabled, palette: terrain.palette, vegetation });
+    const cellG = size / (BASE - 1);
+    const gh = (u, v) => sampleField(base.field, BASE, u, v) + (wear ? sampleField(wear, BASE, u, v) : 0);
+    // 粗い格子から高さ・勾配・侵食を引く（候補の間引き用。安い）
+    const sample = (x, z) => {
+      const u = x / size + 0.5, v = z / size + 0.5, e = 1 / (BASE - 1);
+      const h = gh(u, v);
+      const gx = ((gh(u + e, v) - gh(u - e, v)) * heightScale) / (2 * cellG);
+      const gz = ((gh(u, v + e) - gh(u, v - e)) * heightScale) / (2 * cellG);
+      return { h: baseHeight + h * heightScale, slope: Math.hypot(gx, gz), wv: wear ? sampleField(wear, BASE, u, v) : 0 };
+    };
+    plants = placeVegetation(rules, size, sample, (x, z) => heightAt(x, z, 0.5), view);
+  }
+
+  return { positions, normals, colors, uvs, index, tiles: tiles.length, triangles: io / 3, detail, plants };
 }
 
 function norm(v) {
