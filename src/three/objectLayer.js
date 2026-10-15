@@ -70,7 +70,9 @@ function ringGeometry(inner, outer, segs) {
 }
 
 export class ObjectLayer {
-  constructor(parent, textures) {
+  // options.patchMaterial(material): 表示側の追加処理（雲の影など）を素材に差し込む
+  constructor(parent, textures, options = {}) {
+    this.patchMaterial = options.patchMaterial ?? null;
     this.group = new THREE.Group();
     this.group.name = 'Objects';
     parent.add(this.group);
@@ -97,7 +99,9 @@ export class ObjectLayer {
       if (e && e.json === json && e.applied) return;
       if (!e || e.type !== o.type) {
         if (e) this.#remove(o.id);
-        const mesh = new THREE.Mesh(unitGeometry(o.type), new THREE.MeshPhysicalMaterial());
+        const material = new THREE.MeshPhysicalMaterial();
+        this.patchMaterial?.(material);
+        const mesh = new THREE.Mesh(unitGeometry(o.type), material);
         mesh.userData.kuniumiId = o.id;
         this.group.add(mesh);
         e = { mesh, type: o.type };
@@ -159,6 +163,7 @@ export class ObjectLayer {
     mesh.position.fromArray(o.position);
     mesh.rotation.set(o.rotation[0] * D2R, o.rotation[1] * D2R, o.rotation[2] * D2R);
     mesh.scale.fromArray(o.scale);
+    mesh.userData.celestial = o.celestial;
     mesh.castShadow = o.castShadow && !o.celestial;
     mesh.receiveShadow = !o.celestial;
   }
@@ -176,6 +181,8 @@ export class ObjectLayer {
     mat.ior = 1.5;
     mat.side = o.type === 'ring' ? THREE.DoubleSide : THREE.FrontSide;
     mat.fog = !o.celestial;
+    // 天体の印（リアルタイム表示の霧・雲の計算が、この画素を飛ばす）
+    mat.defines = o.celestial ? { KUNIUMI_CELESTIAL: '' } : {};
     mat.emissive.set(m.glow > 0 ? 0xffffff : 0x000000);
     mat.emissiveIntensity = m.glow;
     if (tex) {

@@ -1,85 +1,94 @@
 import * as THREE from 'three';
+import { CLOUD_UNIFORMS_GLSL, CLOUD_FUNCS_GLSL, CLOUD_MARCH_GLSL, FOG_MARCH_GLSL } from './atmosphereGLSL.js';
 
 // 一枚絵の「空気」を GPU（WebGL）で計算する。パストレースの結果に、あとから重ねる。
 //
-//  1. 雲の影：地表の各点から太陽へ向かい、雲の層（空の雲と同じ式）をどれだけ通るかで、日なたの光を減らす
-//  2. 立体的な霧：カメラから各画素へ光線を少しずつ進め、霧が散乱する日光と空の光を足し合わせる。
+//  1. 厚みのある雲：雲の層の中を光線で進み、自分の影・太陽側の縁の明るさ・遠くの雲のかすみを計算する
+//  2. 雲の影：地表の各点から太陽へ向かい、雲の層をどれだけ通るかで、日なたの光を減らす
+//  3. 立体的な霧：カメラから各画素へ光線を進め、霧が散乱する日光と空の光を足す。
 //     途中の点が地形や雲の影に入っていれば日光は届かないので、光の筋（薄明光線）ができる
-//
-// 雲は「カメラから見て空の雲と同じ位置に見える」高さ Hc の層として扱う（Sky シェーダの雲は方向だけで決まるので、
-// カメラの真上から Hrel = Hc − カメラ高度 の層に置けば、見た目がぴったり重なる）。
 
-const CLOUD_GLSL = /* glsl */ `
-  uniform float cloudScale, cloudCoverage, cloudDensity, cloudElevation, cloudHrel, cloudHc;
-  uniform vec3 camPos;
-  vec2 gradient2( vec2 i ) {
-    vec3 p = fract( i.xyx * vec3( 0.1031, 0.1030, 0.0973 ) );
-    p += dot( p, p.yzx + 33.33 );
-    return fract( ( p.xx + p.yz ) * p.zy ) * 2.0 - 1.0;
-  }
-  float gnoise( vec2 p ) {
-    vec2 i = floor( p ); vec2 f = fract( p );
-    vec2 u = f * f * f * ( f * ( f * 6.0 - 15.0 ) + 10.0 );
-    float a = dot( gradient2( i ), f );
-    float b = dot( gradient2( i + vec2( 1.0, 0.0 ) ), f - vec2( 1.0, 0.0 ) );
-    float c = dot( gradient2( i + vec2( 0.0, 1.0 ) ), f - vec2( 0.0, 1.0 ) );
-    float d = dot( gradient2( i + vec2( 1.0, 1.0 ) ), f - vec2( 1.0, 1.0 ) );
-    return mix( mix( a, b, u.x ), mix( c, d, u.x ), u.y ) * 1.6;
-  }
-  float gfbm( vec2 p ) {
-    float r = 0.0; float a = 1.0;
-    for ( int i = 0; i < 4; i ++ ) { r += a * gnoise( p ); a *= 0.5; p = p * 2.0; }
-    return r;
-  }
-  // 点 p から太陽方向 s に進んで雲の層を抜けるときの、日光の透過率
-  float cloudTransmit( vec3 p, vec3 s ) {
-    if ( cloudCoverage <= 0.0 || s.y <= 0.01 || p.y >= cloudHc ) return 1.0;
-    vec3 q = p + s * ( ( cloudHc - p.y ) / s.y );
-    float elevation = mix( 1.0, 0.1, cloudElevation );
-    vec2 uv = ( q.xz - camPos.xz ) / ( cloudHrel * elevation ) * cloudScale;
-    float n = clamp( gfbm( uv * 1000.0 ) * 0.7 + 0.5, 0.0, 1.0 );
-    float region = gnoise( uv * 300.0 ) * 0.37 + 0.5;
-    float cov = clamp( cloudCoverage + ( region - 0.5 ) * 0.6, 0.0, 1.0 );
-    float th = 1.0 - cov;
-    float depth = max( 0.0, n - th );
-    float alpha = 1.0 - exp( depth * cloudDensity * -12.0 );
-    return 1.0 - alpha * 0.9;
-  }
-`;
-
-const SHADOW_GLSL = /* glsl */ `
+// 太陽から見た「一番手前の面までの深さ」の地図（影の判定用）。リアルタイム表示でも使う
+export const SHADOW_GLSL = /* glsl */ `
   uniform sampler2D shadowMap;
   uniform mat4 shadowMatrix; // 世界座標 → 影の地図（0..1）と深さ
   uniform float shadowBias;
   float sunVisible( vec3 p ) {
     vec4 c = shadowMatrix * vec4( p, 1.0 );
     if ( c.x < 0.0 || c.x > 1.0 || c.y < 0.0 || c.y > 1.0 ) return 1.0;
-    float d = texture2D( shadowMap, c.xy ).r;
-    return c.z - shadowBias > d ? 0.0 : 1.0;
+    return c.z - shadowBias > texture2D( shadowMap, c.xy ).r ? 0.0 : 1.0;
   }
 `;
 
-// 光源側から見た「太陽に一番近い面までの深さ」。0..1
-const depthMaterial = (shadowMatrixFn) =>
+const depthMaterial = (lightMatrix) =>
   new THREE.ShaderMaterial({
     side: THREE.DoubleSide,
+    uniforms: { lightMatrix: { value: lightMatrix } },
     vertexShader: /* glsl */ `
       varying float vD;
       uniform mat4 lightMatrix;
       void main() {
-        vec4 w = modelMatrix * vec4( position, 1.0 );
+        mat4 m = modelMatrix;
         #ifdef USE_INSTANCING
-          w = modelMatrix * instanceMatrix * vec4( position, 1.0 );
+          m = modelMatrix * instanceMatrix;
         #endif
-        vec4 c = lightMatrix * w;
-        vD = c.z;
+        vec4 w = m * vec4( position, 1.0 );
+        vD = ( lightMatrix * w ).z;
         gl_Position = projectionMatrix * viewMatrix * w;
       }`,
     fragmentShader: /* glsl */ `
       varying float vD;
       void main() { gl_FragColor = vec4( vD, 0.0, 0.0, 1.0 ); }`,
-    uniforms: { lightMatrix: { value: shadowMatrixFn } },
   });
+
+// 形だけ借りた複製を作る（元の場所・インスタンスの並びはそのまま）
+function proxy(src, mat) {
+  const c = src.isInstancedMesh ? new THREE.InstancedMesh(src.geometry, mat, src.count) : new THREE.Mesh(src.geometry, mat);
+  if (src.isInstancedMesh) c.instanceMatrix = src.instanceMatrix;
+  c.matrixAutoUpdate = false;
+  c.matrix.copy(src.matrixWorld);
+  c.matrixWorld.copy(src.matrixWorld);
+  c.frustumCulled = false;
+  return c;
+}
+
+// 太陽からの影の地図を作る。objects: 影を落とす物（Mesh / InstancedMesh）
+// 戻り値: { texture, matrix, bias, dispose() }
+export function buildSunShadowMap(gl, objects, sunDir, size = 4096) {
+  const sun = new THREE.Vector3(...sunDir).normalize();
+  const box = new THREE.Box3();
+  for (const o of objects) box.expandByObject(o);
+  const center = box.getCenter(new THREE.Vector3());
+  const radius = Math.max(1, box.getSize(new THREE.Vector3()).length() / 2);
+  const cam = new THREE.OrthographicCamera(-radius, radius, radius, -radius, 0.1, radius * 4);
+  cam.position.copy(center).addScaledVector(sun, radius * 2);
+  cam.up.set(0, 1, 0);
+  if (Math.abs(sun.y) > 0.99) cam.up.set(0, 0, -1);
+  cam.lookAt(center);
+  cam.updateMatrixWorld();
+  cam.updateProjectionMatrix();
+  // 世界 → NDC → 0..1
+  const toTex = new THREE.Matrix4().set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
+  const matrix = new THREE.Matrix4().multiplyMatrices(toTex, new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+
+  const rt = new THREE.WebGLRenderTarget(size, size, { type: THREE.FloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
+  const mat = depthMaterial(matrix);
+  const scene = new THREE.Scene();
+  for (const o of objects) scene.add(proxy(o, mat));
+  const prev = gl.getRenderTarget();
+  const prevColor = gl.getClearColor(new THREE.Color());
+  const prevAlpha = gl.getClearAlpha();
+  gl.setRenderTarget(rt);
+  gl.setClearColor(new THREE.Color(2, 0, 0), 1); // 何もない所 = 光源の範囲より遠い
+  gl.clear();
+  gl.render(scene, cam);
+  gl.setRenderTarget(prev);
+  gl.setClearColor(prevColor, prevAlpha);
+  mat.dispose();
+  // 地図 1 画素ぶんの高さの差は影にしない（深さは 0..1 に縮めてある）
+  const bias = ((2 * radius) / size) * 2.5 / (radius * 4);
+  return { texture: rt.texture, matrix, bias, dispose: () => rt.dispose() };
+}
 
 // カメラから見た各画素の「面までの距離」と「面の向き」。空 = 0、かすみを受けない天体 = −1
 const gbufferMaterial = (flag) =>
@@ -106,95 +115,61 @@ const gbufferMaterial = (flag) =>
       }`,
   });
 
+// 雲・霧の uniform（一枚絵・リアルタイム共通の値の組み立て）
+export function cloudFogUniformValues(atm) {
+  return {
+    cloudScale: atm.clouds.scale,
+    cloudCoverage: atm.clouds.coverage,
+    cloudDensity: atm.clouds.density,
+    cloudElevation: atm.clouds.elevation,
+    cloudBase: atm.clouds.base,
+    cloudThick: atm.clouds.thickness,
+    fogDensity: atm.fog.density,
+    fogHeight: atm.fog.height,
+    fogBase: atm.fog.base,
+    fogG: atm.fog.g,
+  };
+}
+
 // meshes: [{ object(Mesh|InstancedMesh), celestial: bool, noShadow: bool（影を落とさない・水面など） }]
-// atm: { sunDir:[x,y,z], sunE:[r,g,b], skyE: number, ambient:[r,g,b](霧に当たる空の光), fog: { density, height, base, g }, clouds: {...} }
-// 戻り値: { surface: Float32Array(W*H)（地表に掛ける雲の影の倍率）, inscatter: Float32Array(W*H*4)（rgb = 霧の光, a = 透過率） }
+// atm: { sunDir, sunE:[r,g,b], skyE, ambient:[r,g,b], fog:{density,height,base,g,maxDist}, clouds:{coverage,density,scale,elevation,base,thickness} }
+// 戻り値: { surface: Float32Array(W*H)（地表に掛ける雲の影の倍率）, inscatter: Float32Array(W*H*4)（rgb = 雲と霧の光, a = 透過率） }
 export function computeAtmosphere(gl, meshes, camera, W, H, atm) {
-  const sun = new THREE.Vector3(...atm.sunDir).normalize();
+  const shadow = buildSunShadowMap(
+    gl,
+    meshes.filter((m) => !m.celestial && !m.noShadow).map((m) => m.object),
+    atm.sunDir,
+  );
 
-  // ---- 影の地図：太陽の方向から正射影で、見えている物の範囲を撮る ----
-  const box = new THREE.Box3();
-  for (const m of meshes) if (!m.celestial && !m.noShadow) box.expandByObject(m.object);
-  const center = box.getCenter(new THREE.Vector3());
-  const radius = box.getSize(new THREE.Vector3()).length() / 2;
-  const lightCam = new THREE.OrthographicCamera(-radius, radius, radius, -radius, 0.1, radius * 4);
-  lightCam.position.copy(center).addScaledVector(sun, radius * 2);
-  lightCam.up.set(0, 1, 0);
-  if (Math.abs(sun.y) > 0.99) lightCam.up.set(0, 0, -1);
-  lightCam.lookAt(center);
-  lightCam.updateMatrixWorld();
-  lightCam.updateProjectionMatrix();
-  // 世界 → NDC → 0..1
-  const toTex = new THREE.Matrix4().set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
-  const shadowMatrix = new THREE.Matrix4().multiplyMatrices(toTex, new THREE.Matrix4().multiplyMatrices(lightCam.projectionMatrix, lightCam.matrixWorldInverse));
-
-  const SM = 4096;
-  const shadowRT = new THREE.WebGLRenderTarget(SM, SM, { type: THREE.FloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
-  const shadowScene = new THREE.Scene();
-  const dMat = depthMaterial(shadowMatrix);
+  // 画素ごとの距離と向き
   const solid = gbufferMaterial(false), sky = gbufferMaterial(true);
   const gScene = new THREE.Scene();
-  for (const m of meshes) {
-    const src = m.object;
-    const mk = (mat) => {
-      const c = src.isInstancedMesh ? new THREE.InstancedMesh(src.geometry, mat, src.count) : new THREE.Mesh(src.geometry, mat);
-      if (src.isInstancedMesh) c.instanceMatrix = src.instanceMatrix;
-      c.matrixAutoUpdate = false;
-      c.matrix.copy(src.matrixWorld);
-      c.matrixWorld.copy(src.matrixWorld);
-      c.frustumCulled = false;
-      return c;
-    };
-    if (!m.celestial && !m.noShadow) shadowScene.add(mk(dMat));
-    gScene.add(mk(m.celestial ? sky : solid));
-  }
-
+  for (const m of meshes) gScene.add(proxy(m.object, m.celestial ? sky : solid));
+  const gRT = new THREE.WebGLRenderTarget(W, H, { type: THREE.FloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
   const prev = gl.getRenderTarget();
   const prevColor = gl.getClearColor(new THREE.Color());
   const prevAlpha = gl.getClearAlpha();
-  gl.setClearColor(0x000000, 0);
-
-  gl.setRenderTarget(shadowRT);
-  gl.setClearColor(new THREE.Color(2, 0, 0), 1); // 何もない所 = 光源の範囲より遠い
-  gl.clear();
-  gl.render(shadowScene, lightCam);
-
-  // 画素ごとの距離と向き
-  const gRT = new THREE.WebGLRenderTarget(W, H, { type: THREE.FloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
   gl.setRenderTarget(gRT);
   gl.setClearColor(0x000000, 0);
   gl.clear();
   gl.render(gScene, camera);
 
-  // ---- 画面全体の計算 ----
-  const texelWorld = (2 * radius) / SM;
   const uniforms = {
     gbuf: { value: gRT.texture },
-    shadowMap: { value: shadowRT.texture },
-    shadowMatrix: { value: shadowMatrix },
-    shadowBias: { value: 0 },
+    shadowMap: { value: shadow.texture },
+    shadowMatrix: { value: shadow.matrix },
+    shadowBias: { value: shadow.bias },
     invProj: { value: camera.projectionMatrixInverse.clone() },
     camWorld: { value: camera.matrixWorld.clone() },
     camPos: { value: camera.position.clone() },
-    sunDir: { value: sun },
+    sunDir: { value: new THREE.Vector3(...atm.sunDir).normalize() },
     sunE: { value: new THREE.Vector3(...atm.sunE) },
     skyE: { value: atm.skyE },
     ambient: { value: new THREE.Vector3(...atm.ambient) },
-    fogDensity: { value: atm.fog.density },
-    fogHeight: { value: atm.fog.height },
-    fogBase: { value: atm.fog.base },
-    fogG: { value: atm.fog.g },
     maxDist: { value: atm.fog.maxDist },
     mode: { value: 0 },
-    cloudScale: { value: atm.clouds.scale },
-    cloudCoverage: { value: atm.clouds.coverage },
-    cloudDensity: { value: atm.clouds.density },
-    cloudElevation: { value: atm.clouds.elevation },
-    cloudHrel: { value: atm.clouds.hrel },
-    cloudHc: { value: atm.clouds.hc },
   };
-  // 影の判定の深さのずれ（光源方向の深さは 0..1 なので、地図 1 画素ぶんの高さの差を許す）
-  uniforms.shadowBias.value = (texelWorld * 2.5) / (radius * 4);
+  for (const [k, v] of Object.entries(cloudFogUniformValues(atm))) uniforms[k] = { value: v };
 
   const quad = new THREE.Mesh(
     new THREE.PlaneGeometry(2, 2),
@@ -208,60 +183,45 @@ export function computeAtmosphere(gl, meshes, camera, W, H, atm) {
         varying vec2 vUv;
         uniform sampler2D gbuf;
         uniform mat4 invProj, camWorld;
-        uniform vec3 sunDir, sunE, ambient;
-        uniform float skyE, fogDensity, fogHeight, fogBase, fogG, maxDist;
+        uniform vec3 camPos, sunDir, sunE, ambient;
+        uniform float skyE, maxDist;
         uniform int mode;
-        ${CLOUD_GLSL}
+        ${CLOUD_UNIFORMS_GLSL}
+        ${CLOUD_FUNCS_GLSL}
         ${SHADOW_GLSL}
+        float lit( vec3 p ) { return sunVisible( p ) * cloudShadow( p, sunDir, 3 ); }
+        ${FOG_MARCH_GLSL}
+        ${CLOUD_MARCH_GLSL}
         float hash( vec2 p ) { return fract( sin( dot( p, vec2( 12.9898, 78.233 ) ) ) * 43758.5453 ); }
-        float hg( float c, float g ) { float g2 = g * g; return ( 1.0 - g2 ) / ( 12.566370614 * pow( 1.0 + g2 - 2.0 * g * c, 1.5 ) ); }
-        float sigma( float y ) { return fogDensity * exp( - max( 0.0, y - fogBase ) / fogHeight ); }
         void main() {
           vec4 g = texture2D( gbuf, vUv );
-          vec4 ndc = vec4( vUv * 2.0 - 1.0, 1.0, 1.0 );
-          vec4 v = invProj * ndc; v /= v.w;
+          vec4 v = invProj * vec4( vUv * 2.0 - 1.0, 1.0, 1.0 ); v /= v.w;
           vec3 dir = normalize( ( camWorld * vec4( v.xyz, 0.0 ) ).xyz );
 
           if ( mode == 1 ) {
             // 地表に掛ける雲の影：日なたの光（直射）の割合だけ、雲の透過率で減らす
-            if ( g.a == 0.0 && g.r == 0.0 || g.r < 0.0 ) { gl_FragColor = vec4( 1.0 ); return; }
+            if ( g.r <= 0.0 ) { gl_FragColor = vec4( 1.0 ); return; }
             vec3 p = camPos + dir * g.r;
             vec3 n = g.gba;
-            float ndl = max( 0.0, dot( n, sunDir ) );
-            float vis = sunVisible( p + n * 0.5 );
-            float direct = dot( sunE, vec3( 0.2126, 0.7152, 0.0722 ) ) * ndl * vis;
-            float skyLight = skyE * ( 0.5 + 0.5 * n.y );
-            float f = direct / max( 1e-4, direct + skyLight );
-            float ct = cloudTransmit( p, sunDir );
-            gl_FragColor = vec4( 1.0 - f * ( 1.0 - ct ) );
+            float direct = dot( sunE, vec3( 0.2126, 0.7152, 0.0722 ) ) * max( 0.0, dot( n, sunDir ) ) * sunVisible( p + n * 0.5 );
+            float f = direct / max( 1e-4, direct + skyE * ( 0.5 + 0.5 * n.y ) );
+            gl_FragColor = vec4( 1.0 - f * ( 1.0 - cloudShadow( p, sunDir, 6 ) ) );
             return;
           }
 
-          // 霧：カメラから面（空なら maxDist）まで光線を進め、散乱光を足す
-          if ( g.r < 0.0 ) { gl_FragColor = vec4( 0.0, 0.0, 0.0, 1.0 ); return; } // 天体は霧を受けない
+          if ( g.r < 0.0 ) { gl_FragColor = vec4( 0.0, 0.0, 0.0, 1.0 ); return; } // 天体は霧も雲も受けない
           float dist = g.r > 0.0 ? g.r : maxDist;
-          const int STEPS = 96;
           float j = hash( gl_FragCoord.xy );
-          vec3 L = vec3( 0.0 );
-          float T = 1.0;
-          float phase = mix( 1.0 / 12.566370614, hg( dot( dir, sunDir ), fogG ), 0.8 );
-          // 近くを細かく、遠くを粗く刻む（距離の 2 乗で配分）
-          float tPrev = 0.0;
-          for ( int i = 1; i <= STEPS; i ++ ) {
-            float k = ( float( i ) - 1.0 + j ) / float( STEPS );
-            float t = dist * k * k;
-            float dt = t - tPrev;
-            tPrev = t;
-            vec3 p = camPos + dir * t;
-            float s = sigma( p.y );
-            if ( s < 1e-9 ) continue;
-            float lit = sunVisible( p ) * cloudTransmit( p, sunDir );
-            vec3 inS = sunE * phase * lit + ambient;
-            float a = exp( - s * dt );
-            L += T * inS * ( 1.0 - a );
-            T *= a;
-          }
-          gl_FragColor = vec4( L, T );
+          // 雲（面より手前の部分だけ）
+          vec4 cl = marchClouds( camPos, dir, g.r > 0.0 ? g.r : 1e9, sunDir, sunE, ambient * 1.4, 96, 6, j );
+          // 遠くの雲ほど空の色に溶ける（大気の厚み）
+          float tc = g.r > 0.0 ? g.r : ( dir.y > 0.01 ? ( cloudBase - camPos.y ) / dir.y : maxDist );
+          float far = 1.0 - exp( - max( 0.0, tc ) / 70000.0 );
+          cl.rgb = mix( cl.rgb, ambient * ( 1.0 - cl.a ), far );
+          // 霧
+          vec4 fg = marchFog( camPos, dir, dist, sunDir, sunE, ambient, 96, j );
+          // 合成：手前の霧 → 雲 → その奥（パストレースの結果）
+          gl_FragColor = vec4( fg.rgb + cl.rgb * fg.a, cl.a * fg.a );
         }`,
     }),
   );
@@ -273,6 +233,7 @@ export function computeAtmosphere(gl, meshes, camera, W, H, atm) {
   const read = (mode) => {
     uniforms.mode.value = mode;
     gl.setRenderTarget(outRT);
+    gl.setClearColor(0x000000, 0);
     gl.clear();
     gl.render(fsScene, fsCam);
     const px = new Float32Array(W * H * 4);
@@ -284,8 +245,8 @@ export function computeAtmosphere(gl, meshes, camera, W, H, atm) {
 
   gl.setRenderTarget(prev);
   gl.setClearColor(prevColor, prevAlpha);
-  for (const t of [shadowRT, gRT, outRT]) t.dispose();
-  dMat.dispose();
+  shadow.dispose();
+  for (const t of [gRT, outRT]) t.dispose();
   solid.dispose();
   sky.dispose();
   quad.geometry.dispose();

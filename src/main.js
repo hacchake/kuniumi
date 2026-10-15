@@ -328,7 +328,7 @@ async function renderStill() {
       },
     });
     const r = await stillJob.run();
-    stillResult = { ...r, name: baseName() };
+    stillResult = { ...r, name: baseName(), stats: stillJob.stats };
     const out = document.createElement('canvas');
     out.width = r.width;
     out.height = r.height;

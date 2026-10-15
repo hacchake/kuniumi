@@ -10,6 +10,9 @@ import { createTerrainGeometry, applyHeights, createColorTexture, createTerrainM
 import { createWaterNormals } from '../three/waterNormals.js';
 import { TextureService } from '../three/TextureService.js';
 import { ObjectLayer } from '../three/objectLayer.js';
+import { RealtimeAtmosphere } from './RealtimeAtmosphere.js';
+import { atmosphereParams } from './atmosphereParams.js';
+import { createCloudUniforms, patchStandardMaterial, patchWaterMaterial } from './cloudShadowPatch.js';
 
 const R2D = 180 / Math.PI;
 
@@ -69,6 +72,10 @@ export class RealtimeRenderer {
       fog: true,
     });
     this.water.rotation.x = -Math.PI / 2;
+    // 雲の影（全素材で共有する uniform）
+    this.cloudUniforms = createCloudUniforms();
+    this.cloudUniforms.cloudSunDir.value = new THREE.Vector3(0, 1, 0);
+    patchWaterMaterial(this.water.material, this.cloudUniforms);
     // Water シェーダは霧をトーンマップの「後」に混ぜる。霧の色は物理的な明るさ（1 を超える）なので、
     // そのままでは遠くの水面が白く飛ぶ。霧を先に混ぜてから、ほかの物体と同じようにトーンマップする
     const wfs = this.water.material.fragmentShader;
@@ -91,7 +98,11 @@ export class RealtimeRenderer {
 
     // 物体（球・立方体など）と、その模様テクスチャ
     this.textureService = new TextureService((key) => this.objects.onTexture(key));
-    this.objects = new ObjectLayer(this.scene, this.textureService);
+    this.objects = new ObjectLayer(this.scene, this.textureService, { patchMaterial: (m) => patchStandardMaterial(m, this.cloudUniforms) });
+
+    // 霧・光の筋・厚みのある雲（画面全体で計算して重ねる）
+    this.atmosphere = new RealtimeAtmosphere(renderer);
+    this.shadowDirty = true;
     this.#setupGizmo(canvas);
 
     this.timer = new THREE.Timer();
@@ -239,12 +250,8 @@ export class RealtimeRenderer {
       u.rayleigh.value = a.rayleigh;
       u.mieCoefficient.value = a.mieCoefficient;
       u.mieDirectionalG.value = a.mieDirectionalG;
-      // 雲（r186 の Sky に入った 2D の雲層）。時間は止めておき、静止画と同じ雲にする
-      u.cloudCoverage.value = a.clouds;
-      u.cloudDensity.value = a.cloudDensity;
-      u.cloudScale.value = a.cloudScale;
-      u.cloudElevation.value = a.cloudElevation;
-      u.time.value = 0;
+      // 雲は厚みのある立体として RealtimeAtmosphere が描くので、Sky の 2D の雲は消しておく
+      u.cloudCoverage.value = 0;
       const dir = new THREE.Vector3(...sunDirection(s.sun.elevation, s.sun.azimuth));
       u.sunPosition.value.copy(dir);
       this.water.material.uniforms.sunDirection.value.copy(dir).normalize();
@@ -260,8 +267,22 @@ export class RealtimeRenderer {
       this.scene.environmentIntensity = a.ambient;
       const hz = hazeColor(s.sun, a);
       this.scene.fog.color.setRGB(...hz);
-      this.scene.fog.density = a.haze * 2.2e-4;
+      // 霧は RealtimeAtmosphere が立体的に計算する（使えないときだけ従来の霧）
+      this.scene.fog.density = this.atmosphere.enabled ? 0 : a.haze * 2.2e-4;
       this.envDirty = true;
+      this.shadowDirty = true;
+    }
+    if (has('sun') || has('atmosphere') || has('water') || has('terrain')) {
+      const atm = atmosphereParams(s);
+      this.atmosphere.setParams(atm);
+      const cu = this.cloudUniforms;
+      cu.cloudSunDir.value.set(...atm.sunDir).normalize();
+      cu.cloudScale.value = atm.clouds.scale;
+      cu.cloudCoverage.value = atm.clouds.coverage;
+      cu.cloudDensity.value = atm.clouds.density;
+      cu.cloudElevation.value = atm.clouds.elevation;
+      cu.cloudBase.value = atm.clouds.base;
+      cu.cloudThick.value = atm.clouds.thickness;
     }
 
     if (has('water')) {
@@ -277,6 +298,7 @@ export class RealtimeRenderer {
     if (has('objects')) {
       this.objects.sync(s.objects);
       this.#attachGizmo();
+      this.shadowDirty = true;
     }
 
     if (has('camera') && meta.source !== 'view') {
@@ -298,7 +320,9 @@ export class RealtimeRenderer {
         this.terrain.geometry.dispose();
         this.scene.remove(this.terrain);
       }
-      this.terrain = new THREE.Mesh(createTerrainGeometry(res), createTerrainMaterial(this.colorTexture, s.terrain.size));
+      const mat = createTerrainMaterial(this.colorTexture, s.terrain.size);
+      patchStandardMaterial(mat, this.cloudUniforms);
+      this.terrain = new THREE.Mesh(createTerrainGeometry(res), mat);
       this.terrain.castShadow = true;
       this.terrain.receiveShadow = true;
       this.scene.add(this.terrain);
@@ -308,6 +332,7 @@ export class RealtimeRenderer {
     // 計算中に起伏や大きさが変わっていても、最新のシーンで形を合わせる
     applyHeights(this.terrain.geometry, field, res, s.terrain);
     this.#updateShadowCamera(s);
+    this.shadowDirty = true;
     this.onStatus(null);
   }
 
@@ -361,6 +386,8 @@ export class RealtimeRenderer {
     const el = this.renderer.domElement.parentElement;
     const w = el.clientWidth, h = el.clientHeight;
     this.renderer.setSize(w, h, false);
+    const db = this.renderer.getDrawingBufferSize(new THREE.Vector2());
+    this.atmosphere.setSize(db.x, db.y);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   }
@@ -377,7 +404,17 @@ export class RealtimeRenderer {
     if (this.envDirty) this.#updateEnvironment();
     this.water.material.uniforms.time.value += dt * 0.6;
     this.controls.update();
-    this.renderer.render(this.scene, this.camera);
+    if (this.atmosphere.enabled) {
+      // 影の地図は、物を動かしている最中は作り直さない（離したら作り直す）
+      if (this.shadowDirty && !this.gizmo.dragging && this.terrain) {
+        const casters = [this.terrain, ...this.objects.meshes.filter((m) => !m.userData.celestial)];
+        this.atmosphere.updateShadow(casters, this.cloudUniforms.cloudSunDir.value.toArray());
+        this.shadowDirty = false;
+      }
+      this.atmosphere.render(this.scene, this.camera);
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
   }
 }
 

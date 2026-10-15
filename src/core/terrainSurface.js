@@ -1,0 +1,77 @@
+import { createNoiseSampler, generateNoiseFieldWithRange, sampleField, edgeFade } from './heightfield.js';
+import { applyErosion } from './erosion.js';
+import { createSimplex2D } from './noise.js';
+
+// 地形の「任意の地点の高さ」を返す部品。一枚絵の細かい地形と、木・草の配置が使う。
+//   heightAt(x, z, spacing): 標高 (m)。spacing (m) より細かい起伏は描かない
+//   wearAt(x, z): 侵食で盛った(+)/削った(−)量
+//   coarse(x, z): { h, slope, wv } 粗い格子から引く安い近似（木の候補の間引き用）
+//
+// ノイズ地形：ノイズを直接計算し、設定より細かいオクターブまで足せる（近景ほど細かい）
+// ハイトマップ地形：画像を滑らかに補間（Catmull-Rom）し、画素より細かい所には小さな起伏を足す
+const BASE = 513; // ノイズ地形の侵食と正規化の基準格子（リアルタイム表示の侵食と同じ）
+
+// heightmapImage: { data: Float32Array(0..1), width, height }（ハイトマップ地形のとき）
+export function createTerrainSurface(terrain, heightmapImage = null) {
+  const { size, heightScale, baseHeight } = terrain;
+  if (terrain.mode === 'heightmap' && heightmapImage) return heightmapSurface(terrain, heightmapImage);
+
+  const noise = terrain.noise;
+  const base = generateNoiseFieldWithRange(noise, BASE);
+  const { wear } = applyErosion(base.field, BASE, noise.erosion ?? 0, noise.seed);
+  const raw = createNoiseSampler(noise, { refNyquist: (BASE - 1) / 3, extraOctaves: 6 });
+  const span = base.max - base.min || 1;
+
+  const heightAt = (x, z, spacing) => {
+    const u = x / size + 0.5, v = z / size + 0.5;
+    const nyq = size / spacing / 3;
+    let h = (raw(u, v, nyq) - base.min) / span;
+    h = Math.pow(Math.max(0, h), noise.valley) * edgeFade(u, v, noise.falloff);
+    if (wear) h += sampleField(wear, BASE, u, v);
+    return baseHeight + Math.max(0, h) * heightScale;
+  };
+  const wearAt = (x, z) => (wear ? sampleField(wear, BASE, x / size + 0.5, z / size + 0.5) : 0);
+  const gh = (u, v) => sampleField(base.field, BASE, u, v) + (wear ? sampleField(wear, BASE, u, v) : 0);
+  return { heightAt, wearAt, coarse: coarseFrom(gh, BASE, terrain, wearAt) };
+}
+
+function heightmapSurface(terrain, img) {
+  const { size, heightScale, baseHeight } = terrain;
+  const { data, width: W, height: H } = img;
+  const px = (i, j) => data[Math.min(H - 1, Math.max(0, j)) * W + Math.min(W - 1, Math.max(0, i))];
+  const cr = (p0, p1, p2, p3, t) => p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)));
+  // 画像を Catmull-Rom で補間（0..1）。画像の上 = 北 = v=0
+  const bicubic = (u, v) => {
+    const x = Math.min(1, Math.max(0, u)) * (W - 1), y = Math.min(1, Math.max(0, v)) * (H - 1);
+    const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j;
+    const row = (jj) => cr(px(i - 1, jj), px(i, jj), px(i + 1, jj), px(i + 2, jj), fx);
+    return cr(row(j - 1), row(j), row(j + 1), row(j + 2), fy);
+  };
+  // 画素より細かい所の小さな起伏（高さは画素の大きさの数 % 程度。近景の平らな多角形を和らげる）
+  const pixelM = size / Math.max(1, Math.max(W, H) - 1);
+  const detail = createSimplex2D(9173);
+  const detailAt = (x, z, spacing) => {
+    let s = 0, amp = pixelM * 0.05, lambda = pixelM * 1.2;
+    for (let o = 0; o < 8 && lambda > spacing * 2; o++) {
+      s += detail(x / lambda + o * 13.1, z / lambda - o * 7.7) * amp;
+      amp *= 0.5;
+      lambda *= 0.5;
+    }
+    return s;
+  };
+  const heightAt = (x, z, spacing) => baseHeight + bicubic(x / size + 0.5, z / size + 0.5) * heightScale + detailAt(x, z, spacing);
+  const wearAt = () => 0;
+  return { heightAt, wearAt, coarse: coarseFrom((u, v) => bicubic(u, v), Math.max(W, H), terrain, wearAt) };
+}
+
+// 粗い格子の近似：高さ・勾配・侵食
+function coarseFrom(gh, res, { size, heightScale, baseHeight }, wearAt) {
+  const cell = size / (res - 1);
+  const e = 1 / (res - 1);
+  return (x, z) => {
+    const u = x / size + 0.5, v = z / size + 0.5;
+    const gx = ((gh(u + e, v) - gh(u - e, v)) * heightScale) / (2 * cell);
+    const gz = ((gh(u, v + e) - gh(u, v - e)) * heightScale) / (2 * cell);
+    return { h: baseHeight + gh(u, v) * heightScale, slope: Math.hypot(gx, gz), wv: wearAt(x, z) };
+  };
+}

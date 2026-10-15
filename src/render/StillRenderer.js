@@ -2,14 +2,12 @@ import * as THREE from 'three/webgpu';
 import { ShaderMaterial, WebGLRenderTarget } from 'three';
 import { WebGPUPathTracer, OIDNDenoiser, TRANSMISSIVE_BACKGROUND_ENVIRONMENT } from 'three-gpu-pathtracer/webgpu';
 import { initUNetFromURL } from 'oidn-web';
-import { TerrainService } from '../three/TerrainService.js';
-import { createTerrainGeometry, applyHeights, createColorTexture, createTerrainMaterial } from '../three/terrainMesh.js';
 import { sunDirection } from '../core/sun.js';
 import { skyParams, renderSkyEquirect } from '../core/skyModel.js';
 import { toneMapToRGBA8 } from '../core/tonemap.js';
-import { sunIrradiance } from '../core/skyModel.js';
-import { hazeColor } from '../core/sun.js';
+import { sunIrradiance, discScaleFor } from '../core/skyModel.js';
 import { computeAtmosphere } from './atmospherePass.js';
+import { atmosphereParams } from './atmosphereParams.js';
 import { coniferGeometry, broadleafGeometry, grassGeometry, fillInstances } from '../three/vegetationMeshes.js';
 
 // 高画質の一枚絵モード。リアルタイム表示と同じシーン JSON を、別の描画器（パストレーサ）で解釈する。
@@ -65,8 +63,12 @@ export class StillJob {
 
     // ---- 1. 地形を作り直す ----
     this.ui.onStatus('大地を細かく作り直しています…');
-    // ノイズ地形は「近いほど細かい」区画で作り直す。ハイトマップは格子を細かくする
-    const terrain = s.terrain.mode === 'noise' ? await this.#lodTerrain(s, W / H, H) : await this.#hiResTerrain(s);
+    // 地形は「近いほど細かい」区画で作り直す（ノイズ地形・ハイトマップ地形とも）
+    const mark = (k) => (this.stats.timings[k] = Math.round(performance.now() - tStart));
+    const tStart = performance.now();
+    this.stats.timings = {};
+    const terrain = await this.#lodTerrain(s, W / H, H);
+    mark('terrain');
     this.#check();
 
     // ---- 2. シーンを組む ----
@@ -75,6 +77,7 @@ export class StillJob {
     const objectMeshes = this.view.objects.exportMeshes();
     const celestial = new Set(s.objects.filter((o) => o.celestial).map((o) => o.id));
     const built = this.#buildScene(s, terrain, objectMeshes);
+    mark('scene');
     const camera = this.#camera(s, W / H);
     this.#check();
 
@@ -90,6 +93,7 @@ export class StillJob {
       : undefined;
     const renderer = new THREE.WebGPURenderer({ canvas: this.ui.canvas, antialias: false, alpha: false, powerPreference: 'high-performance', requiredLimits });
     await renderer.init();
+    mark('gpuInit');
     // GPU 側のエラー（メモリ不足など）は捕まえて止める（放っておくと黙って描けないまま回り続ける）
     renderer.backend.device?.addEventListener('uncapturederror', (e) => {
       this.gpuError ??= e.error?.message ?? String(e.error);
@@ -121,11 +125,13 @@ export class StillJob {
     // 形状の加速構造は同期で作られて画面が固まるので、表示を一度更新してから
     await nextFrame();
     pt.setScene(built.scene, camera);
+    mark('bvh');
     if (this.useMegakernel) pt.useMegakernel(true);
     this.#check();
 
     const t0 = performance.now();
     let counts = { min: 0, avg: 0 };
+    let doneAt = null;
     let frame = 0;
     // 画面の更新（requestAnimationFrame）に合わせると GPU が空回りするので、
     // GPU の処理完了を待ちながら連続で積む（同時に積むのは 2 回分まで）
@@ -135,13 +141,34 @@ export class StillJob {
       if (this.gpuError) throw new Error(`GPU でエラーが出ました（地形の細かさや解像度を下げてください）: ${this.gpuError.split(/\r?\n/)[0]}`);
       pt.renderSample();
       frame++;
+      if (frame === 1) {
+        if (device) await device.queue.onSubmittedWorkDone();
+        mark('firstSample');
+      }
       if (device && frame % 2 === 0) await device.queue.onSubmittedWorkDone();
       if (frame % 16 === 0) {
         counts = await pt.getSampleCountsAsync();
         const sec = (performance.now() - t0) / 1000;
         const left = counts.avg > 0 ? (sec / counts.avg) * Math.max(0, st.samples - counts.avg) : 0;
         this.ui.onProgress(Math.min(counts.avg, st.samples), st.samples, { sec, left, denoising: counts.min >= st.samples });
-        if (counts.min >= st.samples && (!denoiser || denoiser.complete)) break;
+        if (counts.min >= st.samples) {
+          if (doneAt === null) {
+            doneAt = performance.now();
+            // ノイズ除去（oidn-web）は requestAnimationFrame で少しずつ進むので、画面が隠れていると止まる。
+            // 除去の間だけ時間で進む版に差し替える
+            const raf = window.requestAnimationFrame;
+            window.requestAnimationFrame = (cb) => setTimeout(() => cb(performance.now()), 4);
+            this.disposers.push(() => (window.requestAnimationFrame = raf));
+          }
+          if (!denoiser || denoiser.complete) break;
+          // ノイズ除去が 90 秒たっても終わらなければ諦め、除去前の画像で仕上げる
+          if (performance.now() - doneAt > 90000) {
+            pt.setDenoiser(null);
+            denoiser = null;
+            this.stats.denoiseTimeout = true;
+            break;
+          }
+        }
       }
       if (!device || frame % 4 === 0) await new Promise((r) => setTimeout(r, 0)); // 画面の操作に応える隙間
     }
@@ -149,33 +176,15 @@ export class StillJob {
     Object.assign(this.stats, { traceSec, frames: frame, samplesPerSec: counts.samplesPerSecond });
 
     // ---- 4. HDR を読み出して仕上げる ----
+    mark('trace');
     this.ui.onStatus('かすみと光を仕上げています…');
     const hdr = await this.#readHDR(renderer, pt, W, H);
     this.#applyAtmosphere(hdr, s, built, objectMeshes, celestial, camera, W, H);
+    mark('atmosphere');
     if (st.bloom > 0) applyBloom(hdr, W, H, st.bloom);
     const rgba = toneMapToRGBA8(hdr, W, H, { mode: st.tone, exposure: s.atmosphere.exposure * st.exposure });
     for (const t of built.textures) t.dispose();
     return { hdr, rgba, width: W, height: H, samples: st.samples, traceSec, denoised: !!denoiser };
-  }
-
-  // 静止画用の地形（頂点を増やし、地表テクスチャを 4096px に）
-  #hiResTerrain(s) {
-    const res = Math.max(s.terrain.resolution, s.render.still.terrainDetail);
-    return new Promise((resolve, reject) => {
-      const svc = new TerrainService(
-        (r) => {
-          svc.dispose();
-          resolve(r);
-        },
-        (err) => {
-          svc.dispose();
-          reject(new Error(`地形の生成に失敗: ${err}`));
-        },
-        { textureSize: 4096 },
-      );
-      svc.request({ ...s, terrain: { ...s.terrain, resolution: res } });
-      this.disposers.push(() => svc.dispose());
-    });
   }
 
   // カメラから近いほど細かい地形（ワーカーで計算）
@@ -208,27 +217,18 @@ export class StillJob {
     const textures = [];
     const t = s.terrain;
 
-    // 地形
-    let geo, terrainMesh;
-    if (terrain.lod) {
-      const r = terrain.lod;
-      geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.BufferAttribute(r.positions, 3));
-      geo.setAttribute('normal', new THREE.BufferAttribute(r.normals, 3));
-      geo.setAttribute('color', new THREE.BufferAttribute(r.colors, 3));
-      geo.setAttribute('uv', new THREE.BufferAttribute(r.uvs, 2));
-      geo.setIndex(new THREE.BufferAttribute(r.index, 1));
-      geo.computeBoundingBox();
-      geo.computeBoundingSphere();
-      this.stats.terrainTriangles = r.triangles;
-      terrainMesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 }));
-    } else {
-      geo = createTerrainGeometry(terrain.res);
-      applyHeights(geo, terrain.field, terrain.res, t);
-      const map = createColorTexture(terrain.colors, terrain.texSize);
-      textures.push(map);
-      terrainMesh = new THREE.Mesh(geo, createTerrainMaterial(map, t.size));
-    }
+    // 地形（近いほど細かい区画。色は頂点ごと）
+    const r = terrain.lod;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(r.positions, 3));
+    geo.setAttribute('normal', new THREE.BufferAttribute(r.normals, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(r.colors, 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(r.uvs, 2));
+    geo.setIndex(new THREE.BufferAttribute(r.index, 1));
+    geo.computeBoundingBox();
+    geo.computeBoundingSphere();
+    this.stats.terrainTriangles = r.triangles;
+    const terrainMesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 }));
     terrainMesh.name = 'Terrain';
     scene.add(terrainMesh);
     this.disposers.push(() => (geo.dispose(), terrainMesh.material.dispose()));
@@ -297,15 +297,22 @@ export class StillJob {
     const dir = sunDirection(s.sun.elevation, s.sun.azimuth);
     const p = skyParams(s.atmosphere, dir);
     const [ew, eh] = ENV_SIZE;
-    const envData = renderSkyEquirect(p, ew, eh, { skyScale: s.atmosphere.ambient, sunScale: s.sun.intensity });
-    const env = new THREE.DataTexture(envData, ew, eh, THREE.RGBAFormat, THREE.FloatType);
-    env.mapping = THREE.EquirectangularReflectionMapping;
-    env.colorSpace = THREE.NoColorSpace;
-    env.minFilter = env.magFilter = THREE.LinearFilter;
-    env.needsUpdate = true;
-    textures.push(env);
-    scene.environment = env;
-    scene.background = env;
+    // 雲は厚みのある立体として後から描くので、全天画像には入れない
+    // 照明用：パストレーサは環境光を半精度（最大 65504）で持つので、太陽円盤を広げて薄め、総量はそのまま収める。
+    // 背景用：見た目の太陽の大きさは本物のまま（切り詰められても見た目には眩しいだけで差がない）
+    const discScale = discScaleFor(Math.max(...sunIrradiance(p)) * s.sun.intensity);
+    const opts = { skyScale: s.atmosphere.ambient, sunScale: s.sun.intensity, clouds: false };
+    const mkEnv = (data) => {
+      const tex = new THREE.DataTexture(data, ew, eh, THREE.RGBAFormat, THREE.FloatType);
+      tex.mapping = THREE.EquirectangularReflectionMapping;
+      tex.colorSpace = THREE.NoColorSpace;
+      tex.minFilter = tex.magFilter = THREE.LinearFilter;
+      tex.needsUpdate = true;
+      textures.push(tex);
+      return tex;
+    };
+    scene.environment = mkEnv(renderSkyEquirect(p, ew, eh, { ...opts, discScale }));
+    scene.background = discScale > 1 ? mkEnv(renderSkyEquirect(p, ew, eh, opts)) : scene.environment;
 
     scene.updateMatrixWorld(true);
     return { scene, terrainMesh, water, plants, textures, skyP: p };
@@ -337,10 +344,9 @@ export class StillJob {
   #applyAtmosphere(hdr, s, built, objectMeshes, celestial, camera, W, H) {
     const a = s.atmosphere;
     const p = built.skyP;
-    const sunE = sunIrradiance(p).map((v) => v * s.sun.intensity);
     // 空からの光（水平面への放射照度）：全天画像の上半分を積分
     const LW = 128, LH = 64;
-    const lut = renderSkyEquirect(p, LW, LH, { sunDisc: false, clouds: true, skyScale: a.ambient });
+    const lut = renderSkyEquirect(p, LW, LH, { sunDisc: false, clouds: false, skyScale: a.ambient });
     let skyE = 0;
     for (let r = LH / 2; r < LH; r++) {
       const lat = ((r + 0.5) / LH - 0.5) * Math.PI;
@@ -354,17 +360,7 @@ export class StillJob {
     if (built.water) meshes.push({ object: built.water, noShadow: true });
     for (const m of built.plants) meshes.push({ object: m });
     for (const m of objectMeshes) meshes.push({ object: m, celestial: celestial.has(m.userData.kuniumiId) });
-    const terrainTop = s.terrain.baseHeight + s.terrain.heightScale;
-    const hc = Math.max(camera.position.y + 800, terrainTop + 600, 2200); // 雲の層の高さ
-    const fogBase = s.water.enabled ? s.water.level : s.terrain.baseHeight;
-    const res = computeAtmosphere(this.view.renderer, meshes, camera, W, H, {
-      sunDir: p.sunDir,
-      sunE,
-      skyE,
-      ambient: hazeColor(s.sun, a).map((v) => v * a.ambient * 0.8),
-      fog: { density: a.haze * 1e-4, height: a.fogHeight, base: fogBase, g: a.rays, maxDist: Math.max(40000, s.terrain.size * 5) },
-      clouds: { coverage: a.clouds, density: a.cloudDensity, scale: a.cloudScale, elevation: a.cloudElevation, hc, hrel: hc - camera.position.y },
-    });
+    const res = computeAtmosphere(this.view.renderer, meshes, camera, W, H, { ...atmosphereParams(s), skyE });
     for (let i = 0, n = W * H; i < n; i++) {
       const o = i * 4, m = res.surface[i], T = res.inscatter[o + 3];
       for (let c = 0; c < 3; c++) hdr[o + c] = hdr[o + c] * m * T + res.inscatter[o + c];
@@ -427,4 +423,5 @@ function flipRows(data, W, H) {
   }
 }
 
-const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
+// 画面の描き換えの機会を与える（requestAnimationFrame は画面が隠れていると止まるので時間で待つ）
+const nextFrame = () => new Promise((r) => setTimeout(r, 50));

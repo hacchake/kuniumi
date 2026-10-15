@@ -1,9 +1,8 @@
-import { createNoiseSampler, generateNoiseFieldWithRange, sampleField, edgeFade } from './heightfield.js';
-import { applyErosion } from './erosion.js';
+import { createTerrainSurface } from './terrainSurface.js';
 import { createTerrainShader, valueNoise } from './terrainColor.js';
 import { createVegetationRules, placeVegetation } from './vegetation.js';
 
-// 静止画用の地形：カメラに近いほど細かい区画（四分木）に分け、ノイズを直接計算して作る。
+// 静止画用の地形：カメラに近いほど細かい区画（四分木）に分け、地形の高さを直接計算して作る（ノイズ地形・ハイトマップ地形の両方）。
 // 格子の地形は遠景には十分だが、近景では 1 マス数 m の多角形が角張って見える。
 // ノイズは手続き的なので、近くの区画では数十 cm 間隔・設定より細かいオクターブまで描ける。
 //
@@ -11,30 +10,16 @@ import { createVegetationRules, placeVegetation } from './vegetation.js';
 // 色は頂点ごとに塗る（近いほど頂点が細かいので、近景ほど色も細かくなる）。
 
 const N = 64; // 区画 1 枚あたりの分割数
-const BASE = 513; // 侵食と正規化の基準格子（リアルタイム表示の侵食と同じ）
 
 // view: { position:[x,y,z], target:[x,y,z], fov(度), aspect, height(px) }
 // 戻り値: { positions, normals, colors, uvs, index, tiles, triangles }
 // vegetation: シーンの植生設定（森の色づけと、木・草の配置に使う）
-export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000, onProgress, vegetation } = {}) {
-  const { size, heightScale, baseHeight, noise } = terrain;
+// heightmapImage: ハイトマップ地形のときの解釈済み画像 { data, width, height }
+export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000, onProgress, vegetation, heightmapImage = null } = {}) {
+  const { size, heightScale, baseHeight } = terrain;
 
-  // 基準格子：正規化の範囲と侵食の結果を取る
-  const base = generateNoiseFieldWithRange(noise, BASE);
-  const { wear } = applyErosion(base.field, BASE, noise.erosion ?? 0, noise.seed);
-  const raw = createNoiseSampler(noise, { refNyquist: (BASE - 1) / 3, extraOctaves: 6 });
-  const span = base.max - base.min || 1;
-
-  // 1 点の高さ（m）。spacing（m）より細かい起伏は描かない
-  const heightAt = (x, z, spacing) => {
-    const u = x / size + 0.5, v = z / size + 0.5;
-    const nyq = size / spacing / 3;
-    let h = (raw(u, v, nyq) - base.min) / span;
-    h = Math.pow(Math.max(0, h), noise.valley) * edgeFade(u, v, noise.falloff);
-    if (wear) h += sampleField(wear, BASE, u, v);
-    return baseHeight + Math.max(0, h) * heightScale;
-  };
-  const wearAt = (x, z) => (wear ? sampleField(wear, BASE, x / size + 0.5, z / size + 0.5) : 0);
+  const surface = createTerrainSurface(terrain, heightmapImage);
+  const { heightAt, wearAt } = surface;
 
   // ---- 四分木で区画を決める ----
   const C = view.position;
@@ -202,17 +187,7 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
   let plants = null;
   if (vegetation) {
     const rules = createVegetationRules({ heightScale, baseHeight, waterLevel: water.level, waterEnabled: water.enabled, palette: terrain.palette, vegetation });
-    const cellG = size / (BASE - 1);
-    const gh = (u, v) => sampleField(base.field, BASE, u, v) + (wear ? sampleField(wear, BASE, u, v) : 0);
-    // 粗い格子から高さ・勾配・侵食を引く（候補の間引き用。安い）
-    const sample = (x, z) => {
-      const u = x / size + 0.5, v = z / size + 0.5, e = 1 / (BASE - 1);
-      const h = gh(u, v);
-      const gx = ((gh(u + e, v) - gh(u - e, v)) * heightScale) / (2 * cellG);
-      const gz = ((gh(u, v + e) - gh(u, v - e)) * heightScale) / (2 * cellG);
-      return { h: baseHeight + h * heightScale, slope: Math.hypot(gx, gz), wv: wear ? sampleField(wear, BASE, u, v) : 0 };
-    };
-    plants = placeVegetation(rules, size, sample, (x, z) => heightAt(x, z, 0.5), view);
+    plants = placeVegetation(rules, size, surface.coarse, (x, z) => heightAt(x, z, 0.5), view);
   }
 
   return { positions, normals, colors, uvs, index, tiles: tiles.length, triangles: io / 3, detail, plants };

@@ -73,7 +73,9 @@ export function createDefaultScene() {
       clouds: 0.3, // 雲の量（0 = 快晴）
       cloudDensity: 0.5, // 雲の厚さ
       cloudScale: 0.0002, // 雲の模様の細かさ（大きいほど細かい）
-      cloudElevation: 0.5, // 雲の高さ（見かけ）
+      cloudElevation: 0.5, // 雲の模様の広がり方（大きいほど細かく密）
+      cloudAltitude: 2200, // 雲の底の標高 (m)。雲は地図上の決まった位置にある
+      cloudThickness: 900, // 雲の厚み (m)
       fogHeight: 900, // 霧が薄くなる高さの目安 (m)。一枚絵の立体的な霧
       rays: 0.65, // 光の筋の強さ（霧が日光を前へ散らす度合い 0..0.9）
     },
@@ -92,7 +94,7 @@ export function createDefaultScene() {
         width: 1920,
         height: 1080,
         samples: 64, // 1 画素あたりの光線の数（多いほどなめらか・時間がかかる。ノイズ除去があれば 32〜128 で十分）
-        terrainDetail: 1025, // 静止画用に作り直す地形の頂点数/辺（1025 / 2049）
+        terrainDetail: 1025, // 静止画用の地形の細かさ（1025 = 約400万三角形まで / 2049 = 約700万まで）
         denoise: true, // AI ノイズ除去（Intel Open Image Denoise）
         tone: 'agx', // 'agx'（映画調）| 'aces'
         exposure: 1, // リアルタイムの露出に掛ける補正

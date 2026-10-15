@@ -18,7 +18,14 @@ const ONE_OVER_4PI = 0.07957747154594767;
 // 実際の晴天（およそ 5:1）に近づけるため、円盤の明るさをこの倍率で持ち上げる
 export const SUN_BOOST = 4;
 // 円盤の縁のぼかし（clamp((cos−c0)·50000)）を積分した実効立体角
-const SUN_SOLID_ANGLE = 2 * PI * (1 - SUN_COS - 1 / 100000);
+export const SUN_SOLID_ANGLE = 2 * PI * (1 - SUN_COS - 1 / 100000);
+const SUN_RADIUS = Math.acos(SUN_COS);
+
+// 太陽円盤を半径 k 倍に広げ、明るさを 1/k² にして総量を保つときの k。
+// パストレーサは環境光を半精度（最大 65504）で持つので、円盤の明るさがそれを超えないようにする
+export function discScaleFor(maxIrradiance, limit = 50000) {
+  return Math.max(1, Math.sqrt(maxIrradiance / SUN_SOLID_ANGLE / limit));
+}
 
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 const f = Math.fround; // GPU と同じ単精度で雲のハッシュを計算する
@@ -88,7 +95,7 @@ function fbm(x, y) {
 // 方向 dir（単位ベクトル）の空の明るさを out[0..2] に書く
 // opts.sunDisc: 太陽円盤を含めるか / opts.clouds: 雲を含めるか
 export function skyRadiance(p, dir, out, opts = {}) {
-  const { sunDisc = true, clouds = true, sunScale = 1 } = opts;
+  const { sunDisc = true, clouds = true, sunScale = 1, discScale = 1 } = opts;
   const [dx, dy, dz] = dir;
   const sd = p.sunDir;
   const zenith = Math.acos(Math.max(0, dy));
@@ -110,7 +117,10 @@ export function skyRadiance(p, dir, out, opts = {}) {
     Lin[c] = lin;
     L0[c] = 0.1 * Fex[c];
   }
-  const disc = sunDisc ? clamp((cosT - SUN_COS) * 50000, 0, 1) * SUN_BOOST * sunScale : 0;
+  // discScale > 1 のときは円盤を広げて薄める（立体角 ∝ k²、明るさ ∝ 1/k²）
+  const k2 = discScale * discScale;
+  const c0 = discScale === 1 ? SUN_COS : Math.cos(SUN_RADIUS * discScale);
+  const disc = sunDisc ? (clamp(((cosT - c0) * 50000) / k2, 0, 1) * SUN_BOOST * sunScale) / k2 : 0;
   const base = [0, 0.0003, 0.00075];
   for (let c = 0; c < 3; c++) tex[c] = (Lin[c] + L0[c]) * 0.04 + 760 * disc * Math.min(p.sunE * Fex[c], 80) + base[c];
 
@@ -170,7 +180,7 @@ export function renderSkyEquirect(p, width, height, opts = {}) {
   const horizon = [0, 0, 0];
   const SS = 12;
   const skyScale = opts.skyScale ?? 1; // 空の明るさ（環境光）の倍率
-  const nearSun = Math.cos(Math.acos(SUN_COS) + (6 * PI) / height); // 円盤の縁から数画素以内
+  const nearSun = Math.cos(SUN_RADIUS * (opts.discScale ?? 1) + (6 * PI) / height); // 円盤の縁から数画素以内
   for (let r = 0; r < height; r++) {
     const v = (r + 0.5) / height;
     const lat = (v - 0.5) * PI;
