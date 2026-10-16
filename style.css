@@ -15,7 +15,8 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: var(--ink); color: var(--text); overflow: hidden; }
+/* 広い画面ではページ自体は動かさない（clip はフォーカスでの自動スクロールも起こさない） */
+html, body { margin: 0; height: 100%; background: var(--ink); color: var(--text); overflow: hidden; overflow: clip; }
 button, select, input { font: inherit; color: inherit; }
 
 #app {
@@ -161,7 +162,9 @@ button, select, input { font: inherit; color: inherit; }
 .hex { font-size: 10.5px; color: var(--muted); font-family: ui-monospace, monospace; width: 58px; }
 
 /* スイッチ */
-.row-toggle input { position: absolute; opacity: 0; pointer-events: none; }
+/* 見えないチェックボックスは行の中に置く（行の外にあると、押したときにページごとそこへスクロールしてしまう） */
+.row-toggle { position: relative; }
+.row-toggle input { position: absolute; right: 0; top: 50%; width: 34px; height: 18px; margin: -9px 0 0; opacity: 0; pointer-events: none; }
 .switch { width: 34px; height: 18px; border-radius: 9px; background: rgba(255, 255, 255, 0.12); position: relative; cursor: pointer; transition: background 0.15s; }
 .switch::after { content: ''; position: absolute; left: 2px; top: 2px; width: 14px; height: 14px; border-radius: 50%; background: #ddd; transition: left 0.15s; }
 .row-toggle input:checked + .switch { background: var(--sea); }
