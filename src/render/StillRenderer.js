@@ -16,6 +16,62 @@ import { planetRadius } from '../core/schema.js';
 import { curvePoint, DISC_RATIO, DISC_SEG } from '../core/curvature.js';
 import { buildSurroundMesh } from '../core/surroundMesh.js';
 
+// 川・湖の印（PNG）から、粗さの地図（水 = なめらか）と、水の所を暗くした写真を作る（どちらも行 0 = 北、flipY のまま）
+async function waterTextures(maskUrl, photoTex) {
+  const load = (url) =>
+    new Promise((res) => {
+      const img = new Image();
+      img.onload = () => res(img);
+      img.onerror = () => res(null);
+      img.src = url;
+    });
+  const mimg = await load(maskUrl);
+  if (!mimg) return null;
+  const N = mimg.width;
+  const mc = document.createElement('canvas');
+  mc.width = mc.height = N;
+  const mx = mc.getContext('2d', { willReadFrequently: true });
+  mx.drawImage(mimg, 0, 0);
+  const m = mx.getImageData(0, 0, N, N);
+  for (let k = 0; k < m.data.length; k += 4) {
+    const w = m.data[k] / 255;
+    const r = Math.round(255 * (0.95 - 0.89 * w)); // 粗さは G を使う
+    m.data[k] = m.data[k + 1] = m.data[k + 2] = r;
+  }
+  mx.putImageData(m, 0, 0);
+  const rough = new THREE.CanvasTexture(mc);
+  rough.colorSpace = THREE.NoColorSpace;
+  let color = null;
+  const pimg = photoTex?.image;
+  if (pimg) {
+    const P = pimg.width;
+    const pc = document.createElement('canvas');
+    pc.width = pc.height = P;
+    const px = pc.getContext('2d', { willReadFrequently: true });
+    px.drawImage(pimg, 0, 0);
+    const pd = px.getImageData(0, 0, P, P);
+    // 印を写真の大きさに引き伸ばして重ねる
+    const sc = document.createElement('canvas');
+    sc.width = sc.height = P;
+    const sx = sc.getContext('2d', { willReadFrequently: true });
+    sx.drawImage(mimg, 0, 0, P, P);
+    const sd = sx.getImageData(0, 0, P, P).data;
+    for (let k = 0; k < pd.data.length; k += 4) {
+      const w = sd[k] / 255;
+      if (w <= 0) continue;
+      const f = 1 - 0.65 * w;
+      pd.data[k] = pd.data[k] * f + 6 * w;
+      pd.data[k + 1] = pd.data[k + 1] * f + 22 * w;
+      pd.data[k + 2] = pd.data[k + 2] * f + 30 * w;
+    }
+    px.putImageData(pd, 0, 0);
+    color = new THREE.CanvasTexture(pc);
+    color.colorSpace = THREE.SRGBColorSpace;
+    color.anisotropy = 8;
+  }
+  return { rough, color };
+}
+
 // 衛星写真（JPEG の data URL）をテクスチャに。行 0 = 北 = uv の v 1（flipY のまま）
 function loadPhotoTexture(url) {
   return new Promise((resolve) => {
@@ -280,10 +336,20 @@ export class StillJob {
     this.stats.terrainTriangles = r.triangles;
     // 地球から取り込んだ地形の衛星写真は、テクスチャとして貼る（遠くまで写真の細かさで）
     const usePhoto = t.mode === 'heightmap' && t.photo !== false;
-    const innerPhoto = usePhoto && t.heightmap?.photo ? await loadPhotoTexture(t.heightmap.photo) : null;
+    let innerPhoto = usePhoto && t.heightmap?.photo ? await loadPhotoTexture(t.heightmap.photo) : null;
+    // 川・湖（OpenStreetMap の印）：そこだけなめらか（空と岸を映す）にし、写真の色も水らしく暗く
+    const inlandWater = t.mode === 'heightmap' && t.heightmap?.water ? await waterTextures(t.heightmap.water, innerPhoto) : null;
+    if (inlandWater?.color) {
+      innerPhoto?.dispose();
+      innerPhoto = inlandWater.color;
+    }
+    if (inlandWater) this.disposers.push(() => inlandWater.rough.dispose());
     const outerPhoto = usePhoto && t.heightmap?.surround?.photo ? await loadPhotoTexture(t.heightmap.surround.photo) : null;
     for (const tex of [innerPhoto, outerPhoto]) if (tex) this.disposers.push(() => tex.dispose());
-    const terrainMesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, map: innerPhoto }));
+    const terrainMesh = new THREE.Mesh(
+      geo,
+      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: inlandWater ? 1 : 0.95, metalness: 0, map: innerPhoto, roughnessMap: inlandWater?.rough ?? null }),
+    );
     terrainMesh.name = 'Terrain';
     scene.add(terrainMesh);
     this.disposers.push(() => (geo.dispose(), terrainMesh.material.dispose()));
