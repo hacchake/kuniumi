@@ -217,6 +217,7 @@ export class RealtimeRenderer {
       res: this.terrainData.res,
       colorTexture,
       objectMeshes: this.objects.exportMeshes(),
+      buildingMeshes: this.buildings?.exportMeshes() ?? [],
     };
   }
 

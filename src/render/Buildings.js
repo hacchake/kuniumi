@@ -96,6 +96,20 @@ totalEmissiveRadiance *= vGlow;`);
     this.tiles.clear();
   }
 
+  // 書き出し用：建物のメッシュ（平らな地図の世界座標。形は共有、素材は書き出し用のふつうの PBR）
+  exportMeshes() {
+    if (!this.group.visible) return [];
+    this.exportMaterial ??= new THREE.MeshStandardMaterial({ name: 'Buildings', vertexColors: true, roughness: 0.85, metalness: 0 });
+    const out = [];
+    for (const t of this.tiles.values()) {
+      if (!t.mesh?.geometry) continue;
+      const m = new THREE.Mesh(t.mesh.geometry, this.exportMaterial);
+      m.name = 'Buildings';
+      out.push(m);
+    }
+    return out;
+  }
+
   // 夜の窓の明かりの強さ（0 = 昼）
   setNight(k) {
     this.night.value = k;

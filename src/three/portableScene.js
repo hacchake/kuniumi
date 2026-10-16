@@ -19,7 +19,7 @@ export const disposables = new WeakSet();
 const LUX_PER_UNIT = 683;
 const BLENDER_SUN_SCALE = 0.06;
 
-export function buildPortableScene(scene, { field, res, colorTexture, objectMeshes = [] }) {
+export function buildPortableScene(scene, { field, res, colorTexture, objectMeshes = [], buildingMeshes = [] }) {
   const root = new THREE.Scene();
   root.name = scene.meta.name || 'KUNIUMI';
   const t = scene.terrain;
@@ -62,6 +62,8 @@ export function buildPortableScene(scene, { field, res, colorTexture, objectMesh
 
   // 物体（球・立方体など）。形と素材はリアルタイム表示と共有している（書き出し後に捨てない）
   for (const m of objectMeshes) root.add(m);
+  // 建物（地球から取り込んだ景観で取り寄せてあるもの。形はリアルタイム表示と共有）
+  for (const m of buildingMeshes) root.add(m);
 
   // 太陽：glTF の平行光源はノードの -Z 方向へ光る。向きはノードの回転だけで表す
   // （three の target は書き出さない。子にすると Blender に余計な空オブジェクトが出るため）

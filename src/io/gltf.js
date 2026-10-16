@@ -11,7 +11,12 @@ export async function exportGlb(scene, terrainData) {
   const root = buildPortableScene(scene, terrainData);
   // シーン JSON を glTF の scene.extras に入れる（埋め込みハイトマップは重いので除く。高さはメッシュが持つ）
   const settings = structuredClone(scene);
-  if (settings.terrain.heightmap) settings.terrain.heightmap = { ...settings.terrain.heightmap, png: null };
+  // （衛星写真・川の印・夜の明かりも重いので除く。写真は地形の色テクスチャとして glb に入る）
+  const hm = settings.terrain.heightmap;
+  if (hm) {
+    settings.terrain.heightmap = { ...hm, png: null, photo: null, water: null, lights: null };
+    if (hm.surround) settings.terrain.heightmap.surround = { ...hm.surround, png: null, photo: null, lights: null };
+  }
   root.userData = { kuniumi: settings };
   const result = await new GLTFExporter().parseAsync(root, { binary: true });
   root.traverse((o) => {
