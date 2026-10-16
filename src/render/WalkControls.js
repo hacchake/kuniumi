@@ -50,6 +50,7 @@ export class WalkControls {
     this.pitch = Math.asin(THREE.MathUtils.clamp(fwd.y, -1, 1));
     this.mode = mode;
     this.vy = 0;
+    this.flyVel = new THREE.Vector3(); // 飛ぶときの動き（向き×速さの割合）。慣性でなめらかに
     this.keys.clear();
     this.touchKeys.clear();
     this.stick.x = this.stick.y = 0;
@@ -108,7 +109,11 @@ export class WalkControls {
       const iy = (k.has('Space') || k.has('KeyE') ? 1 : 0) - (k.has('KeyC') || k.has('ControlLeft') || k.has('KeyQ') ? 1 : 0);
       dir.y += iy;
       if (dir.lengthSq() > 1) dir.normalize();
-      if (dir.lengthSq() > 0) p.addScaledVector(dir, v * dt);
+      // 慣性：押した向きへ約 0.3 秒でなじみ、離すとすっと止まる（急に止まらない）
+      this.flyVel ??= new THREE.Vector3();
+      this.flyVel.lerp(dir, 1 - Math.exp(-dt / (dir.lengthSq() > 0 ? 0.3 : 0.4)));
+      if (this.flyVel.lengthSq() < 1e-6) this.flyVel.set(0, 0, 0);
+      else p.addScaledVector(this.flyVel, v * dt);
       const floor = this.groundAt(p.x, p.z) + EYE;
       if (p.y < floor) p.y = floor;
     } else {
