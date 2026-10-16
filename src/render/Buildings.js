@@ -51,6 +51,25 @@ float bHash( vec3 p ) { p = fract( p * 0.1031 ); p += dot( p, p.yzx + 33.33 ); r
         );
     };
     this.material.customProgramCacheKey = () => 'buildings-night';
+    // 夜の道の街灯（光る帯。昼は描かない）
+    this.roadMaterial = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffb060, emissiveIntensity: 0, roughness: 1, metalness: 0, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+    patchMaterial?.(this.roadMaterial);
+    const prevR = this.roadMaterial.onBeforeCompile;
+    this.roadMaterial.onBeforeCompile = (sh, r) => {
+      prevR?.call(this.roadMaterial, sh, r);
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', `#include <common>
+attribute float glow;
+varying float vGlow;`)
+        .replace('#include <begin_vertex>', `#include <begin_vertex>
+vGlow = glow;`);
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', `#include <common>
+varying float vGlow;`)
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+totalEmissiveRadiance *= vGlow;`);
+    };
+    this.roadMaterial.customProgramCacheKey = () => 'roads-night';
     this.tiles = new Map(); // "x/y" → { mesh, used, state }
     this.worker = null;
     this.urlTemplate = null;
@@ -70,13 +89,18 @@ float bHash( vec3 p ) { p = fract( p * 0.1031 ); p += dot( p, p.yzx + 33.33 ); r
   }
 
   #clear() {
-    for (const t of this.tiles.values()) if (t.mesh) (this.group.remove(t.mesh), t.mesh.geometry.dispose());
+    for (const t of this.tiles.values()) {
+      if (t.mesh) (this.group.remove(t.mesh), t.mesh.geometry?.dispose());
+      if (t.roads) (this.group.remove(t.roads), t.roads.geometry.dispose());
+    }
     this.tiles.clear();
   }
 
   // 夜の窓の明かりの強さ（0 = 昼）
   setNight(k) {
     this.night.value = k;
+    this.roadMaterial.emissiveIntensity = k * 1.3;
+    for (const t of this.tiles.values()) if (t.roads) t.roads.visible = k > 0.01;
   }
 
   // s: シーン、cam: カメラ（世界座標・平らな地図の上）、groundAt(x, z)
@@ -126,7 +150,8 @@ float bHash( vec3 p ) { p = fract( p * 0.1031 ); p += dot( p, p.yzx + 33.33 ); r
       const list = [...this.tiles.entries()].filter(([, v]) => v.state === 'ready').sort((a, b) => a[1].used - b[1].used);
       for (const [k, v] of list.slice(0, this.tiles.size - MAX_TILES)) {
         this.group.remove(v.mesh);
-        v.mesh.geometry.dispose();
+        v.mesh.geometry?.dispose();
+        if (v.roads) (this.group.remove(v.roads), v.roads.geometry.dispose());
         this.tiles.delete(k);
       }
     }
@@ -184,7 +209,7 @@ float bHash( vec3 p ) { p = fract( p * 0.1031 ); p += dot( p, p.yzx + 33.33 ); r
     const [gk, k] = m.key.split('|');
     const tile = this.tiles.get(k);
     if (gk !== this.geoKey || !tile) return;
-    if (m.error || !m.count) {
+    if (m.error || (!m.count && !m.roads?.length)) {
       tile.state = 'ready';
       tile.mesh = new THREE.Object3D();
       return;
@@ -206,6 +231,20 @@ float bHash( vec3 p ) { p = fract( p * 0.1031 ); p += dot( p, p.yzx + 33.33 ); r
     this.group.add(mesh);
     tile.mesh = mesh;
     tile.state = 'ready';
+    // 夜の道の光の帯（地面から 0.6 m 上。頂点ごとに地面の高さ）
+    if (m.roads?.length) {
+      const rp = m.roads;
+      for (let v = 0; v < rp.length / 3; v++) rp[v * 3 + 1] = tile.groundAt(rp[v * 3], rp[v * 3 + 2]) + 0.6;
+      const rg = new THREE.BufferGeometry();
+      rg.setAttribute('position', new THREE.BufferAttribute(rp, 3));
+      rg.setAttribute('glow', new THREE.BufferAttribute(m.roadGlow, 1));
+      rg.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(rp.length).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+      const roads = new THREE.Mesh(rg, this.roadMaterial);
+      roads.frustumCulled = false;
+      roads.visible = this.night.value > 0.01;
+      this.group.add(roads);
+      tile.roads = roads;
+    }
     // ぶつかる判定用：建物の外形を 50 m の升目に振り分けておく
     const cells = new Map();
     for (let b = 0; b < m.count; b++) {

@@ -9,7 +9,8 @@ self.onmessage = async (e) => {
   try {
     const r = await fetch(url);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const { features, extent } = readLayer(await r.arrayBuffer(), 'building');
+    const buf = await r.arrayBuffer();
+    const { features, extent } = readLayer(buf, 'building');
     const n = 2 ** z;
     const toLocal = ([px, py]) => {
       const gx = (x + px / extent) / n, gy = (y + py / extent) / n;
@@ -78,9 +79,33 @@ self.onmessage = async (e) => {
       }
     }
     ringStart.push(ring.length / 2);
+    // 道（夜の街灯の光の帯）：transportation 層の線。広い道ほど太く明るく
+    const roads = readLayer(buf, 'transportation');
+    const W = { motorway: [14, 1.0], trunk: [12, 0.9], primary: [10, 0.85], secondary: [8, 0.7], tertiary: [7, 0.6], minor: [5, 0.4], service: [3, 0.25] };
+    const rpos = [], rglow = [];
+    for (const f of roads.features) {
+      if (f.type !== 2) continue;
+      const w = W[f.props.class];
+      if (!w) continue;
+      for (const line of f.rings) {
+        const pts = line.map(toLocal);
+        for (let i = 0; i + 1 < pts.length; i++) {
+          const a = pts[i], b = pts[i + 1];
+          const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz);
+          if (l < 0.5) continue;
+          const nx = (-dz / l) * w[0] * 0.5, nz = (dx / l) * w[0] * 0.5;
+          const q = [[a[0] + nx, a[1] + nz], [a[0] - nx, a[1] - nz], [b[0] + nx, b[1] + nz], [b[0] - nx, b[1] - nz]];
+          for (const k of [0, 1, 2, 2, 1, 3]) {
+            rpos.push(q[k][0], 0, q[k][1]);
+            rglow.push(w[1]);
+          }
+        }
+      }
+    }
+    const RP = new Float32Array(rpos), RW = new Float32Array(rglow);
     const P = new Float32Array(pos), C = new Float32Array(col), I = new Uint32Array(ids), M = new Float32Array(centers);
     const RG = new Float32Array(ring), RS = new Uint32Array(ringStart), T = new Float32Array(tops);
-    self.postMessage({ key, positions: P, colors: C, ids: I, centers: M, count: bid, ring: RG, ringStart: RS, tops: T }, [P.buffer, C.buffer, I.buffer, M.buffer, RG.buffer, RS.buffer, T.buffer]);
+    self.postMessage({ key, positions: P, colors: C, ids: I, centers: M, count: bid, ring: RG, ringStart: RS, tops: T, roads: RP, roadGlow: RW }, [P.buffer, C.buffer, I.buffer, M.buffer, RG.buffer, RS.buffer, T.buffer, RP.buffer, RW.buffer]);
   } catch (err) {
     self.postMessage({ key, error: String(err?.message ?? err) });
   }
