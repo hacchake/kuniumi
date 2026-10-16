@@ -248,24 +248,42 @@ async function openHeightmap(file) {
 
 // 経路（GPX）を、地球から取り込んだ地形の上に描く（右上の地図にも水色の線で）
 async function openGpx(file) {
-  const s = store.get();
-  const geo = s.terrain.mode === 'heightmap' ? s.terrain.heightmap?.geo : null;
-  if (!geo) throw new Error(t('経路（GPX）は、地球から取り込んだ地形の上にだけ描けます'));
   const text = await file.text();
   const pts = parseGpx(text);
   if (pts.length < 2) throw new Error(t('GPX に経路の点が見つかりません'));
-  const route = pts.map(({ lat, lon }) => {
+  const s = store.get();
+  let geo = s.terrain.mode === 'heightmap' ? s.terrain.heightmap?.geo : null;
+  const insideOf = (g, size) =>
+    pts.filter(({ lat, lon }) => {
+      const { e, n } = aeqdForward(lat, lon, g.lat, g.lon);
+      return Math.abs(e) <= size / 2 && Math.abs(n) <= size / 2;
+    }).length / pts.length;
+  // その場所の地形がまだ無い（または経路の半分以上が範囲の外）なら、経路のまわりを地球から取り込んでから描く
+  if (!geo || insideOf(geo, s.terrain.size) < 0.5) {
+    const lats = pts.map((p) => p.lat), lons = pts.map((p) => p.lon);
+    const c = { lat: (Math.min(...lats) + Math.max(...lats)) / 2, lon: (Math.min(...lons) + Math.max(...lons)) / 2 };
+    let ext = 0;
+    for (const p of pts) {
+      const { e, n } = aeqdForward(p.lat, p.lon, c.lat, c.lon);
+      ext = Math.max(ext, Math.abs(e), Math.abs(n));
+    }
+    const size = Math.min(80000, Math.max(3000, Math.ceil((ext * 2 * 1.3) / 500) * 500));
+    const name = /<name>\s*([^<]+?)\s*<\/name>/.exec(text)?.[1] ?? file.name.replace(/\.gpx$/i, '');
+    toast(t('経路のまわり（{km} km 四方）を地球から取り込んでいます…', { km: (size / 1000).toFixed(1) }));
+    await geo_dialog_import({ ...c, size }, size > 20000 ? 2049 : 1025, name);
+    geo = store.get().terrain.heightmap?.geo;
+    if (!geo) throw new Error(t('経路のまわりの地形を取り込めませんでした'));
+  }
+  const toXZ = (lat, lon) => {
     const { e, n } = aeqdForward(lat, lon, geo.lat, geo.lon);
     return { x: e, z: -n };
-  });
-  const half = s.terrain.size / 2;
+  };
+  const route = pts.map(({ lat, lon }) => toXZ(lat, lon));
+  const half = store.get().terrain.size / 2;
   const inside = route.filter((p) => Math.abs(p.x) <= half && Math.abs(p.z) <= half).length;
   view.setRoute(route);
   // 地点（山頂・分岐など）は名前つきで景観と地図に
-  const wpts = parseGpxWaypoints(text).map((w) => {
-    const { e, n } = aeqdForward(w.lat, w.lon, geo.lat, geo.lon);
-    return { name: w.name, x: e, z: -n, ele: w.ele };
-  });
+  const wpts = parseGpxWaypoints(text).map((w) => ({ name: w.name, ...toXZ(w.lat, w.lon), ele: w.ele }));
   view.setWaypoints(wpts);
   miniMap.wpts = wpts;
   miniMap.route = route;
@@ -274,6 +292,8 @@ async function openGpx(file) {
   routeProfile.show(view.walking);
   toast(t('経路を描きました（{km} km、{n} 点。範囲の中は {pct}%）', { km: (routeLength(pts) / 1000).toFixed(2), n: pts.length, pct: Math.round((inside / route.length) * 100) }));
 }
+// GPX から呼ぶ取り込み（ダイアログを開かずに）
+const geo_dialog_import = (region, res, name) => geo.importRegion(region, res, name);
 
 async function openAny(file) {
   const ext = extOf(file);
