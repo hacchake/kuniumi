@@ -1,0 +1,815 @@
+import * as THREE from 'three';
+import {
+  GLOBE_R, GLOBE_MAX_ZOOM, GRID, MERC_MAX_LAT, ecef, toLatLon, enu, tileLatLon, tileInfo, tileBounds,
+  behindHorizon, orbitCamera, subsolarPoint, gridAt, locateTile, IMAGERY_MAX_ZOOM, IMAGERY_URL, ancestorXf,
+} from '../core/globe.js';
+import { sunDirection } from '../core/sun.js';
+import { GLOBE_ATMO_GLSL, GLOBE_SURFACE_GLSL } from './globeGLSL.js';
+
+// 地球モード：地球全体を丸ごと描く。
+//   ・地表は標高タイル（Web メルカトル z/x/y）の四分木。近い所ほど細かいズームのタイルに分ける
+//   ・タイルは見えている所の分だけ、その都度取り寄せる（globeTileWorker.js）。届くまでは親のタイルで代える
+//   ・座標は地球中心（ECEF）だが、描くときはカメラを原点にする（タイルの中心 − カメラ を倍精度で求めてから渡す）
+//   ・大気は一回散乱（レイリー + ミー）。空も地表のかすみも同じ式
+const SPLIT = 2.6; // 区画までの距離が一辺の何倍より近ければ細かく分けるか
+const MIN_ZOOM = 2; // いつも少なくともこのズームまでは分ける
+const MAX_TILES = 360; // GPU に置いておくタイルの上限
+const MAX_LOADING = 24;
+const D2R = Math.PI / 180;
+const ATMO_TOP = 100000;
+
+export class GlobeRenderer {
+  constructor(container, { onInfo } = {}) {
+    this.container = container;
+    this.onInfo = onInfo ?? (() => {});
+    const canvas = document.createElement('canvas');
+    canvas.className = 'globe-canvas';
+    container.prepend(canvas);
+    this.canvas = canvas;
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 0.22;
+    this.renderer = renderer;
+    this.scene = new THREE.Scene();
+    this.camera = new THREE.PerspectiveCamera(50, 1, 1, 1e9);
+    this.scene.add(this.camera);
+
+    // 視点：見ている地表の点・そこまでの距離・向き・傾き
+    this.view = { lat: 30, lon: 135, range: 2.2e7, heading: 0, tilt: 0 };
+    this.targetH = 0;
+    this.exag = 1; // 高さの誇張
+    this.sunMode = 'follow'; // 'follow' = 見ている所の時刻はシーンの太陽、'real' = 実際の日時
+    this.sceneSun = { elevation: 40, azimuth: 150 };
+    this.camEcef = [0, 0, GLOBE_R * 3];
+    this.flight = null;
+
+    this.shared = {
+      camC: { value: new THREE.Vector3() },
+      sunDir: { value: new THREE.Vector3(1, 0, 0) },
+      planetR: { value: GLOBE_R },
+      atmoR: { value: GLOBE_R + ATMO_TOP },
+      sunI: { value: 22 },
+      exag: { value: 1 },
+      imgOn: { value: 1 }, // 衛星写真の色を使うか
+    };
+
+    this.tiles = new Map(); // "z/x/y" → タイル
+    this.images = new Map(); // "z/x/y" → 衛星写真 { tex, used }
+    this.imgLoading = 0;
+    this.frameNo = 0;
+    this.loading = 0;
+    this.#setupWorker();
+    this.#setupShaders();
+    this.#setupSky();
+    this.#setupControls();
+    this.#resize();
+    new ResizeObserver(() => this.#resize()).observe(container);
+    // 最初に地球全体の粗いタイル（ズーム 0〜2）を取り寄せておく
+    for (let z = 0; z <= MIN_ZOOM; z++) {
+      const n = 2 ** z;
+      for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) this.#request(this.#tile(z, x, y));
+    }
+  }
+
+  start() {
+    this.running = true;
+    this.renderer.setAnimationLoop(() => this.#frame());
+  }
+
+  stop() {
+    this.running = false;
+    this.renderer.setAnimationLoop(null);
+  }
+
+  // ---- 取り寄せ ----
+  #setupWorker() {
+    this.worker = new Worker(new URL('../workers/globeTileWorker.js', import.meta.url), { type: 'module' });
+    this.worker.onmessage = (e) => {
+      const m = e.data;
+      const t = this.tiles.get(m.key);
+      if (t?.state === 'loading') this.loading--;
+      if (!t) return;
+      if (m.cancelled) return (t.state = 'none');
+      if (m.error) {
+        t.state = 'failed';
+        t.retry = performance.now() + 15000;
+        return;
+      }
+      t.grid = m.grid;
+      t.min = m.min;
+      t.max = m.max;
+      const tex = new THREE.DataTexture(m.tex, 256, 256, THREE.RGBAFormat, THREE.HalfFloatType);
+      tex.magFilter = THREE.LinearFilter;
+      // 半精度の縮小版（ミップマップ）は GPU によって作れないことがあるので使わない（タイルは見かけの大きさに合わせて選ぶので粗くならない）
+      tex.minFilter = THREE.LinearFilter;
+      tex.generateMipmaps = false;
+      tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+      tex.needsUpdate = true;
+      t.tex = tex;
+      t.state = 'ready';
+      t.bounds = null; // 標高の幅が分かったので包む球を作り直す
+      if (t.z === MIN_ZOOM) this.capsDirty = true;
+    };
+  }
+
+  #tile(z, x, y) {
+    const key = `${z}/${x}/${y}`;
+    let t = this.tiles.get(key);
+    if (!t) {
+      t = { key, z, x, y, state: 'none', used: 0, info: tileInfo(z, x, y) };
+      this.tiles.set(key, t);
+    }
+    return t;
+  }
+
+  #request(t) {
+    if (t.state === 'failed' && performance.now() > t.retry) t.state = 'none';
+    if (t.state !== 'none' || this.loading >= MAX_LOADING) return;
+    t.state = 'loading';
+    this.loading++;
+    this.worker.postMessage({ key: t.key, z: t.z, x: t.x, y: t.y });
+  }
+
+  #boundsOf(t) {
+    if (!t.bounds) {
+      // 標高の幅：自分のが無ければ親の（無ければ地球全体の）
+      let lo = -11000, hi = 9000;
+      for (let p = t, z = t.z, x = t.x, y = t.y; p; ) {
+        if (p.state === 'ready') {
+          lo = Math.max(0, p.min) * this.exag;
+          hi = Math.max(0, p.max) * this.exag;
+          break;
+        }
+        if (z === 0) break;
+        z--, x >>= 1, y >>= 1;
+        p = this.tiles.get(`${z}/${x}/${y}`);
+      }
+      t.bounds = tileBounds(t.z, t.x, t.y, lo - 50, hi + 50);
+      t.boundsExag = this.exag;
+    }
+    return t.bounds;
+  }
+
+  // ---- 描き方 ----
+  #setupShaders() {
+    const vert = /* glsl */ `
+      varying vec2 vUv;
+      varying vec3 vRel;
+      #ifdef CAP
+      attribute float aH;
+      varying float vH;
+      #endif
+      #include <common>
+      #include <logdepthbuf_pars_vertex>
+      void main() {
+        vUv = uv;
+        #ifdef CAP
+        vH = aH;
+        #endif
+        vec4 wp = modelMatrix * vec4( position, 1.0 );
+        vRel = wp.xyz; // カメラが原点
+        gl_Position = projectionMatrix * viewMatrix * wp;
+        #include <logdepthbuf_vertex>
+      }`;
+    const frag = /* glsl */ `
+      uniform sampler2D tex, img;
+      uniform vec3 imgXf; // 祖先の写真の中の位置（ox, oy, 倍率）
+      uniform float exag, imgOn, imgHas;
+      varying vec2 vUv;
+      varying vec3 vRel;
+      #ifdef CAP
+      varying float vH;
+      #endif
+      #include <common>
+      #include <logdepthbuf_pars_fragment>
+      ${GLOBE_ATMO_GLSL}
+      ${GLOBE_SURFACE_GLSL}
+      void main() {
+        #include <logdepthbuf_fragment>
+        float dist = length( vRel );
+        vec3 vd = vRel / dist;
+        vec3 wp = camC + vRel;
+        #ifdef CAP
+        vec3 col = gShade( wp, vd, vH, vec2( 0.0 ), 1.0, vec4( 0.0 ) );
+        #else
+        vec4 d = texture2D( tex, vUv );
+        vec4 im = vec4( 0.0 );
+        if ( imgOn > 0.5 && imgHas > 0.5 ) im = vec4( texture2D( img, imgXf.xy + vUv * imgXf.z ).rgb, 1.0 );
+        vec3 col = gShade( wp, vd, d.b, d.rg * exag, 0.0, im );
+        #endif
+        vec3 ins, tr;
+        gAtmosphere( camC, vd, dist, 8, ins, tr );
+        gl_FragColor = vec4( col * tr + ins, 1.0 );
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`;
+    this.vert = vert;
+    this.frag = frag;
+    this.capMaterial = new THREE.ShaderMaterial({ uniforms: { ...this.shared, tex: { value: null } }, vertexShader: vert, fragmentShader: frag, defines: { CAP: 1 } });
+
+    // 格子の並び（全タイル共通）：33 × 33 の頂点 + 縁の「すそ」（隙間を隠す）
+    const n = GRID + 1;
+    const uv = [];
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) uv.push(i / GRID, j / GRID);
+    const edges = [];
+    for (let i = 0; i < n; i++) edges.push([i, 0], [i, GRID]);
+    for (let j = 1; j < GRID; j++) edges.push([0, j], [GRID, j]);
+    this.skirt = edges;
+    for (const [i, j] of edges) uv.push(i / GRID, j / GRID);
+    const idx = [];
+    for (let j = 0; j < GRID; j++) {
+      for (let i = 0; i < GRID; i++) {
+        const a = j * n + i, b = a + 1, c = a + n, d = c + 1;
+        idx.push(a, c, b, b, c, d);
+      }
+    }
+    // すその帯：縁の頂点 → その真下のすそ頂点
+    const skirtOf = new Map(edges.map(([i, j], k) => [j * n + i, n * n + k]));
+    const ring = (list) => {
+      for (let k = 0; k < list.length - 1; k++) {
+        const a = list[k], b = list[k + 1];
+        const sa = skirtOf.get(a), sb = skirtOf.get(b);
+        idx.push(a, sa, b, b, sa, sb, a, b, sa, b, sb, sa); // 両面
+      }
+    };
+    ring([...Array(n).keys()].map((i) => i)); // 北の縁
+    ring([...Array(n).keys()].map((i) => GRID * n + i)); // 南の縁
+    ring([...Array(n).keys()].map((j) => j * n)); // 西の縁
+    ring([...Array(n).keys()].map((j) => j * n + GRID)); // 東の縁
+    this.uvAttr = new THREE.Float32BufferAttribute(uv, 2);
+    this.indexArr = new Uint16Array(idx);
+  }
+
+  #buildMesh(t) {
+    const n = GRID + 1;
+    const info = t.info;
+    const c = ecef(tileLatLon(t.z, t.x, t.y, 0.5, 0.5).lat, info.midLon, GLOBE_R);
+    t.center = c;
+    const pos = new Float32Array((n * n + this.skirt.length) * 3);
+    const p = [0, 0, 0];
+    const lat = new Float64Array(n);
+    for (let j = 0; j < n; j++) lat[j] = tileLatLon(t.z, t.x, t.y, 0, j / GRID).lat;
+    const put = (k, la, lo, h) => {
+      ecef(la, lo, GLOBE_R + h, p);
+      pos[k * 3] = p[0] - c[0];
+      pos[k * 3 + 1] = p[1] - c[1];
+      pos[k * 3 + 2] = p[2] - c[2];
+    };
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        const lo = info.west + ((info.east - info.west) * i) / GRID;
+        put(j * n + i, lat[j], lo, Math.max(0, t.grid[j * n + i]) * this.exag);
+      }
+    }
+    // すそは一辺の 1.5%（＋ 30 m）だけ下げる
+    const drop = info.width * 0.015 + 30;
+    this.skirt.forEach(([i, j], k) => {
+      const lo = info.west + ((info.east - info.west) * i) / GRID;
+      put(n * n + k, lat[j], lo, Math.max(0, t.grid[j * n + i]) * this.exag - drop);
+    });
+    if (t.mesh) {
+      t.mesh.geometry.attributes.position.array.set(pos);
+      t.mesh.geometry.attributes.position.needsUpdate = true;
+      t.mesh.geometry.computeBoundingSphere();
+    } else {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      g.setAttribute('uv', this.uvAttr);
+      g.setIndex(new THREE.BufferAttribute(this.indexArr, 1));
+      const m = new THREE.ShaderMaterial({ uniforms: { ...this.shared, tex: { value: t.tex }, img: { value: null }, imgXf: { value: new THREE.Vector3(0, 0, 1) }, imgHas: { value: 0 } }, vertexShader: this.vert, fragmentShader: this.frag });
+      t.mesh = new THREE.Mesh(g, m);
+      t.mesh.frustumCulled = false; // 自分で間引く
+      t.mesh.matrixAutoUpdate = true;
+    }
+    t.meshExag = this.exag;
+  }
+
+  // ---- 衛星写真（地表の色） ----
+  // タイルのズームが写真の上限より細かいときは、祖先の写真の一部を引き伸ばして使う。
+  // まだ届いていなければ、届いているいちばん細かい祖先の写真で代える
+  #bindImagery(t) {
+    const u = t.mesh.material.uniforms;
+    if (!this.shared.imgOn.value) return;
+    const want = Math.min(t.z, IMAGERY_MAX_ZOOM);
+    for (let a = want; a >= 0; a--) {
+      const xf = ancestorXf(t.z, t.x, t.y, a);
+      const key = `${a}/${xf.x}/${xf.y}`;
+      const im = this.images.get(key);
+      if (a === want && !im) this.#requestImage(a, xf.x, xf.y, key);
+      if (im?.tex) {
+        im.used = this.frameNo;
+        u.img.value = im.tex;
+        u.imgXf.value.set(xf.ox, xf.oy, xf.scale);
+        u.imgHas.value = 1;
+        return;
+      }
+    }
+    u.imgHas.value = 0;
+  }
+
+  #requestImage(z, x, y, key) {
+    if (this.imgLoading >= 8) return;
+    const im = { used: this.frameNo, tex: null };
+    this.images.set(key, im);
+    this.imgLoading++;
+    fetch(IMAGERY_URL.replace('{z}', z).replace('{x}', x).replace('{y}', y))
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(r.status))))
+      .then((b) => createImageBitmap(b, { imageOrientation: 'none' }))
+      .then((bmp) => {
+        const tex = new THREE.Texture(bmp);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.flipY = false; // 行 0 = 北（uv の v = 0）
+        tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+        tex.anisotropy = 4;
+        tex.needsUpdate = true;
+        im.tex = tex;
+      })
+      .catch(() => setTimeout(() => this.images.delete(key), 20000)) // しばらくしてからまた試す
+      .finally(() => this.imgLoading--);
+    // 使われなくなった写真を片付ける
+    if (this.images.size > 400) {
+      const list = [...this.images.entries()].filter(([k, v]) => v.tex && !k.startsWith('0/') && v.used < this.frameNo - 2);
+      list.sort((a, b) => a[1].used - b[1].used);
+      for (const [k, v] of list.slice(0, this.images.size - 300)) {
+        v.tex.dispose();
+        v.tex.image?.close?.();
+        this.images.delete(k);
+      }
+    }
+  }
+
+  setImagery(on) {
+    this.shared.imgOn.value = on ? 1 : 0;
+  }
+
+  #disposeTile(t) {
+    if (t.mesh) {
+      this.scene.remove(t.mesh);
+      t.mesh.geometry.dispose();
+      t.mesh.material.dispose();
+    }
+    t.tex?.dispose();
+    this.tiles.delete(t.key);
+  }
+
+  // 極のふた（メルカトルが届かない緯度 ±85° より先）。縁の高さはズーム 2 のタイルから
+  #buildCaps() {
+    for (const m of this.caps ?? []) {
+      this.scene.remove(m);
+      m.geometry.dispose();
+    }
+    this.caps = [];
+    const SEG = 128, RINGS = 6;
+    for (const north of [true, false]) {
+      const n = 2 ** MIN_ZOOM;
+      const rim = [];
+      let ok = true;
+      for (let k = 0; k <= SEG; k++) {
+        const lon = -180 + (360 * k) / SEG;
+        const x = Math.min(n - 1, Math.floor(((lon + 180) / 360) * n));
+        const t = this.tiles.get(`${MIN_ZOOM}/${x}/${north ? 0 : n - 1}`);
+        if (t?.state !== 'ready') ok = false;
+        const u = ((lon + 180) / 360) * n - x;
+        rim.push(ok ? Math.max(0, gridAt(t.grid, u, north ? 0 : 1)) : 0);
+      }
+      if (!ok) return;
+      const poleH = north ? 0 : 2800;
+      const center = ecef(north ? 90 : -90, 0, GLOBE_R);
+      const pos = [], hs = [], idx = [];
+      const p = [0, 0, 0];
+      const lat0 = north ? MERC_MAX_LAT : -MERC_MAX_LAT;
+      for (let r = 0; r <= RINGS; r++) {
+        const f = r / RINGS;
+        const lat = lat0 + ((north ? 90 : -90) - lat0) * f * 0.999;
+        for (let k = 0; k <= SEG; k++) {
+          const lon = -180 + (360 * k) / SEG;
+          const h = rim[k] + (poleH - rim[k]) * (f * f * (3 - 2 * f));
+          ecef(lat, lon, GLOBE_R + h * this.exag, p);
+          pos.push(p[0] - center[0], p[1] - center[1], p[2] - center[2]);
+          hs.push(north ? (r === 0 ? -1 : -1) : h);
+        }
+      }
+      const w = SEG + 1;
+      for (let r = 0; r < RINGS; r++) {
+        for (let k = 0; k < SEG; k++) {
+          const a = r * w + k, b = a + 1, c = a + w, d = c + 1;
+          idx.push(a, c, b, b, c, d, a, b, c, b, d, c);
+        }
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array((pos.length / 3) * 2), 2));
+      g.setAttribute('aH', new THREE.Float32BufferAttribute(hs, 1));
+      g.setIndex(idx);
+      const mesh = new THREE.Mesh(g, this.capMaterial);
+      mesh.frustumCulled = false;
+      mesh.userData.center = center;
+      this.scene.add(mesh);
+      this.caps.push(mesh);
+    }
+    this.capsDirty = false;
+    this.capsExag = this.exag;
+  }
+
+  #setupSky() {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
+    this.skyMat = new THREE.ShaderMaterial({
+      uniforms: { ...this.shared, invProj: { value: new THREE.Matrix4() }, camRot: { value: new THREE.Matrix4() }, starI: { value: 1 } },
+      vertexShader: /* glsl */ `
+        varying vec2 vNdc;
+        void main() { vNdc = position.xy; gl_Position = vec4( position.xy, 1.0, 1.0 ); }`,
+      fragmentShader: /* glsl */ `
+        varying vec2 vNdc;
+        uniform mat4 invProj, camRot;
+        uniform float starI;
+        ${GLOBE_ATMO_GLSL}
+        float sHash( vec3 p ) { p = fract( p * 0.3183099 + 0.1 ); p *= 17.0; return fract( p.x * p.y * p.z * ( p.x + p.y + p.z ) ); }
+        vec3 stars( vec3 d ) {
+          vec3 s = vec3( 0.0 );
+          for ( int l = 0; l < 2; l ++ ) {
+            float sc = l == 0 ? 180.0 : 520.0;
+            vec3 q = d * sc;
+            vec3 c = floor( q );
+            float h = sHash( c );
+            float th = l == 0 ? 0.988 : 0.975;
+            if ( h > th ) {
+              vec3 pos = c + vec3( sHash( c + 1.37 ), sHash( c + 2.11 ), sHash( c + 3.73 ) );
+              float dd = length( q - pos );
+              float b = pow( ( h - th ) / ( 1.0 - th ), 3.0 ) * ( l == 0 ? 1.0 : 0.35 );
+              s += mix( vec3( 1.0, 0.78, 0.6 ), vec3( 0.7, 0.82, 1.0 ), sHash( c + 7.7 ) ) * b * exp( - dd * dd * 30.0 );
+            }
+          }
+          return s;
+        }
+        void main() {
+          vec4 v = invProj * vec4( vNdc, -1.0, 1.0 );
+          v /= v.w;
+          vec3 dir = normalize( ( camRot * vec4( v.xyz, 0.0 ) ).xyz );
+          vec2 tp = gRaySphere( camC, dir, planetR );
+          float tMax = ( tp.x < tp.y && tp.x > 0.0 ) ? tp.x : 1e30;
+          vec3 ins, tr;
+          gAtmosphere( camC, dir, tMax, 16, ins, tr );
+          vec3 col = ins;
+          if ( tMax > 1e29 ) {
+            float sd = dot( dir, sunDir );
+            col += tr * ( sunI * 60.0 * smoothstep( 0.99996, 0.99999, sd ) + stars( dir ) * starI );
+          }
+          gl_FragColor = vec4( col, 1.0 );
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }`,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const sky = new THREE.Mesh(g, this.skyMat);
+    sky.frustumCulled = false;
+    sky.renderOrder = -1;
+    this.scene.add(sky);
+  }
+
+  // ---- 操作 ----
+  #setupControls() {
+    const c = this.canvas;
+    let drag = null;
+    c.addEventListener('contextmenu', (e) => e.preventDefault());
+    c.addEventListener('pointerdown', (e) => {
+      this.flight = null;
+      drag = { x: e.clientX, y: e.clientY, rotate: e.button === 2 || e.button === 1 || e.shiftKey || e.ctrlKey };
+      c.setPointerCapture(e.pointerId);
+    });
+    c.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      drag.x = e.clientX;
+      drag.y = e.clientY;
+      const v = this.view;
+      if (drag.rotate) {
+        v.heading = (v.heading + dx * 0.3 + 360) % 360;
+        v.tilt = THREE.MathUtils.clamp(v.tilt + dy * 0.25, 0, this.#maxTilt());
+      } else {
+        this.#pan(-dx, dy);
+      }
+    });
+    const up = () => (drag = null);
+    c.addEventListener('pointerup', up);
+    c.addEventListener('pointercancel', up);
+    c.addEventListener(
+      'wheel',
+      (e) => {
+        e.preventDefault();
+        this.flight = null;
+        const k = Math.exp(Math.sign(e.deltaY) * Math.min(Math.abs(e.deltaY), 200) * 0.0015);
+        // 寄るときは、カーソルの先へ少し寄せる
+        if (k < 1) {
+          const hit = this.pick(e.clientX, e.clientY);
+          if (hit) {
+            const f = 1 - k;
+            this.view.lat += (hit.lat - this.view.lat) * f;
+            this.view.lon += wrapLon(hit.lon - this.view.lon) * f;
+          }
+        }
+        this.view.range = THREE.MathUtils.clamp(this.view.range * k, 60, 6e7);
+        this.view.tilt = Math.min(this.view.tilt, this.#maxTilt());
+      },
+      { passive: false },
+    );
+    c.addEventListener('dblclick', (e) => {
+      const hit = this.pick(e.clientX, e.clientY);
+      if (hit) this.flyTo({ lat: hit.lat, lon: hit.lon, range: this.view.range / 3 });
+    });
+    this.keys = new Set();
+    this.onKey = (e, down) => {
+      if (e.target instanceof HTMLInputElement) return false;
+      const k = e.key.toLowerCase();
+      if (!['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd', 'q', 'e', 'r', 'f', '+', '-', '='].includes(k)) return false;
+      if (down) this.keys.add(k);
+      else this.keys.delete(k);
+      return true;
+    };
+  }
+
+  #maxTilt() {
+    const r = Math.log10(Math.max(1, this.view.range));
+    return 86 - 76 * THREE.MathUtils.clamp((r - 5) / 1.8, 0, 1);
+  }
+
+  // 画面の向きで地表をずらす（dx, dy: 画素）
+  #pan(dx, dy) {
+    const v = this.view;
+    const mpp = (v.range * 2 * Math.tan((this.camera.fov * D2R) / 2)) / Math.max(1, this.canvas.clientHeight);
+    const H = v.heading * D2R;
+    const right = dx * mpp, fwd = dy * mpp;
+    const dn = fwd * Math.cos(H) - right * Math.sin(H);
+    const de = fwd * Math.sin(H) + right * Math.cos(H);
+    v.lat = THREE.MathUtils.clamp(v.lat + (dn / GLOBE_R) / D2R, -89.5, 89.5);
+    v.lon = wrapLon(v.lon + (de / (GLOBE_R * Math.max(0.05, Math.cos(v.lat * D2R)))) / D2R);
+  }
+
+  // 画面の点の先の地表（海面の球との交わり）の経緯度
+  pick(clientX, clientY) {
+    const r = this.canvas.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(ndc, this.camera);
+    const d = ray.ray.direction;
+    const o = this.camEcef;
+    const b = o[0] * d.x + o[1] * d.y + o[2] * d.z;
+    const cc = o[0] ** 2 + o[1] ** 2 + o[2] ** 2 - GLOBE_R ** 2;
+    const disc = b * b - cc;
+    if (disc < 0) return null;
+    const t = -b - Math.sqrt(disc);
+    if (t < 0) return null;
+    const ll = toLatLon(o[0] + d.x * t, o[1] + d.y * t, o[2] + d.z * t);
+    return { lat: ll.lat, lon: ll.lon };
+  }
+
+  // 見ている所へ飛ぶ（途中は少し高く上がる）
+  flyTo({ lat, lon, range = this.view.range, heading = this.view.heading, tilt }) {
+    const v = this.view;
+    const from = { ...v };
+    const to = { lat, lon: from.lon + wrapLon(lon - from.lon), range, heading, tilt: tilt ?? Math.min(v.tilt, 45) };
+    // 離れている所ほど高く上がる
+    const ang = Math.acos(Math.min(1, Math.max(-1, dot3(enu(from.lat, from.lon).up, enu(lat, lon).up))));
+    const peak = Math.max(from.range, to.range, ang * GLOBE_R * 1.2);
+    this.flight = { from, to, peak, start: performance.now(), dur: 1200 + Math.min(3500, ang * 2500) };
+  }
+
+  // ---- 地表の高さ（読み込み済みのいちばん細かいタイルから） ----
+  heightAt(lat, lon) {
+    for (let z = GLOBE_MAX_ZOOM; z >= 0; z--) {
+      const l = locateTile(lat, lon, z);
+      const t = this.tiles.get(`${z}/${l.x}/${l.y}`);
+      if (t?.state === 'ready') return gridAt(t.grid, l.u, l.v);
+    }
+    return 0;
+  }
+
+  surfaceAt(lat, lon) {
+    return Math.max(0, this.heightAt(lat, lon)) * this.exag;
+  }
+
+  setExaggeration(k) {
+    this.exag = k;
+    this.shared.exag.value = k;
+    for (const t of this.tiles.values()) t.bounds = null;
+    this.capsDirty = true;
+  }
+
+  // ---- 毎コマ ----
+  #frame() {
+    const now = performance.now();
+    const dt = Math.min(0.1, (now - (this.lastT ?? now)) / 1000);
+    this.lastT = now;
+    this.frameNo++;
+    this.#keys(dt);
+    this.#flight(now);
+    const v = this.view;
+    // 見ている所の地面の高さ（少しずつ追う）
+    this.targetH += (this.surfaceAt(v.lat, v.lon) - this.targetH) * 0.2;
+    const cam = orbitCamera(v, this.targetH);
+    // 地面より下へは潜らない
+    const cl = toLatLon(...cam.pos);
+    const floor = GLOBE_R + this.surfaceAt(cl.lat, cl.lon) + 12;
+    if (cl.r < floor) for (let k = 0; k < 3; k++) cam.pos[k] *= floor / cl.r;
+    this.camEcef = cam.pos;
+    const C = cam.pos;
+    this.camera.position.set(0, 0, 0);
+    this.camera.up.set(...cam.up);
+    this.camera.lookAt(cam.target[0] - C[0], cam.target[1] - C[1], cam.target[2] - C[2]);
+    // 近い所ほど near を大きくして、深度の精度を上げる
+    const alt = cl.r - GLOBE_R;
+    this.camera.near = THREE.MathUtils.clamp(alt * 0.02, 0.5, 2000);
+    this.camera.far = 1e9;
+    this.camera.updateProjectionMatrix();
+    this.camera.updateMatrixWorld();
+
+    this.shared.camC.value.set(C[0], C[1], C[2]);
+    this.shared.sunDir.value.copy(this.#sunDir());
+    this.skyMat.uniforms.invProj.value.copy(this.camera.projectionMatrixInverse);
+    this.skyMat.uniforms.camRot.value.copy(this.camera.matrixWorld);
+
+    this.#select();
+    if (this.capsDirty || (this.caps && this.capsExag !== this.exag)) this.#buildCaps();
+    for (const m of this.caps ?? []) {
+      const c = m.userData.center;
+      m.position.set(c[0] - C[0], c[1] - C[1], c[2] - C[2]);
+    }
+    this.renderer.render(this.scene, this.camera);
+    if (this.frameNo % 6 === 0) this.#report(cl, alt);
+  }
+
+  #keys(dt) {
+    if (!this.keys.size) return;
+    const k = this.keys;
+    const sp = 500 * dt;
+    if (k.has('arrowup') || k.has('w')) this.#pan(0, sp);
+    if (k.has('arrowdown') || k.has('s')) this.#pan(0, -sp);
+    if (k.has('arrowleft') || k.has('a')) this.#pan(-sp, 0);
+    if (k.has('arrowright') || k.has('d')) this.#pan(sp, 0);
+    if (k.has('q')) this.view.heading = (this.view.heading - 60 * dt + 360) % 360;
+    if (k.has('e')) this.view.heading = (this.view.heading + 60 * dt) % 360;
+    if (k.has('r')) this.view.tilt = Math.min(this.#maxTilt(), this.view.tilt + 40 * dt);
+    if (k.has('f')) this.view.tilt = Math.max(0, this.view.tilt - 40 * dt);
+    if (k.has('+') || k.has('=')) this.view.range = Math.max(60, this.view.range * Math.exp(-1.5 * dt));
+    if (k.has('-')) this.view.range = Math.min(6e7, this.view.range * Math.exp(1.5 * dt));
+    this.flight = null;
+  }
+
+  #flight(now) {
+    const f = this.flight;
+    if (!f) return;
+    const a = Math.min(1, (now - f.start) / f.dur);
+    const e = a * a * (3 - 2 * a);
+    const v = this.view;
+    v.lat = f.from.lat + (f.to.lat - f.from.lat) * e;
+    v.lon = wrapLon(f.from.lon + (f.to.lon - f.from.lon) * e);
+    v.heading = f.from.heading + wrapLon(f.to.heading - f.from.heading) * e;
+    v.tilt = f.from.tilt + (f.to.tilt - f.from.tilt) * e;
+    // 高さ：対数で補間し、途中で山なりに上がる
+    const l0 = Math.log(f.from.range), l1 = Math.log(f.to.range), lp = Math.log(f.peak);
+    const base = l0 + (l1 - l0) * e;
+    const bump = Math.max(0, lp - Math.max(l0, l1)) * 4 * e * (1 - e);
+    v.range = Math.exp(base + bump);
+    if (a >= 1) this.flight = null;
+  }
+
+  #sunDir() {
+    if (this.sunMode === 'real') {
+      const s = subsolarPoint();
+      return new THREE.Vector3(...ecef(s.lat, s.lon, 1));
+    }
+    // 見ている所での太陽の高さ・方位（シーンの太陽）
+    const f = enu(this.view.lat, this.view.lon);
+    const d = sunDirection(this.sceneSun.elevation, this.sceneSun.azimuth); // x = 東, y = 上, z = 南
+    return new THREE.Vector3(
+      f.east[0] * d[0] + f.up[0] * d[1] - f.north[0] * d[2],
+      f.east[1] * d[0] + f.up[1] * d[1] - f.north[1] * d[2],
+      f.east[2] * d[0] + f.up[2] * d[1] - f.north[2] * d[2],
+    ).normalize();
+  }
+
+  // 四分木をたどって、描くタイルを選ぶ
+  #select() {
+    const C = this.camEcef;
+    const frustum = new THREE.Frustum().setFromProjectionMatrix(
+      new THREE.Matrix4().multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse),
+    );
+    const sphere = new THREE.Sphere();
+    const draw = [];
+    const need = [];
+    const visible = (t) => {
+      const b = this.#boundsOf(t);
+      if (behindHorizon(C, b.center, b.radius)) return false;
+      sphere.center.set(b.center[0] - C[0], b.center[1] - C[1], b.center[2] - C[2]);
+      sphere.radius = b.radius;
+      return frustum.intersectsSphere(sphere);
+    };
+    const visit = (t) => {
+      t.used = this.frameNo;
+      const b = this.#boundsOf(t);
+      const d = Math.max(0, Math.hypot(b.center[0] - C[0], b.center[1] - C[1], b.center[2] - C[2]) - b.radius);
+      const split = t.z < MIN_ZOOM || (t.z < GLOBE_MAX_ZOOM && d < SPLIT * t.info.width);
+      if (split) {
+        const kids = [];
+        let ready = true;
+        for (let k = 0; k < 4; k++) {
+          const c = this.#tile(t.z + 1, t.x * 2 + (k & 1), t.y * 2 + (k >> 1));
+          if (!visible(c)) continue;
+          c.used = this.frameNo;
+          kids.push(c);
+          if (c.state !== 'ready') {
+            ready = false;
+            need.push({ t: c, d });
+          }
+        }
+        if (ready) {
+          for (const c of kids) visit(c);
+          return;
+        }
+      }
+      draw.push(t);
+    };
+    const root = this.#tile(0, 0, 0);
+    if (root.state === 'ready') visit(root);
+    else this.#request(root);
+
+    // 描くタイルだけを場面に置く
+    const C0 = C;
+    for (const m of this.drawn ?? []) m.visible = false;
+    this.drawn = [];
+    for (const t of draw) {
+      if (!t.mesh || t.meshExag !== this.exag) this.#buildMesh(t);
+      if (!t.mesh.parent) this.scene.add(t.mesh);
+      t.mesh.visible = true;
+      t.mesh.position.set(t.center[0] - C0[0], t.center[1] - C0[1], t.center[2] - C0[2]);
+      this.#bindImagery(t);
+      this.drawn.push(t.mesh);
+    }
+    // 取り寄せ：粗いもの・近いものから
+    need.sort((a, b) => a.t.z - b.t.z || a.d - b.d);
+    for (const { t } of need) this.#request(t);
+    this.drawCount = draw.length;
+    this.needCount = need.length;
+    // 見えなくなった所の注文は取り消す
+    if (this.frameNo % 30 === 0) this.worker.postMessage({ cancel: true, keep: need.map((x) => x.t.key) });
+    this.#evict();
+  }
+
+  #evict() {
+    const ready = [];
+    for (const t of this.tiles.values()) {
+      if (t.state === 'ready' && t.z > MIN_ZOOM) ready.push(t);
+      else if (t.state === 'none' && t.used < this.frameNo - 600) this.tiles.delete(t.key);
+    }
+    if (ready.length <= MAX_TILES) return;
+    ready.sort((a, b) => a.used - b.used);
+    for (const t of ready.slice(0, ready.length - MAX_TILES)) {
+      if (t.used >= this.frameNo) break;
+      this.#disposeTile(t);
+    }
+  }
+
+  #report(cl, alt) {
+    this.onInfo({
+      lat: this.view.lat, lon: this.view.lon, camLat: cl.lat, camLon: cl.lon, alt,
+      range: this.view.range, ground: this.heightAt(this.view.lat, this.view.lon),
+      tiles: this.drawCount, loading: this.loading + (this.needCount ?? 0) > 0 ? this.loading : 0,
+    });
+  }
+
+  #resize() {
+    const w = this.container.clientWidth, h = this.container.clientHeight;
+    if (!w || !h) return;
+    this.renderer.setSize(w, h, false);
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+  }
+
+  // 1 コマだけ進めて描く（画面が隠れていて自動では描かれないとき・書き出し）
+  step() {
+    this.#frame();
+  }
+
+  async capture() {
+    this.#frame();
+    return new Promise((res) => this.canvas.toBlob(res, 'image/png'));
+  }
+
+  dispose() {
+    this.stop();
+    this.worker.terminate();
+    for (const t of [...this.tiles.values()]) this.#disposeTile(t);
+    this.renderer.dispose();
+    this.canvas.remove();
+  }
+}
+
+function wrapLon(l) {
+  return ((((l + 180) % 360) + 360) % 360) - 180;
+}
+
+function dot3(a, b) {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}

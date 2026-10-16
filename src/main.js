@@ -6,6 +6,7 @@ import '@fontsource/zen-kaku-gothic-new/500.css';
 import '@fontsource/zen-kaku-gothic-new/700.css';
 import { createDefaultScene, normalizeScene, deepMerge, EARTH_RADIUS } from './core/schema.js';
 import { GeoDialog } from './ui/GeoDialog.js';
+import { GlobeMode } from './ui/GlobeMode.js';
 import { createStore } from './core/store.js';
 import { PRESETS } from './core/presets.js';
 import { RealtimeRenderer } from './render/RealtimeRenderer.js';
@@ -246,8 +247,28 @@ const geo = new GeoDialog({
   }
 }
 
+// 地球モード：地球全体を眺め、気に入った所を景観として取り込む
+const globeBtn = document.getElementById('globe-btn');
+const globe = new GlobeMode(document.getElementById('stage'), {
+  toast,
+  getSun: () => ({ ...store.get().sun }),
+  onImport: (region) => geo.openAt(region, region.name),
+  onClose: () => {
+    view.paused = false;
+    globeBtn.classList.remove('active');
+  },
+});
+function openGlobe() {
+  if (view.walking) view.setWalk(null);
+  view.paused = true; // 景観の画面は止めて GPU を譲る
+  globeBtn.classList.add('active');
+  globe.open();
+}
+globeBtn.addEventListener('click', () => (globe.isOpen ? globe.close() : openGlobe()));
+
 const actions = {
   'import-geo': async () => geo.open(),
+  globe: async () => openGlobe(),
   'new-scene': async () => {
     selection.set('selected', null);
     store.replace(createDefaultScene(), { source: 'io' });
@@ -497,8 +518,13 @@ document.addEventListener('pointerlockchange', () => {
 
 // ---- キーボード ----
 const modalOpen = () => !stillEl.hidden || !helpEl.hidden || geo.isOpen;
+window.addEventListener('keyup', (e) => globe.key(e, false));
 window.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
+  if (globe.isOpen && !geo.isOpen) {
+    if (globe.key(e, true)) e.preventDefault();
+    return;
+  }
   const mod = e.ctrlKey || e.metaKey;
   // ダイアログ・メニュー：Esc で閉じる。開いている間はほかの操作を受け付けない（後ろの物体を消したりしない）
   if (k === 'escape') {

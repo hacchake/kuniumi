@@ -78,12 +78,14 @@
             <div class="menu-sep">読み込み</div>
             <button role="menuitem" data-act="import-glb" title=".glb / .gltf を読み込む（地形はメッシュの形から取り込み）">glTF（.glb / .gltf）…</button>
             <button role="menuitem" data-act="import-hm" title="ハイトマップ画像（16bit PNG 推奨）を読み込む">ハイトマップ画像…</button>
+            <button role="menuitem" data-act="globe" title="地球全体を眺めて、取り込む所を選ぶ">地球モード（地球全体を眺める）</button>
             <button role="menuitem" data-act="import-geo" title="地名や緯度経度で範囲を選び、公開されている標高データ（海底も）から大地を作る">地球の地形（地名・緯度経度）…</button>
             <div class="menu-sep"></div>
             <button role="menuitem" data-act="toggle-lang">表示言語：English</button>
           </div>
         </div>
         <div class="group">
+          <button id="globe-btn" title="地球モード：地球全体を眺め、地名で飛び、気に入った所を景観として取り込む">🌏 地球</button>
           <button id="walk-btn" title="歩き回る（G）：W/A/S/D で移動・マウスで見回す・Space でジャンプ・Shift で走る・F で飛ぶ・Esc で戻る">🚶 歩く</button>
           <button id="render-still" class="primary" title="パストレースで実写調の一枚絵を描く（WebGPU）（Ctrl+Enter）">✦ 一枚絵を描く</button>
           <button id="help-btn" class="icon" title="使い方とショートカット（?）" aria-label="使い方">?</button>

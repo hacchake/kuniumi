@@ -389,4 +389,29 @@ html[lang='en'] .create-title { letter-spacing: 0.08em; }
   .geo-sub { display: none; }
 }
 
-#walk-btn.active { border-color: var(--gold); color: var(--gold-2); background: rgba(217, 181, 108, 0.12); }
+#walk-btn.active, #globe-btn.active { border-color: var(--gold); color: var(--gold-2); background: rgba(217, 181, 108, 0.12); }
+
+/* ---- 地球モード ---- */
+.globe { position: absolute; inset: 0; z-index: 30; background: #000; overflow: hidden; }
+.globe[hidden] { display: none; }
+.globe-canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+.globe-canvas:active { cursor: grabbing; }
+.globe-top { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; pointer-events: none; }
+.globe-top > * { pointer-events: auto; }
+.globe-search { display: flex; gap: 6px; flex: 1 1 280px; max-width: 420px; }
+.globe-search input { flex: 1; min-width: 0; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line); background: rgba(11, 15, 26, 0.82); color: var(--text); font: inherit; }
+.globe-results { position: absolute; top: 44px; left: 0; width: min(420px, 100%); max-height: 50vh; overflow: auto; display: flex; flex-direction: column; background: rgba(11, 15, 26, 0.94); border: 1px solid var(--line); border-radius: 8px; padding: 4px; font-size: 13px; color: var(--muted); }
+.globe-results[hidden] { display: none; }
+.globe-results button { text-align: left; background: none; border: 0; color: var(--text); padding: 6px 8px; border-radius: 6px; cursor: pointer; font: inherit; }
+.globe-results button:hover { background: rgba(217, 181, 108, 0.14); }
+.globe-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-left: auto; }
+.globe-tools label { display: flex; gap: 6px; align-items: center; font-size: 12.5px; color: var(--text); background: rgba(11, 15, 26, 0.75); padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line); }
+.globe-tools select { background: var(--ink-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; font: inherit; }
+.globe-info { position: absolute; left: 12px; bottom: 34px; font-size: 13px; color: var(--text); background: rgba(11, 15, 26, 0.7); padding: 4px 10px; border-radius: 8px; font-variant-numeric: tabular-nums; pointer-events: none; }
+.globe-hint { position: absolute; left: 12px; bottom: 10px; font-size: 11.5px; color: var(--muted); pointer-events: none; text-shadow: 0 1px 2px #000; }
+.globe-credit { position: absolute; right: 10px; bottom: 10px; font-size: 10.5px; color: rgba(233, 228, 216, 0.6); text-shadow: 0 1px 2px #000; max-width: 50%; text-align: right; }
+@media (max-width: 720px) {
+  .globe-hint { display: none; }
+  .globe-credit { max-width: 100%; left: 10px; }
+  .globe-info { bottom: 40px; }
+}

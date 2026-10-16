@@ -40,6 +40,14 @@ export class GeoDialog {
     this.q.focus();
   }
 
+  // 範囲を決めた状態で開く（地球モードの「ここを取り込む」から）
+  openAt(region, name) {
+    this.region = { lat: clamp(region.lat, -85, 85), lon: region.lon, size: Math.min(SIZE_MAX, region.size) };
+    this.res = this.region.size > 800e3 ? 4097 : 2049;
+    this.name = name;
+    this.open();
+  }
+
   close() {
     if (this.busy) return;
     this.el.hidden = true;
