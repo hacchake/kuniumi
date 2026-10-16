@@ -6,7 +6,8 @@
 import { aeqdForward, aeqdInverse } from './geo.js';
 
 export const OSM_ATTRIBUTION = '© OpenStreetMap contributors（ODbL）';
-const ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+// overpass.kumi.systems などはブラウザからの取り寄せ（CORS）を許していないので使わない
+const ENDPOINTS = ['https://overpass-api.de/api/interpreter'];
 export const OSM_MAX_SIZE = 80e3; // これより広い範囲では取り寄せない（データが多すぎる）
 
 // 範囲（正距方位図法の正方形）を囲む経緯度の枠

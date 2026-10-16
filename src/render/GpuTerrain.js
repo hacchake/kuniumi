@@ -154,6 +154,7 @@ export class GpuTerrain {
       tWaterMask: { value: null }, // 川・湖の印（OpenStreetMap。白 = 水）
       tLights: { value: null }, // 夜の街の明かり（範囲と同じ正方形）
       tLightsI: { value: 0 }, // 明かりの強さ（夜ほど強く。0 なら描かない）
+      tWet: { value: 0 }, // 雨で濡れた地面（0..1）：暗く、少しつややかに
       tSeason: { value: 0 }, // 季節（0 = そのまま、1 = 春、2 = 秋、3 = 冬）
       tWinterSnow: { value: 600 }, // 冬に雪が積もる高さ (m)
       tHasWaterMask: { value: 0 },
@@ -199,7 +200,7 @@ export class GpuTerrain {
           .replace('#include <beginnormal_vertex>', 'vec3 objectNormal; vec3 kTP; kTerrainVertex( kTP, objectNormal );')
           .replace('#include <begin_vertex>', 'vec3 transformed = kTP;');
         shader.fragmentShader = shader.fragmentShader
-          .replace('#include <common>', `#include <common>\n${TERRAIN_SHADING_GLSL}\nvarying float vTH, vTSlope, vTWear, vTJit, vTClump;\nvarying vec2 vTLocal, vTDetGrad;\nuniform vec2 tOriginW;\nuniform float tClipHalf, tHasPhoto, tHasWaterMask, tSeason, tWinterSnow, tLightsI;\nuniform sampler2D tPhoto, tWaterMask, tLights;\n${CURVE_GLSL}\n${FIELD_GLSL}`)
+          .replace('#include <common>', `#include <common>\n${TERRAIN_SHADING_GLSL}\nvarying float vTH, vTSlope, vTWear, vTJit, vTClump;\nvarying vec2 vTLocal, vTDetGrad;\nuniform vec2 tOriginW;\nuniform float tClipHalf, tHasPhoto, tHasWaterMask, tSeason, tWinterSnow, tLightsI, tWet;\nuniform sampler2D tPhoto, tWaterMask, tLights;\n${CURVE_GLSL}\n${FIELD_GLSL}`)
           // 面の向きと傾きは画素ごとに高さ場から出す（頂点の補間だと、区画の細かさが変わる所で線が出る）
           .replace(
             '#include <normal_fragment_begin>',
@@ -241,11 +242,11 @@ export class GpuTerrain {
               '    kTC = mix( kTC * vec3( 0.95, 0.92, 0.85 ) * mix( 1.0, 0.75, kGr ), vec3( 0.82, 0.85, 0.9 ), kSn * ( 1.0 - kWm ) );\n' +
               '  }\n' +
               '}\n' +
-              'diffuseColor.rgb *= kTC;',
+              'diffuseColor.rgb *= kTC * ( 1.0 - 0.3 * tWet * ( 1.0 - kWm ) );',
           )
           .replace(
             '#include <roughnessmap_fragment>',
-            '#include <roughnessmap_fragment>\nroughnessFactor = mix( roughnessFactor, 0.07, kWm );',
+            '#include <roughnessmap_fragment>\nroughnessFactor = mix( roughnessFactor, 0.07, kWm );\nroughnessFactor = mix( roughnessFactor, 0.45, tWet * ( 1.0 - smoothstep( 0.3, 0.8, length( tCoarseGrad( vTLocal ) ) ) ) );',
           )
           // 夜の街の明かり（暗い陸の写りは除いて、明かりだけを光らせる）
           .replace(

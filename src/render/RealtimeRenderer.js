@@ -508,6 +508,8 @@ export class RealtimeRenderer {
 
       this.nightLight.intensity = nightFactor(s.sun.elevation) * Math.PI * 0.15;
       this.precip.set(a.precip);
+      this.gpuTerrain.uniforms.tWet.value = a.precip === 'rain' ? 1 : 0;
+      if (this.surround) this.surround.terrain.uniforms.tWet.value = a.precip === 'rain' ? 1 : 0;
       this.precipLight = 1 - nightFactor(s.sun.elevation) * 0.8;
       this.#applyLights();
       this.atmosphere.uniforms.nightSky.value.set(...NIGHT_SKY).multiplyScalar(nightFactor(s.sun.elevation));
