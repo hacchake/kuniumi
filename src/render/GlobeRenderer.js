@@ -42,7 +42,7 @@ export class GlobeRenderer {
     this.view = { lat: 30, lon: 135, range: 2.2e7, heading: 0, tilt: 0 };
     this.targetH = 0;
     this.exag = 1; // 高さの誇張
-    this.sunMode = 'follow'; // 'follow' = 見ている所の時刻はシーンの太陽、'real' = 実際の日時
+    this.sunMode = 'follow'; // 'follow' = 見ている所の時刻はシーンの太陽、'real' = 実際の日時、'lapse' = いまから早送り（1 日を 40 秒で）
     this.sceneSun = { elevation: 40, azimuth: 150 };
     this.camEcef = [0, 0, GLOBE_R * 3];
     this.flight = null;
@@ -840,9 +840,24 @@ export class GlobeRenderer {
     if (a >= 1) this.flight = null;
   }
 
+  setSunMode(mode) {
+    this.sunMode = mode;
+    if (mode === 'lapse') {
+      this.lapseBase = Date.now();
+      this.lapseT0 = performance.now();
+    }
+  }
+
+  // 太陽の日時（'real' はいま、'lapse' は早送り中の日時。'follow' では null）
+  sunDate() {
+    if (this.sunMode === 'real') return new Date();
+    if (this.sunMode === 'lapse') return new Date(this.lapseBase + (performance.now() - this.lapseT0) * (86400 / 40));
+    return null;
+  }
+
   #sunDir() {
-    if (this.sunMode === 'real') {
-      const s = subsolarPoint();
+    if (this.sunMode === 'real' || this.sunMode === 'lapse') {
+      const s = subsolarPoint(this.sunDate());
       return new THREE.Vector3(...ecef(s.lat, s.lon, 1));
     }
     // 見ている所での太陽の高さ・方位（シーンの太陽）
@@ -941,6 +956,7 @@ export class GlobeRenderer {
     this.onInfo({
       lat: this.view.lat, lon: this.view.lon, camLat: cl.lat, camLon: cl.lon, alt,
       range: this.view.range, heading: this.view.heading, tilt: this.view.tilt, ground: this.heightAt(this.view.lat, this.view.lon),
+      sunDate: this.sunDate(),
       tiles: this.drawCount, loading: this.loading + (this.needCount ?? 0) > 0 ? this.loading : 0,
     });
   }

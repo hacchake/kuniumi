@@ -540,4 +540,6 @@ export const EN = {
   "なし": "None",
   "実際の雲を取り寄せられませんでした。手続きの雲にします": "Could not fetch real clouds. Using procedural clouds",
   "雷雨": "Thunderstorm",
+  "早送り（1 日を 40 秒で）": "Time-lapse (a day in 40 s)",
+  "現地の太陽時": "Local solar time",
 };

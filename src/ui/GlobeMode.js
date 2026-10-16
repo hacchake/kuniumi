@@ -37,7 +37,7 @@ export class GlobeMode {
         if (v && Number.isFinite(v.lat)) Object.assign(this.renderer.view, v);
       } catch {}
       this.linkView = null;
-      this.renderer.sunMode = this.sunSel.value;
+      this.renderer.setSunMode(this.sunSel.value);
       this.renderer.setExaggeration(Number(this.exagSel.value));
       this.renderer.setImagery(this.colorSel.value === 'photo');
       this.#applyClouds();
@@ -84,6 +84,7 @@ export class GlobeMode {
             <select data-sun>
               <option value="follow">${t('シーンの太陽（見ている所の時刻）')}</option>
               <option value="real">${t('いまの実際の太陽')}</option>
+              <option value="lapse">${t('早送り（1 日を 40 秒で）')}</option>
             </select>
           </label>
           <label>${t('地表の色')}
@@ -139,7 +140,7 @@ export class GlobeMode {
       e.preventDefault();
       this.#search();
     });
-    this.sunSel.onchange = () => this.renderer && (this.renderer.sunMode = this.sunSel.value);
+    this.sunSel.onchange = () => this.renderer?.setSunMode(this.sunSel.value);
     this.exagSel.onchange = () => this.renderer?.setExaggeration(Number(this.exagSel.value));
     el.querySelector('[data-fav]').onclick = () => this.#addFavorite();
     el.querySelector('[data-share]').onclick = () => this.#share();
@@ -339,7 +340,13 @@ export class GlobeMode {
     const alt = i.alt >= 10000 ? `${(i.alt / 1000).toFixed(i.alt >= 1e5 ? 0 : 1)} km` : `${Math.round(i.alt)} m`;
     const ground = i.ground < 0 ? t('水深 {d} m', { d: Math.round(-i.ground) }) : t('標高 {h} m', { h: Math.round(i.ground) });
     const place = this.place && this.placeFor && Math.abs(this.placeFor.lat - i.lat) < 1e-6 && Math.abs(this.placeFor.lon - i.lon) < 1e-6 ? `${this.place} ・ ` : '';
-    this.info.textContent = `${place}${fmt(i.lat, 'N', 'S')}  ${fmt(i.lon, 'E', 'W')}  ・ ${ground} ・ ${t('高度')} ${alt}` + (i.loading ? ` ・ ${t('取り寄せ中')}…` : '');
+    // 太陽が実際の日時のとき：見ている所の太陽の時刻（経度から。日の出・日の入りの目安）
+    let clock = '';
+    if (i.sunDate) {
+      const h = (((i.sunDate.getUTCHours() + i.sunDate.getUTCMinutes() / 60 + i.lon / 15) % 24) + 24) % 24;
+      clock = ` ・ ${t('現地の太陽時')} ${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`;
+    }
+    this.info.textContent = `${place}${fmt(i.lat, 'N', 'S')}  ${fmt(i.lon, 'E', 'W')}  ・ ${ground} ・ ${t('高度')} ${alt}${clock}` + (i.loading ? ` ・ ${t('取り寄せ中')}…` : '');
     this.#watchPlace(i);
   }
 
