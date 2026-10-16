@@ -1083,6 +1083,7 @@ void main() {`)
     const dt = this.timer.getDelta();
     this.#lightning(Math.min(dt, 0.1));
     this.#snowCover(Math.min(dt, 0.1));
+    this.trees?.setWind(Math.min(dt, 0.1), this.store.get().atmosphere.precip);
     this.#adaptQuality(dt);
     if (this.envDirty) this.#updateEnvironment();
     this.water.material.uniforms.time.value += dt * 0.6;

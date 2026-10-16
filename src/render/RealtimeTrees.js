@@ -53,10 +53,36 @@ export class RealtimeTrees {
     this.group.name = 'Trees';
     parent.add(this.group);
     this.snowU = { value: 0 }; // 葉に乗る雪（0..1）
+    this.windU = { t: { value: 0 }, amp: { value: 0.012 } }; // 風の揺れ（時間・強さ = 木の高さに対する梢の振れ）
     const mat = (color, snow = false) => {
       const m = new THREE.MeshStandardMaterial({ color, roughness: 0.85, metalness: 0 });
       m.defines = { KUNIUMI_VERTEX_CLOUD: '' }; // 雲の影は頂点ごと（葉が重なっても軽く）
       patchMaterial?.(m);
+      // 風で揺れる：高い所ほど大きく（高さの 2 乗）、木ごとに位相をずらし、ときどき突風
+      const prevW = m.onBeforeCompile;
+      m.onBeforeCompile = (sh, r) => {
+        prevW?.call(m, sh, r);
+        sh.uniforms.kWindT = this.windU.t;
+        sh.uniforms.kWindAmp = this.windU.amp;
+        sh.vertexShader = sh.vertexShader
+          .replace('void main() {', `uniform float kWindT, kWindAmp;
+void main() {`)
+          .replace(
+            '#include <begin_vertex>',
+            `#include <begin_vertex>
+#ifdef USE_INSTANCING
+{
+  float kPh = instanceMatrix[3].x * 0.13 + instanceMatrix[3].z * 0.17;
+  float kGust = 0.65 + 0.35 * sin( kWindT * 0.35 + kPh * 0.05 );
+  float kSw = ( sin( kWindT * 1.7 + kPh ) * 0.7 + sin( kWindT * 3.1 + kPh * 1.3 ) * 0.3 ) * kWindAmp * kGust;
+  float kH = max( transformed.y, 0.0 );
+  transformed.xz += vec2( 0.9, 0.44 ) * ( kSw + kWindAmp * kGust * 0.6 ) * kH * kH;
+}
+#endif`,
+          );
+      };
+      const prevWKey = m.customProgramCacheKey?.bind(m);
+      m.customProgramCacheKey = () => (prevWKey?.() ?? '') + '|treeWind';
       if (snow) {
         // 上を向いた面ほど白く（降り積もった雪）
         const prev = m.onBeforeCompile;
@@ -113,6 +139,13 @@ if ( kTreeSnow > 0.0 ) diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.8, 0.83
     const { conCrown, brdCrown } = this.crowns;
     brdCrown.color.set({ spring: '#4c7a26', autumn: '#9a4614', winter: '#4d4136' }[season] ?? '#2e4d1f');
     conCrown.color.set(season === 'winter' ? '#3b4a42' : '#1b3317');
+  }
+
+  // 風の揺れ：dt で時間を進め、強さは天気から（ふだんはそよ風、雨で強く、雷雨で大きく）
+  setWind(dt, precip) {
+    this.windU.t.value += dt;
+    const target = precip === 'storm' ? 0.07 : precip === 'rain' || precip === 'snow' ? 0.03 : 0.012;
+    this.windU.amp.value += (target - this.windU.amp.value) * Math.min(1, dt * 0.5);
   }
 
   // 降り積もった雪（0..1）を葉の上に
