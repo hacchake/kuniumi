@@ -457,3 +457,7 @@ body.walking #create { display: none; }
 .label-suburb, .label-village { font-size: 11.5px; color: #e9e4d8; }
 .row-sunTime input[type='datetime-local'] { min-width: 0; background: var(--ink); color: var(--text); border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: 12px; padding: 3px 4px; color-scheme: dark; }
 .sun-go { background: rgba(217, 181, 108, 0.14); color: var(--gold-2); border: 1px solid var(--gold); border-radius: 6px; font: inherit; font-size: 12px; padding: 3px 8px; cursor: pointer; }
+
+/* 録画中の止めるボタン（地球モードの上にも出す） */
+.rec-stop { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); z-index: 40; background: rgba(160, 30, 30, 0.85); color: #fff; border: 1px solid rgba(255, 255, 255, 0.5); border-radius: 999px; padding: 6px 14px; font: inherit; font-size: 13px; cursor: pointer; font-variant-numeric: tabular-nums; }
+.rec-stop[hidden] { display: none; }

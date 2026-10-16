@@ -467,4 +467,9 @@ export const EN = {
   "合わせる": "Set",
   "日時を選んで「合わせる」と、その場所（地球から取り込んだ地形ならその中心、ほかは東京）の実際の太陽の高さと方位にする": "Pick a date and time and press Set to use the real sun position there (center of terrain imported from Earth, otherwise Tokyo)",
   "時刻を進める（もう一度押すと止まる）": "Advance time (press again to stop)",
+  "画面を録画（動画）": "Record screen (video)",
+  "いまの画面（景観・地球モード）を動画（WebM）で録る。もう一度選ぶか、画面の ■ で止めて保存": "Record the current view (landscape or Earth mode) as a WebM video. Choose again or press ■ to stop and save",
+  "このブラウザでは録画できません": "Recording is not supported in this browser",
+  "録画中": "REC",
+  "動画を保存しました": "Video saved",
 };

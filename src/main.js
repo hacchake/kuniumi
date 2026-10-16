@@ -155,6 +155,43 @@ presetEl.onchange = () => {
 // ---- ファイル操作 ----
 const baseName = () => safeName(store.get().meta.name);
 
+// ---- 画面の録画（動画） ----
+// 映している画面（景観か地球モード）をそのまま WebM で録る。画面右上の ■ か、もう一度メニューから選ぶと止めて保存
+let recorder = null;
+const recBtn = document.createElement('button');
+recBtn.type = 'button';
+recBtn.className = 'rec-stop';
+recBtn.hidden = true;
+document.getElementById('stage').appendChild(recBtn);
+recBtn.addEventListener('click', () => toggleRecord());
+function toggleRecord() {
+  if (recorder) return recorder.stop();
+  const canvas = globe.isOpen && globe.renderer ? globe.renderer.canvas : view.renderer.domElement;
+  if (!canvas.captureStream || typeof MediaRecorder === 'undefined') return toast(t('このブラウザでは録画できません'), 'error');
+  const types = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
+  const mime = types.find((m) => MediaRecorder.isTypeSupported(m));
+  const chunks = [];
+  const rec = new MediaRecorder(canvas.captureStream(30), { mimeType: mime, videoBitsPerSecond: 12e6 });
+  rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  const start = performance.now();
+  const tick = setInterval(() => {
+    const s = Math.floor((performance.now() - start) / 1000);
+    recBtn.textContent = `■ ${t('録画中')} ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  }, 250);
+  rec.onstop = () => {
+    clearInterval(tick);
+    recorder = null;
+    recBtn.hidden = true;
+    const blob = new Blob(chunks, { type: mime });
+    downloadBlob(blob, `${baseName()}.${mime.includes('mp4') ? 'mp4' : 'webm'}`);
+    toast(t('動画を保存しました'));
+  };
+  rec.start(1000);
+  recorder = rec;
+  recBtn.textContent = `■ ${t('録画中')} 0:00`;
+  recBtn.hidden = false;
+}
+
 async function openJson(file) {
   selection.set('selected', null);
   store.replace(await sceneFromFile(file), { source: 'io' });
@@ -302,6 +339,7 @@ const actions = {
     setLang(lang === 'ja' ? 'en' : 'ja');
     location.reload();
   },
+  record: async () => toggleRecord(),
   'export-view': async () => {
     const blob = await view.capture();
     downloadBlob(blob, `${baseName()}_view.png`);
