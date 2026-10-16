@@ -1,6 +1,7 @@
 import { createTerrainSurface } from './terrainSurface.js';
 import { createTerrainShader, valueNoise } from './terrainColor.js';
 import { createVegetationRules, placeVegetation } from './vegetation.js';
+import { curvePoint, curveNormal } from './curvature.js';
 
 // 静止画用の地形：カメラに近いほど細かい区画（四分木）に分け、地形の高さを直接計算して作る（ノイズ地形・ハイトマップ地形の両方）。
 // 格子の地形は遠景には十分だが、近景では 1 マス数 m の多角形が角張って見える。
@@ -15,7 +16,12 @@ const N = 64; // 区画 1 枚あたりの分割数
 // 戻り値: { positions, normals, colors, uvs, index, tiles, triangles }
 // vegetation: シーンの植生設定（森の色づけと、木・草の配置に使う）
 // heightmapImage: ハイトマップ地形のときの解釈済み画像 { data, width, height }
-export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000, onProgress, vegetation, heightmapImage = null } = {}) {
+// place: { ox, oz, cx, cz, R } 書き出す座標の原点 (ox, oz) と、星の丸みの中心 (cx, cz)・半径 R（どれも世界座標）。
+//   数千 km の大地でも Float32 の精度を落とさないよう、原点を注視点へずらしてから丸みで曲げる
+export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000, onProgress, vegetation, heightmapImage = null, place = null } = {}) {
+  const P = place ?? { ox: 0, oz: 0, cx: 0, cz: 0, R: 0 };
+  const pcx = P.cx - P.ox, pcz = P.cz - P.oz;
+  const pp = [0, 0, 0], pn = [0, 0, 0];
   const { size, heightScale, baseHeight } = terrain;
 
   const surface = createTerrainSurface(terrain, heightmapImage);
@@ -159,15 +165,17 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
         const gx = (hg[k + 1] - hg[k - 1]) / (2 * s);
         const gz = (hg[k + G] - hg[k - G]) / (2 * s);
         const nl = Math.hypot(gx, 1, gz);
-        positions.set([x, y, z], vo * 3);
-        normals.set([-gx / nl, 1 / nl, -gz / nl], vo * 3);
+        curvePoint(x - P.ox, y, z - P.oz, pcx, pcz, P.R, pp);
+        curveNormal(x - P.ox, z - P.oz, -gx / nl, 1 / nl, -gz / nl, pcx, pcz, P.R, pn);
+        positions.set(pp, vo * 3);
+        normals.set(pn, vo * 3);
         uvs.set([x / size + 0.5, 0.5 - z / size], vo * 2);
         // 色のゆらぎ：大きな斑から足元の細かいムラまで（世界座標の値ノイズ）
         const jitter =
-          (valueNoise(x / 47, z / 47, 11) - 0.5) * 0.6 +
-          (valueNoise(x / 9.5, z / 9.5, 18) - 0.5) * 0.22 +
-          (valueNoise(x / 1.9, z / 1.9, 25) - 0.5) * 0.12 +
-          (valueNoise(x / 0.37, z / 0.37, 32) - 0.5) * 0.06;
+          (valueNoise(x / 64, z / 64, 11) - 0.5) * 0.6 +
+          (valueNoise(x / 8, z / 8, 18) - 0.5) * 0.22 +
+          (valueNoise(x / 2, z / 2, 25) - 0.5) * 0.12 +
+          (valueNoise(x / 0.5, z / 0.5, 32) - 0.5) * 0.06;
         shade(y, Math.hypot(gx, gz), wearAt(x, z), jitter, col, x, z);
         colors.set(col, vo * 3);
         vo++;
@@ -188,6 +196,15 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
   if (vegetation) {
     const rules = createVegetationRules({ heightScale, baseHeight, waterLevel: water.level, waterEnabled: water.enabled, palette: terrain.palette, vegetation });
     plants = placeVegetation(rules, size, surface.coarse, (x, z) => heightAt(x, z, 0.5), view);
+    // 木と草の根元の位置も同じように移して曲げる（幹の傾きは近くでは無視できる）
+    for (const list of [plants.conifer, plants.broadleaf, plants.grass]) {
+      for (let k = 0; k < list.length; k += 5) {
+        curvePoint(list[k] - P.ox, list[k + 1], list[k + 2] - P.oz, pcx, pcz, P.R, pp);
+        list[k] = pp[0];
+        list[k + 1] = pp[1];
+        list[k + 2] = pp[2];
+      }
+    }
   }
 
   return { positions, normals, colors, uvs, index, tiles: tiles.length, triangles: io / 3, detail, plants };

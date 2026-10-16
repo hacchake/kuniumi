@@ -16,7 +16,10 @@ export const SHADOW_GLSL = /* glsl */ `
   float sunVisible( vec3 p ) {
     vec4 c = shadowMatrix * vec4( p, 1.0 );
     if ( c.x < 0.0 || c.x > 1.0 || c.y < 0.0 || c.y > 1.0 ) return 1.0;
-    return c.z - shadowBias > texture2D( shadowMap, c.xy ).r ? 0.0 : 1.0;
+    float v = c.z - shadowBias > texture2D( shadowMap, c.xy ).r ? 0.0 : 1.0;
+    // 地図の縁に近いほど「日なた」へ寄せる（範囲の境目が線にならないように）
+    float e = min( min( c.x, 1.0 - c.x ), min( c.y, 1.0 - c.y ) );
+    return mix( 1.0, v, smoothstep( 0.0, 0.08, e ) );
   }
 `;
 
@@ -53,13 +56,21 @@ function proxy(src, mat) {
 }
 
 // 太陽からの影の地図を作る。objects: 影を落とす物（Mesh / InstancedMesh）
+// userData.shadowProxy(lightMatrix) を持つ物は、それが返す代わりの物を描く（GPU で形を作る地形など）
+// bounds: { center: Vector3, radius } 地図にする範囲（省略時は物全体を囲む）
 // 戻り値: { texture, matrix, bias, dispose() }
-export function buildSunShadowMap(gl, objects, sunDir, size = 4096) {
+export function buildSunShadowMap(gl, objects, sunDir, size = 4096, bounds = null) {
   const sun = new THREE.Vector3(...sunDir).normalize();
-  const box = new THREE.Box3();
-  for (const o of objects) box.expandByObject(o);
-  const center = box.getCenter(new THREE.Vector3());
-  const radius = Math.max(1, box.getSize(new THREE.Vector3()).length() / 2);
+  let center, radius;
+  if (bounds) {
+    center = bounds.center.clone();
+    radius = Math.max(1, bounds.radius);
+  } else {
+    const box = new THREE.Box3();
+    for (const o of objects) box.expandByObject(o);
+    center = box.getCenter(new THREE.Vector3());
+    radius = Math.max(1, box.getSize(new THREE.Vector3()).length() / 2);
+  }
   const cam = new THREE.OrthographicCamera(-radius, radius, radius, -radius, 0.1, radius * 4);
   cam.position.copy(center).addScaledVector(sun, radius * 2);
   cam.up.set(0, 1, 0);
@@ -74,7 +85,12 @@ export function buildSunShadowMap(gl, objects, sunDir, size = 4096) {
   const rt = new THREE.WebGLRenderTarget(size, size, { type: THREE.FloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
   const mat = depthMaterial(matrix);
   const scene = new THREE.Scene();
-  for (const o of objects) scene.add(proxy(o, mat));
+  const special = [];
+  for (const o of objects) {
+    const p = o.userData?.shadowProxy ? o.userData.shadowProxy(matrix) : proxy(o, mat);
+    if (o.userData?.shadowProxy) special.push(p);
+    scene.add(p);
+  }
   const prev = gl.getRenderTarget();
   const prevColor = gl.getClearColor(new THREE.Color());
   const prevAlpha = gl.getClearAlpha();
@@ -85,6 +101,7 @@ export function buildSunShadowMap(gl, objects, sunDir, size = 4096) {
   gl.setRenderTarget(prev);
   gl.setClearColor(prevColor, prevAlpha);
   mat.dispose();
+  for (const p of special) p.userData.dispose?.();
   // 地図 1 画素ぶんの高さの差は影にしない（深さは 0..1 に縮めてある）
   const bias = ((2 * radius) / size) * 2.5 / (radius * 4);
   return { texture: rt.texture, matrix, bias, dispose: () => rt.dispose() };
@@ -95,6 +112,8 @@ const gbufferMaterial = (flag) =>
   new THREE.ShaderMaterial({
     side: THREE.DoubleSide,
     vertexShader: /* glsl */ `
+      #include <common>
+      #include <logdepthbuf_pars_vertex>
       varying vec3 vW; varying vec3 vN;
       void main() {
         mat4 m = modelMatrix;
@@ -105,10 +124,13 @@ const gbufferMaterial = (flag) =>
         vW = w.xyz;
         vN = normalize( mat3( m ) * normal );
         gl_Position = projectionMatrix * viewMatrix * w;
+        #include <logdepthbuf_vertex>
       }`,
     fragmentShader: /* glsl */ `
+      #include <logdepthbuf_pars_fragment>
       varying vec3 vW; varying vec3 vN;
       void main() {
+        #include <logdepthbuf_fragment>
         vec3 n = normalize( vN );
         if ( dot( n, vW - cameraPosition ) > 0.0 ) n = -n; // 裏から見ていれば向きを返す
         gl_FragColor = vec4( ${flag ? '-1.0' : 'distance( vW, cameraPosition )'}, n );
@@ -128,6 +150,10 @@ export function cloudFogUniformValues(atm) {
     fogHeight: atm.fog.height,
     fogBase: atm.fog.base,
     fogG: atm.fog.g,
+    // 大陸規模：描く座標の原点（世界座標）と星の丸み（atm.view があるとき）
+    cloudOrigin: new THREE.Vector2(...(atm.view?.origin ?? [0, 0])),
+    cloudPlanetR: atm.view?.planetR ?? 0,
+    cloudCam: new THREE.Vector3(...(atm.view?.cam ?? [0, 0, 0])),
   };
 }
 
@@ -139,6 +165,8 @@ export function computeAtmosphere(gl, meshes, camera, W, H, atm) {
     gl,
     meshes.filter((m) => !m.celestial && !m.noShadow).map((m) => m.object),
     atm.sunDir,
+    4096,
+    atm.shadowBounds ?? null, // 大きな大地では注視点の周りだけ
   );
 
   // 画素ごとの距離と向き
@@ -189,13 +217,13 @@ export function computeAtmosphere(gl, meshes, camera, W, H, atm) {
         ${CLOUD_UNIFORMS_GLSL}
         ${CLOUD_FUNCS_GLSL}
         ${SHADOW_GLSL}
-        float lit( vec3 p ) { return sunVisible( p ) * cloudShadow( p, sunDir, 3 ); }
+        float lit( vec3 p ) { return sunVisible( p ) * ( distance( p, camPos ) < CLOUD_FAR ? cloudShadow( p, sunDir, 3 ) : 1.0 ); }
         ${FOG_MARCH_GLSL}
         ${CLOUD_MARCH_GLSL}
         float hash( vec2 p ) { return fract( sin( dot( p, vec2( 12.9898, 78.233 ) ) ) * 43758.5453 ); }
         void main() {
           vec4 g = texture2D( gbuf, vUv );
-          vec4 v = invProj * vec4( vUv * 2.0 - 1.0, 1.0, 1.0 ); v /= v.w;
+          vec4 v = invProj * vec4( vUv * 2.0 - 1.0, -1.0, 1.0 ); v /= v.w; // 手前の面の点（奥の面は遠すぎて精度が出ない）
           vec3 dir = normalize( ( camWorld * vec4( v.xyz, 0.0 ) ).xyz );
 
           if ( mode == 1 ) {

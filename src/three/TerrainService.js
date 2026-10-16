@@ -19,11 +19,15 @@ export class TerrainService {
     this.seq = 0;
     this.sentKey = null;
     this.field = null; // 最新の高さ場（メインスレッド側の写し）
+    this.wear = null;
     this.res = 0;
     this.waiters = [];
   }
 
-  request(scene) {
+  // withColors: 地表の色のテクスチャも焼く（書き出し用）
+  request(scene, { withColors = true } = {}) {
+    // まだ送っていない依頼があれば、色の要否はまとめる
+    this.queuedColors = (this.queued ? this.queuedColors : false) || withColors;
     this.queued = scene;
     if (!this.busy) this.#flush();
   }
@@ -42,6 +46,7 @@ export class TerrainService {
       return;
     }
     this.busy = true;
+    const withColors = this.queuedColors;
     const t = scene.terrain;
     const key = fieldKeyOf(t);
     // 高さ場が変わらないときは、大きなハイトマップ文字列を送らない
@@ -51,7 +56,7 @@ export class TerrainService {
       id: ++this.seq,
       key,
       terrain,
-      color: {
+      color: !withColors ? null : {
         size: t.size,
         heightScale: t.heightScale,
         baseHeight: t.baseHeight,
@@ -78,10 +83,12 @@ export class TerrainService {
       if (msg.field) {
         this.field = msg.field;
         this.res = msg.res;
+        this.wear = msg.wear ?? null;
       }
       this.onResult({
         field: this.field,
         res: this.res,
+        wear: this.wear,
         fieldChanged: !!msg.field,
         colors: msg.colors,
         texSize: msg.texSize,

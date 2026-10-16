@@ -356,3 +356,35 @@ button, select, input { font: inherit; color: inherit; }
 /* 英語表示では、見出しの下の英字の小見出しは同じ語の繰り返しになるので出さない */
 html[lang='en'] .sec-sub { display: none; }
 html[lang='en'] .create-title { letter-spacing: 0.08em; }
+
+/* 地球の地形を取り込む */
+.geo-box { width: min(900px, 100%); }
+.geo-sub { font-size: 12px; color: var(--muted); flex: 1; }
+.geo-body { display: grid; grid-template-columns: minmax(0, 360px) minmax(0, 1fr); gap: 18px; margin-top: 12px; }
+.geo-mapwrap { position: relative; }
+.geo-map { width: 100%; aspect-ratio: 1; display: block; border-radius: 10px; border: 1px solid var(--line); background: var(--ink); cursor: grab; touch-action: none; }
+.geo-map:active { cursor: grabbing; }
+.geo-maphint { font-size: 11.5px; color: var(--muted); margin-top: 6px; text-align: center; }
+.geo-form { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.geo-row { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; align-items: center; gap: 8px; font-size: 13px; }
+.geo-row > span { color: #c9c3b2; }
+.geo-row em { font-style: normal; color: var(--muted); font-size: 12px; }
+.geo-row input, .geo-row select { min-width: 0; background: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+.geo-row input:focus, .geo-row select:focus { outline: none; border-color: var(--gold); }
+.geo-search button, .geo-actions button { background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); border-radius: 6px; padding: 5px 14px; cursor: pointer; }
+.geo-search button:hover { border-color: var(--gold); }
+.geo-results { display: flex; flex-direction: column; gap: 2px; max-height: 150px; overflow: auto; font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 8px; padding: 4px; }
+.geo-results button { text-align: left; background: none; border: 0; border-radius: 5px; padding: 5px 8px; cursor: pointer; color: var(--text); font-size: 12px; }
+.geo-results button:hover { background: rgba(217, 181, 108, 0.14); }
+.geo-info { font-size: 12px; color: var(--muted); line-height: 1.6; min-height: 1.6em; }
+.geo-actions { display: flex; justify-content: flex-end; }
+.geo-actions button.primary { background: linear-gradient(180deg, #e5c47e, #b98d45); color: #1a1406; border-color: transparent; font-weight: 700; padding: 7px 22px; }
+.geo-actions button.primary:disabled { opacity: 0.5; cursor: progress; }
+.geo-progress { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); }
+.geo-bar { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.geo-bar i { display: block; height: 100%; width: 0; background: var(--gold); transition: width 0.2s; }
+.geo-credit { font-size: 11px; color: var(--muted); line-height: 1.6; margin: 4px 0 0; }
+@media (max-width: 720px) {
+  .geo-body { grid-template-columns: 1fr; }
+  .geo-sub { display: none; }
+}

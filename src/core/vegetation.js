@@ -1,5 +1,5 @@
 import { valueNoise } from './terrainColor.js';
-import { mulberry32 } from './noise.js';
+import { mulberry32, hash2 } from './noise.js';
 
 // 植生（森と草地）の規則。Three.js 非依存。
 // 「どこに木が生えるか」を 1 か所で決め、地表の色（遠くの森は暗い緑）と、一枚絵での木の配置の両方に使う。
@@ -19,13 +19,19 @@ export function defaultVegetation() {
   };
 }
 
+// 水際（砂浜・草の生えない帯）の高さの幅 (m)。起伏の大きさに比例させるが、
+// 海底を含む実際の地形（起伏の大半が海の深さ）では広くなりすぎるので、海面から上の高さで決め、30 m までにする
+export function shoreBandOf(heightScale, baseHeight, sea) {
+  return Math.max(4, Math.min(heightScale * 0.012, (baseHeight + heightScale - sea) * 0.012, 30));
+}
+
 // ctx: { heightScale, baseHeight, waterLevel, waterEnabled, palette, vegetation }
 export function createVegetationRules(ctx) {
   const veg = { ...defaultVegetation(), ...(ctx.vegetation ?? {}) };
   const { heightScale, baseHeight, waterEnabled, palette } = ctx;
   const sea = waterEnabled ? ctx.waterLevel : baseHeight - 1;
   const top = baseHeight + heightScale;
-  const shoreBand = Math.max(4, heightScale * 0.012);
+  const shoreBand = shoreBandOf(heightScale, baseHeight, sea);
   const rs = palette.rockSlope;
   const sl = palette.snowLine;
   const seed = veg.seed | 0;
@@ -41,7 +47,7 @@ export function createVegetationRules(ctx) {
     );
   };
   // 森の広がり：大きな群落と、その中の林間のすき間
-  const clump = (x, z) => smooth(0.4, 0.62, valueNoise(x / 220, z / 220, seed) * 0.7 + valueNoise(x / 55, z / 55, seed + 1) * 0.3);
+  const clump = (x, z) => smooth(0.4, 0.62, valueNoise(x / 256, z / 256, seed) * 0.7 + valueNoise(x / 64, z / 64, seed + 1) * 0.3);
 
   return {
     veg,
@@ -53,7 +59,7 @@ export function createVegetationRules(ctx) {
     // 草の密度（0..1）
     grass(H, slope, wv, x, z) {
       if (!(veg.grass > 0)) return 0;
-      const open = 0.35 + 0.65 * smooth(0.3, 0.7, valueNoise(x / 7, z / 7, seed + 5));
+      const open = 0.35 + 0.65 * smooth(0.3, 0.7, valueNoise(x / 8, z / 8, seed + 5));
       return habitat(H, slope, wv) * open * Math.min(1, veg.grass * 1.4);
     },
     // 針葉樹になる確率：標高が高いほど増える
@@ -90,25 +96,38 @@ export function placeVegetation(rules, size, sample, heightAt, view, { maxTrees 
 
   const out = { conifer: [], broadleaf: [], grass: [] };
 
-  // ---- 木：見えている範囲に、格子＋ゆらぎで候補を置き、森の密度で間引く ----
+  // ---- 木：カメラの周りの見えている範囲に、格子＋ゆらぎで候補を置き、森の密度で間引く ----
+  // 候補の位置は格子ごとのハッシュで決める（視点を変えても同じ所に同じ木が立つ）。
+  // 置く範囲は「木が 1 画素ほどに見える距離」まで。数千 km の大地でも、カメラの近くから順に調べる
   if (veg.trees > 0) {
     const cell = Math.max(5, veg.treeHeight * 0.55);
-    const reach = size * 1.5; // 地形の外まで見える遠景も含める
+    const pix = (2 * Math.tan(halfV)) / (view.height || 1080);
+    const reach = Math.min(size * 1.5, Math.max(1500, veg.treeHeight / pix));
+    const ci = Math.floor(C[0] / cell), cj = Math.floor(C[2] / cell);
     const n = Math.ceil(reach / cell);
+    const seed = (veg.seed | 0) + 4242;
     let count = 0;
-    for (let j = -n; j <= n && count < maxTrees; j++) {
-      for (let i = -n; i <= n && count < maxTrees; i++) {
-        const x = (i + rand()) * cell, z = (j + rand()) * cell;
-        const r1 = rand(), r2 = rand(), r3 = rand(), r4 = rand();
-        if (Math.abs(x) > size / 2 || Math.abs(z) > size / 2) continue;
-        if (!inView(x, z, veg.treeHeight)) continue;
-        const s = sample(x, z);
-        if (r1 > rules.forest(s.h, s.slope, s.wv, x, z)) continue;
-        const y = heightAt(x, z);
-        const h = veg.treeHeight * (0.55 + r2 * 0.75);
-        const kind = r3 < rules.coniferChance(y) ? 'conifer' : 'broadleaf';
-        out[kind].push(x, y - h * 0.03, z, h, r4 * Math.PI * 2);
-        count++;
+    const tryCell = (i, j) => {
+      const x = (i + hash2(i, j, seed)) * cell, z = (j + hash2(i, j, seed + 1)) * cell;
+      if (Math.abs(x) > size / 2 || Math.abs(z) > size / 2) return;
+      if (!inView(x, z, veg.treeHeight)) return;
+      const s = sample(x, z);
+      if (hash2(i, j, seed + 2) > rules.forest(s.h, s.slope, s.wv, x, z)) return;
+      const y = heightAt(x, z);
+      const h = veg.treeHeight * (0.55 + hash2(i, j, seed + 3) * 0.75);
+      const kind = hash2(i, j, seed + 4) < rules.coniferChance(y) ? 'conifer' : 'broadleaf';
+      out[kind].push(x, y - h * 0.03, z, h, hash2(i, j, seed + 5) * Math.PI * 2);
+      count++;
+    };
+    // 近い順（カメラを囲む四角い輪を、内側から外側へ）
+    for (let r = 0; r <= n && count < maxTrees; r++) {
+      for (let j = cj - r; j <= cj + r && count < maxTrees; j++) {
+        if (j === cj - r || j === cj + r) {
+          for (let i = ci - r; i <= ci + r && count < maxTrees; i++) tryCell(i, j);
+        } else {
+          tryCell(ci - r, j);
+          if (r > 0) tryCell(ci + r, j);
+        }
       }
     }
   }

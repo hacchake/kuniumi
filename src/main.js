@@ -4,7 +4,8 @@ import '@fontsource/shippori-mincho/700.css';
 import '@fontsource/zen-kaku-gothic-new/400.css';
 import '@fontsource/zen-kaku-gothic-new/500.css';
 import '@fontsource/zen-kaku-gothic-new/700.css';
-import { createDefaultScene, normalizeScene, deepMerge } from './core/schema.js';
+import { createDefaultScene, normalizeScene, deepMerge, EARTH_RADIUS } from './core/schema.js';
+import { GeoDialog } from './ui/GeoDialog.js';
 import { createStore } from './core/store.js';
 import { PRESETS } from './core/presets.js';
 import { RealtimeRenderer } from './render/RealtimeRenderer.js';
@@ -48,9 +49,11 @@ store.subscribe((s) => {
     try {
       localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(s));
     } catch {
-      // 大きなハイトマップや画像で容量を超えたときは、それらを除いて残す
+      // 大きなハイトマップや画像で容量を超えたときは、それらを除いて残す。
+      // 地球から取り込んだ地形なら、範囲だけ覚えておき、次に開いたときに取り寄せ直す
       try {
         const lite = structuredClone(s);
+        if (s.terrain.mode === 'heightmap' && s.terrain.heightmap?.geo) lite.terrain.geoRestore = s.terrain.heightmap.geo;
         lite.terrain.heightmap = null;
         lite.terrain.mode = 'noise';
         for (const o of lite.objects) if (o.material.image) o.material.image = null;
@@ -208,7 +211,43 @@ async function openAny(file) {
   throw new Error(t('.{ext} は読み込めません', { ext }));
 }
 
+// 地球の地形を取り込むダイアログ（取り込んだ高さ場をハイトマップ地形としてシーンへ）
+const geo = new GeoDialog({
+  toast,
+  apply: ({ heightmap, region, res, min, max, name }, { restore = false } = {}) => {
+    selection.set('selected', null);
+    store.patch(
+      {
+        'terrain.mode': 'heightmap',
+        'terrain.heightmap': heightmap,
+        'terrain.resolution': res,
+        'terrain.size': region.size,
+        'terrain.baseHeight': min,
+        'terrain.heightScale': Math.max(1, max - min),
+        'terrain.geoRestore': null,
+        'water.enabled': true,
+        'water.level': 0,
+        'planet.curvature': true,
+        'planet.radius': EARTH_RADIUS,
+        ...(restore ? {} : { 'meta.name': name }),
+      },
+      { source: 'io' },
+    );
+    // 高さ場ができてから全体を見渡す（自動保存からの復元では視点はそのまま）
+    if (!restore) view.terrainService.idle().then(() => setTimeout(() => view.frameAll(), 50));
+  },
+});
+// 前回、地球から取り込んだ地形（自動保存に入りきらなかった分）を取り寄せ直す
+{
+  const gr = store.get().terrain.geoRestore;
+  if (gr) {
+    toast(t('前回の {name} の地形を取り寄せ直しています…', { name: gr.name }));
+    geo.importRegion({ lat: gr.lat, lon: gr.lon, size: gr.size }, gr.res, gr.name, { quiet: true, restore: true });
+  }
+}
+
 const actions = {
+  'import-geo': async () => geo.open(),
   'new-scene': async () => {
     selection.set('selected', null);
     store.replace(createDefaultScene(), { source: 'io' });
@@ -437,7 +476,7 @@ stillActions.addEventListener('click', async (e) => {
 });
 
 // ---- キーボード ----
-const modalOpen = () => !stillEl.hidden || !helpEl.hidden;
+const modalOpen = () => !stillEl.hidden || !helpEl.hidden || geo.isOpen;
 window.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
   const mod = e.ctrlKey || e.metaKey;
@@ -445,6 +484,7 @@ window.addEventListener('keydown', (e) => {
   if (k === 'escape') {
     if (!menuEl.hidden) return closeMenu();
     if (!helpEl.hidden) return closeHelp();
+    if (geo.isOpen) return geo.close();
     if (!stillEl.hidden) {
       if (stillJob) stillJob.cancel();
       else stillEl.hidden = true;

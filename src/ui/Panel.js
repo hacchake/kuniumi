@@ -1,13 +1,16 @@
-import { getIn, RESOLUTIONS, createDefaultScene } from '../core/schema.js';
+import { getIn, RESOLUTIONS, SIZE_MIN, SIZE_MAX, createDefaultScene } from '../core/schema.js';
 import { t } from '../i18n/index.js';
 
 // 項目の説明（マウスを乗せると出る）
 const HINTS = {
   'terrain.noise.seed': '地形の元になる乱数。数字を変えると別の大地になる（⟳ で無作為に）',
-  'terrain.size': '大地の一辺の長さ',
+  'terrain.size': '大地の一辺の長さ。箱庭の 200 m から、大陸がまるごと入る 1 万 km まで',
+  'terrain.detail': '高さ場の格子より細かい所に足す小さな起伏。近づいたときの平らな面を和らげる',
+  'planet.curvature': '星の丸みを描く。遠くの地面や海が地平線の向こうへ沈み、高く昇ると丸い星が見える',
+  'planet.radius': '星の半径。地球は 6371 km。小さいほど地平線が近く、丸みが強い',
   'terrain.heightScale': '一番低い所から一番高い所までの差',
   'terrain.baseHeight': '一番低い所の標高。水位 0 m より下なら海の底になる',
-  'terrain.resolution': 'リアルタイム表示の地形の細かさ。一枚絵では近いほど自動で細かくなる',
+  'terrain.resolution': '大地全体の高さ場の細かさ。近くは自動で細かく描く（格子より細かい所は小さな起伏で補う）。大陸なら 2049 以上',
   'terrain.noise.frequency': '大きな山のかたまりの数の目安',
   'terrain.noise.octaves': '大きな形に重ねる細かい起伏の段数',
   'terrain.noise.persistence': '細かい起伏をどれだけ強く重ねるか（大きいほどごつごつ）',
@@ -59,10 +62,11 @@ const SECTIONS = [
     fields: [
       { path: 'terrain.mode', label: '生成方法', type: 'select', options: [['noise', 'ノイズで生成'], ['heightmap', 'ハイトマップ']] },
       { path: 'terrain.noise.seed', label: '種', type: 'seed' },
-      { path: 'terrain.size', label: '大きさ', min: 500, max: 40000, step: 100, unit: 'm' },
-      { path: 'terrain.heightScale', label: '起伏の高さ', min: 0, max: 8000, step: 10, unit: 'm' },
-      { path: 'terrain.baseHeight', label: '基準の標高', min: -4000, max: 2000, step: 10, unit: 'm' },
+      { path: 'terrain.size', label: '大きさ', min: SIZE_MIN, max: SIZE_MAX, log: true, scale: 0.001, step: 0.01, unit: 'km' },
+      { path: 'terrain.heightScale', label: '起伏の高さ', min: 0, max: 20000, step: 10, unit: 'm' },
+      { path: 'terrain.baseHeight', label: '基準の標高', min: -12000, max: 5000, step: 10, unit: 'm' },
       { path: 'terrain.resolution', label: '解像度', type: 'select', options: RESOLUTIONS.map((r) => [r, `${r} × ${r}`]), number: true },
+      { path: 'terrain.detail', label: '細部の起伏', min: 0, max: 3, step: 0.05 },
     ],
   },
   {
@@ -118,6 +122,15 @@ const SECTIONS = [
       { path: 'sun.elevation', label: '高度', min: -12, max: 90, step: 0.1, unit: '°' },
       { path: 'sun.azimuth', label: '方位', min: 0, max: 360, step: 0.5, unit: '°' },
       { path: 'sun.intensity', label: '強さ', min: 0, max: 3, step: 0.01 },
+    ],
+  },
+  {
+    id: 'planet',
+    title: '星',
+    sub: 'Planet',
+    fields: [
+      { path: 'planet.curvature', label: '丸みを描く', type: 'toggle' },
+      { path: 'planet.radius', label: '半径', min: 100000, max: 100000000, log: true, scale: 0.001, step: 1, unit: 'km' },
     ],
   },
   {
@@ -296,11 +309,15 @@ export class Panel {
       row.append(num, dice);
       this.bindings.push({ f, read: (v) => (num.value = v), el: num });
     } else {
+      // log: 目盛りを対数に（桁の違う値を 1 本で扱う）、scale: 表示の単位への換算（m → km など）
+      const k = f.scale ?? 1;
+      const toR = (v) => (f.log ? Math.log10(Math.max(f.min, v)) : v);
+      const fromR = (r) => (f.log ? roundSig(10 ** r, 3) : r);
       const range = document.createElement('input');
       range.type = 'range';
-      range.min = f.min;
-      range.max = f.max;
-      range.step = f.step;
+      range.min = toR(f.min);
+      range.max = toR(f.max);
+      range.step = f.log ? 0.001 : f.step;
       const num = document.createElement('input');
       num.type = 'number';
       num.step = f.step;
@@ -308,20 +325,21 @@ export class Panel {
       unit.className = 'unit';
       unit.textContent = f.unit ?? '';
       range.oninput = () => {
-        num.value = range.value;
-        set(Number(range.value));
+        const v = fromR(Number(range.value));
+        num.value = round(v * k, f.step);
+        set(v);
       };
       num.onchange = () => {
-        const v = Number(num.value);
-        if (Number.isFinite(v)) set(v);
+        const v = Number(num.value) / k;
+        if (Number.isFinite(v)) set(f.log ? Math.min(f.max, Math.max(f.min, v)) : v);
       };
       row.append(range, num, unit);
       this.bindings.push({
         f,
         el: range,
         read: (v) => {
-          range.value = v;
-          if (document.activeElement !== num) num.value = round(v, f.step);
+          range.value = toR(v);
+          if (document.activeElement !== num) num.value = round(v * k, f.step);
         },
         range,
       });
@@ -358,6 +376,13 @@ export class Panel {
       if (b.f.path.startsWith('water.') && b.f.path !== 'water.enabled') b.el.closest('.row').classList.toggle('dim', !s.water.enabled);
     }
   }
+}
+
+// 有効数字 n 桁に丸める（対数の目盛りで中途半端な値にしない）
+function roundSig(v, n) {
+  if (!(v > 0)) return v;
+  const p = 10 ** (Math.floor(Math.log10(v)) - n + 1);
+  return Math.round(v / p) * p;
 }
 
 function round(v, step) {

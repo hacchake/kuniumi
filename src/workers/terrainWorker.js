@@ -20,12 +20,22 @@ self.onmessage = async (e) => {
       fieldKey = key;
       fieldChanged = true;
     }
-    const colors = computeTerrainColors(field, fieldRes, color, wear);
-    const msg = { id, key, res: fieldRes, colors: colors.data, texSize: colors.size };
-    const transfer = [colors.data.buffer];
+    // 地表の色（テクスチャ）は書き出しのときだけ焼く。リアルタイム表示は GPU が塗る
+    const msg = { id, key, res: fieldRes };
+    const transfer = [];
+    if (color) {
+      const colors = computeTerrainColors(field, fieldRes, color, wear);
+      msg.colors = colors.data;
+      msg.texSize = colors.size;
+      transfer.push(colors.data.buffer);
+    }
     if (fieldChanged) {
       msg.field = field.slice();
       transfer.push(msg.field.buffer);
+      if (wear) {
+        msg.wear = wear.slice();
+        transfer.push(msg.wear.buffer);
+      }
     }
     self.postMessage(msg, transfer);
   } catch (err) {

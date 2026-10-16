@@ -67,7 +67,8 @@ export async function encodeGray16(values, width, height, text = {}) {
 
 // PNG を解釈して { width, height, data: Float32Array(0..1, 1チャンネル), bitDepth, text } を返す。
 // 非対応の形式（インターレース、パレット等）は null を返すので、呼び出し側で通常デコードに切り替える
-export async function decodePng(buffer) {
+// terrarium: true なら、標高タイル（RGB 8bit）の色から標高 (m) を出す（R×256 + G + B/256 − 32768）
+export async function decodePng(buffer, { terrarium = false } = {}) {
   const bytes = new Uint8Array(buffer);
   for (let i = 0; i < 8; i++) if (bytes[i] !== SIG[i]) return null;
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -97,6 +98,7 @@ export async function decodePng(buffer) {
   }
   const channels = { 0: 1, 2: 3, 4: 2, 6: 4 }[ctype];
   if (!channels || interlace || (depth !== 8 && depth !== 16)) return null;
+  if (terrarium && (channels < 3 || depth !== 8)) return null;
 
   const total = idats.reduce((s, d) => s + d.length, 0);
   const zdata = new Uint8Array(total);
@@ -130,6 +132,14 @@ export async function decodePng(buffer) {
         v += pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
       }
       cur[i] = v & 255;
+    }
+    if (terrarium) {
+      for (let x = 0; x < width; x++) {
+        const o = x * bpp;
+        out[y * width + x] = cur[o] * 256 + cur[o + 1] + cur[o + 2] / 256 - 32768;
+      }
+      prev.set(cur);
+      continue;
     }
     // 先頭チャンネル（グレー or R）を高さとして使う
     for (let x = 0; x < width; x++) {

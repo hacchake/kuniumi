@@ -49,6 +49,10 @@ export class RealtimeAtmosphere {
       fogHeight: { value: 900 },
       fogBase: { value: 0 },
       fogG: { value: 0.6 },
+      logDepthK: { value: Math.log2(1e8 + 1) }, // 対数深度：log2(far + 1)
+      cloudOrigin: { value: new THREE.Vector2() },
+      cloudPlanetR: { value: 0 },
+      cloudCam: { value: new THREE.Vector3() },
     };
 
     const vs = /* glsl */ `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4( position.xy, 0.0, 1.0 ); }`;
@@ -63,20 +67,24 @@ export class RealtimeAtmosphere {
         uniform sampler2D depthTex, sceneTex;
         uniform mat4 invProj, camWorld;
         uniform vec3 camPos, sunDir, sunE, ambient;
-        uniform float maxDist, frame;
+        uniform float maxDist, frame, logDepthK;
         uniform int hasShadow;
         ${CLOUD_UNIFORMS_GLSL}
         ${CLOUD_FUNCS_GLSL}
         ${SHADOW_GLSL}
-        float lit( vec3 p ) { return ( hasShadow == 1 ? sunVisible( p ) : 1.0 ) * cloudShadow( p, sunDir, 1 ); }
+        // 雲の影は雲を描く距離まで（それより遠くは模様が細かすぎて粒になる）
+        float lit( vec3 p ) { return ( hasShadow == 1 ? sunVisible( p ) : 1.0 ) * ( distance( p, camPos ) < CLOUD_FAR ? cloudShadow( p, sunDir, 1 ) : 1.0 ); }
         ${FOG_MARCH_GLSL}
         ${CLOUD_MARCH_GLSL}
         // 画素ごとのゆらぎ（Interleaved Gradient Noise）。歩数の少なさによる縞を目立たないざらつきにする
         float ign( vec2 p ) { return fract( 52.9829189 * fract( dot( p, vec2( 0.06711056, 0.00583715 ) ) ) ); }
         void main() {
+          // 深度は対数（何千 km 先まで精度を保つため）。視線方向の距離 w に戻してから位置を出す
           float depth = texture2D( depthTex, vUv ).r;
-          vec4 v = invProj * vec4( vUv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0 ); v /= v.w;
-          vec3 wp = ( camWorld * vec4( v.xyz, 1.0 ) ).xyz;
+          float w = exp2( depth * logDepthK ) - 1.0;
+          vec4 v = invProj * vec4( vUv * 2.0 - 1.0, -1.0, 1.0 ); v /= v.w; // 手前の面の点（奥の面は遠すぎて精度が出ない）
+          vec3 vp = v.xyz * ( w / max( 1e-6, - v.z ) );
+          vec3 wp = ( camWorld * vec4( vp, 1.0 ) ).xyz;
           vec3 dir = normalize( wp - camPos );
           bool sky = depth >= 0.99999;
           // かすみを受けない天体（色の a = 0 で印を付けてある）
@@ -130,6 +138,13 @@ export class RealtimeAtmosphere {
   }
 
   // atm: { sunDir, sunE, ambient, fog:{density,height,base,g,maxDist}, clouds:{coverage,density,scale,elevation,base,thickness} }
+  // 描く座標の原点（世界座標の x, z）、星の半径（0 = 平ら）、曲げの中心（描く座標の x, z）
+  setView(origin, planetR, center) {
+    this.uniforms.cloudOrigin.value.copy(origin);
+    this.uniforms.cloudPlanetR.value = planetR;
+    this.uniforms.cloudCam.value.set(center.x, 0, center.y);
+  }
+
   setParams(atm) {
     const u = this.uniforms;
     u.sunDir.value.set(...atm.sunDir).normalize();
@@ -149,9 +164,10 @@ export class RealtimeAtmosphere {
   }
 
   // 影の地図を作り直す（地形・物体・太陽が変わったとき）
-  updateShadow(objects, sunDir) {
+  // bounds: { center, radius } 地図にする範囲（カメラの周り）
+  updateShadow(objects, sunDir, bounds = null) {
     this.shadow?.dispose();
-    this.shadow = objects.length ? buildSunShadowMap(this.gl, objects, sunDir, 2048) : null;
+    this.shadow = objects.length ? buildSunShadowMap(this.gl, objects, sunDir, 2048, bounds) : null;
     const u = this.uniforms;
     u.hasShadow.value = this.shadow ? 1 : 0;
     if (this.shadow) {
@@ -165,6 +181,7 @@ export class RealtimeAtmosphere {
     const gl = this.gl;
     const u = this.uniforms;
     camera.updateMatrixWorld();
+    u.logDepthK.value = Math.log2(camera.far + 1);
     u.invProj.value.copy(camera.projectionMatrixInverse);
     u.camWorld.value.copy(camera.matrixWorld);
     u.camPos.value.copy(camera.position);

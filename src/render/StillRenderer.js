@@ -12,8 +12,11 @@ import { sunIrradiance, discScaleFor } from '../core/skyModel.js';
 import { computeAtmosphere } from './atmospherePass.js';
 import { atmosphereParams } from './atmosphereParams.js';
 import { coniferGeometry, broadleafGeometry, grassGeometry, fillInstances } from '../three/vegetationMeshes.js';
+import { planetRadius } from '../core/schema.js';
+import { curvePoint } from '../core/curvature.js';
 
 // 高画質の一枚絵モード。リアルタイム表示と同じシーン JSON を、別の描画器（パストレーサ）で解釈する。
+// 数千 km の大地のため、座標の原点を注視点へずらし（Float32 の精度対策）、星の丸みもリアルタイム表示と同じ式で曲げて組む。
 //
 //   1. 地形を静止画用に細かく作り直す（頂点 1025〜2049/辺、地表テクスチャ 4096px）
 //   2. 空の物理モデルから全天の HDR 画像を作り、空そのものを光源にする（太陽の柔らかい影・映り込み）
@@ -68,6 +71,9 @@ export class StillJob {
     const mark = (k) => (this.stats.timings[k] = Math.round(performance.now() - tStart));
     const tStart = performance.now();
     this.stats.timings = {};
+    // 原点 = 注視点の真下。丸みの中心も注視点（リアルタイム表示と同じ）
+    const R = planetRadius(s);
+    this.place = { ox: s.camera.target[0], oz: s.camera.target[2], cx: s.camera.target[0], cz: s.camera.target[2], R };
     const terrain = await this.#lodTerrain(s, W / H, H);
     mark('terrain');
     this.#check();
@@ -209,6 +215,7 @@ export class StillJob {
         view: { position: s.camera.position, target: s.camera.target, fov: s.camera.fov, aspect, height },
         maxTriangles,
         vegetation: s.vegetation,
+        place: this.place,
       });
     });
   }
@@ -238,8 +245,10 @@ export class StillJob {
     let water = null;
     if (s.water.enabled) {
       const span = Math.max(t.size * 30, 2000000); // 水平線（高さ数 km から百数十 km 先）より遠くまで
-      const wgeo = new THREE.PlaneGeometry(span, span, 1, 1);
-      wgeo.rotateX(-Math.PI / 2);
+      // 丸い星では、注視点を中心に近くは細かく遠くは粗い円盤を、球面に沿って曲げる
+      const R = this.place.R;
+      const wgeo = R > 0 ? curvedDisc(R, s.water.level) : new THREE.PlaneGeometry(span, span, 1, 1);
+      if (!(R > 0)) wgeo.rotateX(-Math.PI / 2);
       // さざ波は「表面の粗さ」で表す。繰り返しの法線マップはパストレーサのテクスチャ合成で継ぎ目が線になるため使わない。
       // 粗さは「揺らぎ」「波の大きさ」から決める（太陽の照り返しが広がり、遠くの水面が空を柔らかく映す）
       const tint = new THREE.Color(s.water.color);
@@ -255,19 +264,33 @@ export class StillJob {
         attenuationDistance: 10,
       });
       water = new THREE.Mesh(wgeo, wmat);
-      water.position.y = s.water.level;
+      if (!(R > 0)) water.position.y = s.water.level;
       scene.add(water);
       // 水の底：地形の外まで光が素通りしないよう、暗い海底でふさぐ
-      const bgeo = new THREE.PlaneGeometry(span, span, 1, 1);
-      bgeo.rotateX(-Math.PI / 2);
+      const bedY = Math.min(t.baseHeight, s.water.level) - 3; // 地形の最低点のすぐ下（縁の段差を作らない）
+      const bgeo = R > 0 ? curvedDisc(R, bedY) : new THREE.PlaneGeometry(span, span, 1, 1);
+      if (!(R > 0)) bgeo.rotateX(-Math.PI / 2);
       const bed = new THREE.Mesh(bgeo, new THREE.MeshStandardMaterial({ color: 0x1a1612, roughness: 1 }));
-      bed.position.y = Math.min(t.baseHeight, s.water.level) - 3; // 地形の最低点のすぐ下（縁の段差を作らない）
+      if (!(R > 0)) bed.position.y = bedY;
       scene.add(bed);
       this.disposers.push(() => (wgeo.dispose(), wmat.dispose(), bgeo.dispose(), bed.material.dispose()));
     }
 
-    // 物体（リアルタイム表示と同じ形と素材）
-    for (const m of objectMeshes) scene.add(m);
+    // 物体（リアルタイム表示と同じ形と素材）。原点をずらし、置き場所を丸みで曲げる（天体は空にあるので曲げない）
+    const P = this.place;
+    const pp = [0, 0, 0];
+    const celestialIds = new Set(s.objects.filter((o) => o.celestial).map((o) => o.id));
+    for (const m of objectMeshes) {
+      if (celestialIds.has(m.userData.kuniumiId)) {
+        m.position.x -= P.ox;
+        m.position.z -= P.oz;
+      } else {
+        curvePoint(m.position.x - P.ox, m.position.y, m.position.z - P.oz, 0, 0, P.R, pp);
+        m.position.set(pp[0], pp[1], pp[2]);
+      }
+      m.updateMatrixWorld();
+      scene.add(m);
+    }
 
     // 木と草（同じ形を位置だけ変えて大量に置く）
     const plants = [];
@@ -323,9 +346,14 @@ export class StillJob {
   }
 
   #camera(s, aspect) {
-    const cam = new THREE.PerspectiveCamera(s.camera.fov, aspect, 1, s.terrain.size * 200);
-    cam.position.fromArray(s.camera.position);
-    cam.lookAt(new THREE.Vector3().fromArray(s.camera.target));
+    const P = this.place;
+    const far = Math.max(2e6, s.terrain.size * 200);
+    const cam = new THREE.PerspectiveCamera(s.camera.fov, aspect, 0.5, far);
+    const [x, y, z] = s.camera.position;
+    const c = curvePoint(x - P.ox, y, z - P.oz, 0, 0, P.R);
+    cam.position.set(c[0], c[1], c[2]);
+    const tg = s.camera.target;
+    cam.lookAt(new THREE.Vector3(tg[0] - P.ox, tg[1], tg[2] - P.oz));
     cam.updateMatrixWorld();
     return cam;
   }
@@ -364,7 +392,13 @@ export class StillJob {
     if (built.water) meshes.push({ object: built.water, noShadow: true });
     for (const m of built.plants) meshes.push({ object: m });
     for (const m of objectMeshes) meshes.push({ object: m, celestial: celestial.has(m.userData.kuniumiId) });
-    const res = computeAtmosphere(this.view.renderer, meshes, camera, W, H, { ...atmosphereParams(s), skyE });
+    const P = this.place;
+    const view = { origin: [P.ox, P.oz], planetR: P.R, cam: [0, 0, 0] };
+    // 光の筋の影の地図は注視点の周りだけ（数千 km の大地全体では細かさが足りない）
+    const tg = new THREE.Vector3(0, s.camera.target[1], 0);
+    const radius = Math.min(Math.max(3000, camera.position.distanceTo(tg) * 3), Math.max(3000, Math.min(s.terrain.size * 0.75, 200000)));
+    const shadowBounds = s.terrain.size > 60000 ? { center: tg, radius } : null;
+    const res = computeAtmosphere(this.view.renderer, meshes, camera, W, H, { ...atmosphereParams(s), skyE, view, shadowBounds });
     for (let i = 0, n = W * H; i < n; i++) {
       const o = i * 4, m = res.surface[i], T = res.inscatter[o + 3];
       for (let c = 0; c < 3; c++) hdr[o + c] = hdr[o + c] * m * T + res.inscatter[o + c];
@@ -425,6 +459,41 @@ function flipRows(data, W, H) {
     data.copyWithin(a, b, b + W * 4);
     data.set(row, b);
   }
+}
+
+// 丸い星の水面（と海底）：注視点（原点）を中心に、近くは細かく遠くは粗い同心円の円盤を、標高 level の球面に沿って曲げる
+function curvedDisc(R, level) {
+  const SEG = 720;
+  const maxR = Math.PI * R * 0.98;
+  const radii = [0];
+  for (let r = 1; r < maxR; r *= 1.035) radii.push(r);
+  radii.push(maxR);
+  const pos = new Float32Array((1 + (radii.length - 1) * SEG) * 3);
+  const p = [0, 0, 0];
+  curvePoint(0, level, 0, 0, 0, R, p);
+  pos.set(p, 0);
+  let v = 1;
+  for (let k = 1; k < radii.length; k++) {
+    for (let i = 0; i < SEG; i++, v++) {
+      const a = (i / SEG) * Math.PI * 2;
+      curvePoint(Math.cos(a) * radii[k], level, Math.sin(a) * radii[k], 0, 0, R, p);
+      pos.set(p, v * 3);
+    }
+  }
+  const index = [];
+  for (let i = 0; i < SEG; i++) index.push(0, 1 + ((i + 1) % SEG), 1 + i);
+  for (let k = 1; k < radii.length - 1; k++) {
+    const a0 = 1 + (k - 1) * SEG, b0 = 1 + k * SEG;
+    for (let i = 0; i < SEG; i++) {
+      const i1 = (i + 1) % SEG;
+      index.push(a0 + i, b0 + i1, b0 + i, a0 + i, a0 + i1, b0 + i1);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setIndex(index);
+  g.computeVertexNormals();
+  return g;
 }
 
 // 画面の描き換えの機会を与える（requestAnimationFrame は画面が隠れていると止まるので時間で待つ）

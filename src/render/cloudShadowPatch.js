@@ -1,4 +1,6 @@
+import * as THREE from 'three';
 import { CLOUD_UNIFORMS_GLSL, CLOUD_FUNCS_GLSL } from './atmosphereGLSL.js';
+import { CURVE_GLSL } from './curvatureGLSL.js';
 
 // リアルタイム表示の素材に「雲の影」を差し込む。
 // 太陽の直射（平行光源）の明るさだけを、その点から太陽へ向かって雲を通る量で減らす（空からの光はそのまま）。
@@ -13,25 +15,56 @@ export function createCloudUniforms() {
     cloudBase: { value: 2200 },
     cloudThick: { value: 900 },
     cloudSunDir: { value: null }, // THREE.Vector3
+    cloudOrigin: { value: new THREE.Vector2() },
+    cloudPlanetR: { value: 0 },
+    cloudCam: { value: new THREE.Vector3() },
   };
 }
 
-// MeshStandardMaterial / MeshPhysicalMaterial に差し込む
+// MeshStandardMaterial / MeshPhysicalMaterial に差し込む。
+// uniforms に kPlanetR / kCamPos（curvatureGLSL.js）があれば、星の丸みにそって曲げて描く（天体と、自分で曲げる地形は除く）
 export function patchStandardMaterial(material, uniforms) {
   const prev = material.onBeforeCompile;
   material.onBeforeCompile = (shader, renderer) => {
     prev?.call(material, shader, renderer);
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vCloudW;')
-      .replace('#include <project_vertex>', '#include <project_vertex>\nvCloudW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;');
+      .replace(
+        '#include <common>',
+        `#include <common>\nvarying vec3 vCloudW;\n#if !defined( KUNIUMI_NO_CURVE ) && !defined( KUNIUMI_CELESTIAL )\n${CURVE_GLSL}\n#endif\n#ifdef KUNIUMI_VERTEX_CLOUD\nvarying float vKCloud;\nuniform vec3 cloudSunDir;\n${CLOUD_UNIFORMS_GLSL}\n${CLOUD_FUNCS_GLSL}\n#endif`,
+      )
+      .replace(
+        '#include <project_vertex>',
+        `#include <project_vertex>
+        #if !defined( KUNIUMI_NO_CURVE ) && !defined( KUNIUMI_CELESTIAL )
+        if ( kPlanetR > 0.0 ) {
+          vec4 kW = vec4( transformed, 1.0 );
+          #ifdef USE_INSTANCING
+            kW = instanceMatrix * kW;
+          #endif
+          kW = modelMatrix * kW;
+          kW.xyz = kCurve( kW.xyz );
+          mvPosition = viewMatrix * kW;
+          gl_Position = projectionMatrix * mvPosition;
+        }
+        #endif
+        vCloudW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
+        #ifdef KUNIUMI_VERTEX_CLOUD
+          vKCloud = mix( cloudShadow( vCloudW, cloudSunDir, 2 ), 1.0, smoothstep( CLOUD_FAR * 0.3, CLOUD_FAR, distance( vCloudW, cameraPosition ) ) );
+        #endif`,
+      );
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vCloudW;\nuniform vec3 cloudSunDir;\n${CLOUD_UNIFORMS_GLSL}\n${CLOUD_FUNCS_GLSL}`)
+      .replace('#include <common>', `#include <common>\nvarying vec3 vCloudW;\nvarying float vKCloud;\nuniform vec3 cloudSunDir;\n${CLOUD_UNIFORMS_GLSL}\n${CLOUD_FUNCS_GLSL}`)
       .replace(
         '#include <lights_fragment_begin>',
         `#include <lights_fragment_begin>
         {
-          float cT = cloudShadow( vCloudW, cloudSunDir, 2 );
+          // 遠くの雲の影は細かい粒になるので、雲を描かない距離では影も消す
+          #ifdef KUNIUMI_VERTEX_CLOUD
+            float cT = vKCloud;
+          #else
+            float cT = mix( cloudShadow( vCloudW, cloudSunDir, 2 ), 1.0, smoothstep( CLOUD_FAR * 0.3, CLOUD_FAR, distance( vCloudW, cameraPosition ) ) );
+          #endif
           reflectedLight.directDiffuse *= cT;
           reflectedLight.directSpecular *= cT;
         }`,
@@ -63,7 +96,7 @@ export function patchWaterMaterial(material, uniforms) {
       call,
       `${call}
       {
-        float cT = cloudShadow( worldPosition.xyz, cloudSunDir, 2 );
+        float cT = mix( cloudShadow( worldPosition.xyz, cloudSunDir, 2 ), 1.0, smoothstep( CLOUD_FAR * 0.3, CLOUD_FAR, distance( worldPosition.xyz, eye ) ) );
         diffuseLight *= cT;
         specularLight *= cT;
       }`,

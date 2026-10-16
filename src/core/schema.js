@@ -9,8 +9,22 @@ import { t } from '../i18n/index.js';
 export const FORMAT = 'kuniumi.scene';
 export const VERSION = 1;
 
-// 地形メッシュの解像度（頂点数/辺）。2^n+1 にしておくとハイトマップの慣例と合う
-export const RESOLUTIONS = [129, 257, 513, 1025];
+// 高さ場の解像度（格子点の数/辺）。2^n+1 にしておくとハイトマップの慣例と合う。
+// リアルタイム表示は近くを自動で細かくするので、これは「大地全体の地形の細かさ」
+export const RESOLUTIONS = [129, 257, 513, 1025, 2049, 4097];
+
+// 大地の大きさ（一辺 m）の範囲。数百 m の箱庭から、大陸がまるごと入る 1 万 km まで
+export const SIZE_MIN = 200;
+export const SIZE_MAX = 10000000;
+
+// 地球の半径 (m)
+export const EARTH_RADIUS = 6371000;
+
+// 星の丸みに使う半径（丸みを切っていれば 0 = 平ら）
+export function planetRadius(s) {
+  const p = s.planet;
+  return p?.curvature ? Math.max(1000, p.radius ?? EARTH_RADIUS) : 0;
+}
 
 export function createDefaultScene() {
   return {
@@ -27,6 +41,7 @@ export function createDefaultScene() {
       resolution: 257,
       heightScale: 1200, // 起伏の高さ (m)。正規化した高さ 0..1 に掛ける
       baseHeight: -250, // 正規化高さ 0 の標高 (m)
+      detail: 1, // 格子より細かい所に足す小さな起伏の強さ（0 = 足さない）
       noise: {
         seed: 1207,
         frequency: 2.2, // 地形全体に入る大きな山の数の目安
@@ -39,7 +54,7 @@ export function createDefaultScene() {
         falloff: 0.55, // 外周を沈める度合い（島・大陸づくり）
         erosion: 0.5, // 雨による侵食（谷筋と扇状地）
       },
-      heightmap: null, // { id, name, png(dataURL 16bit推奨), width, height }
+      heightmap: null, // { id, name, png(dataURL 16bit推奨), width, height, geo?: { 範囲・出典 } }
       palette: {
         shore: '#c9b48a',
         low: '#4d6b2f',
@@ -50,6 +65,11 @@ export function createDefaultScene() {
         snowLine: 0.72, // 水面〜最高点のうち、雪が乗り始める割合
         rockSlope: 0.95, // 岩肌が出始める傾斜（勾配 tan）
       },
+    },
+    // 星そのもの。丸みを付けると、遠くの地面が地平線の向こうへ沈む
+    planet: {
+      radius: EARTH_RADIUS, // 半径 (m)
+      curvature: true, // 丸みを描く
     },
     water: {
       enabled: true,
@@ -126,6 +146,7 @@ export function normalizeScene(input) {
     t.resolution = RESOLUTIONS.reduce((a, b) => (Math.abs(b - t.resolution) < Math.abs(a - t.resolution) ? b : a));
   }
   if (t.mode === 'heightmap' && !t.heightmap?.png) t.mode = 'noise';
+  t.size = Math.min(SIZE_MAX, Math.max(SIZE_MIN, Number(t.size) || base.terrain.size));
   merged.objects = (Array.isArray(merged.objects) ? merged.objects : []).map(normalizeObject);
   return merged;
 }

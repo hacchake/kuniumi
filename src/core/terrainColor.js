@@ -1,5 +1,5 @@
 import { hash2 } from './noise.js';
-import { createVegetationRules } from './vegetation.js';
+import { createVegetationRules, shoreBandOf } from './vegetation.js';
 
 // 高さ場から地表の色テクスチャ（RGBA, 行0 = 北）を作る。
 // リアルタイム表示と glTF 書き出しで同じ絵を使うため、シェーダではなく CPU で焼く。
@@ -49,7 +49,7 @@ export function createTerrainShader(opts) {
   P.soil = P.shore.map((v, i) => (v + P.high[i]) * 0.5);
   const sea = waterEnabled ? waterLevel : baseHeight - 1;
   const top = baseHeight + heightScale;
-  const shoreBand = Math.max(4, heightScale * 0.012);
+  const shoreBand = shoreBandOf(heightScale, baseHeight, sea);
   const rs = palette.rockSlope;
   const sl = palette.snowLine;
   const rockCol = [0, 0, 0];

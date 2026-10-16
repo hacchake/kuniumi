@@ -1,6 +1,6 @@
 import { createNoiseSampler, generateNoiseFieldWithRange, sampleField, edgeFade } from './heightfield.js';
 import { applyErosion } from './erosion.js';
-import { createSimplex2D } from './noise.js';
+import { detailHeight } from './terrainDetail.js';
 
 // 地形の「任意の地点の高さ」を返す部品。一枚絵の細かい地形と、木・草の配置が使う。
 //   heightAt(x, z, spacing): 標高 (m)。spacing (m) より細かい起伏は描かない
@@ -47,18 +47,10 @@ function heightmapSurface(terrain, img) {
     const row = (jj) => cr(px(i - 1, jj), px(i, jj), px(i + 1, jj), px(i + 2, jj), fx);
     return cr(row(j - 1), row(j), row(j + 1), row(j + 2), fy);
   };
-  // 画素より細かい所の小さな起伏（高さは画素の大きさの数 % 程度。近景の平らな多角形を和らげる）
+  // 画素より細かい所の小さな起伏（リアルタイム表示と同じ式。近景の平らな多角形を和らげる）
   const pixelM = size / Math.max(1, Math.max(W, H) - 1);
-  const detail = createSimplex2D(9173);
-  const detailAt = (x, z, spacing) => {
-    let s = 0, amp = pixelM * 0.05, lambda = pixelM * 1.2;
-    for (let o = 0; o < 8 && lambda > spacing * 2; o++) {
-      s += detail(x / lambda + o * 13.1, z / lambda - o * 7.7) * amp;
-      amp *= 0.5;
-      lambda *= 0.5;
-    }
-    return s;
-  };
+  const amount = terrain.detail ?? 1;
+  const detailAt = (x, z, spacing) => detailHeight(x, z, pixelM, spacing, amount);
   const heightAt = (x, z, spacing) => baseHeight + bicubic(x / size + 0.5, z / size + 0.5) * heightScale + detailAt(x, z, spacing);
   const wearAt = () => 0;
   return { heightAt, wearAt, coarse: coarseFrom((u, v) => bicubic(u, v), Math.max(W, H), terrain, wearAt) };
