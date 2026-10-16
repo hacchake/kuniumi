@@ -128,7 +128,8 @@ export const GLOBE_SURFACE_GLSL = /* glsl */ `
     // 海か陸か：標高が 0 m 未満でも、衛星写真が水に見えなければ陸（海抜すれすれの水田・干拓地・街）。
     // 写真がまだ無い所は標高で、深い所（−60 m 未満）はいつも海（水らしさは io/photo.js の photoWater と同じ判定）
     float wLum = dot( img.rgb, vec3( 0.2126, 0.7152, 0.0722 ) );
-    float wLike = smoothstep( 0.88, 1.0, img.b / max( img.g, 1e-4 ) ) * smoothstep( 0.11, 0.07, wLum );
+    float wLike = max( smoothstep( 0.88, 1.0, img.b / max( img.g, 1e-4 ) ) * smoothstep( 0.11, 0.07, wLum ),
+                       smoothstep( 0.85, 0.95, img.b / max( img.g, 1e-4 ) ) * smoothstep( 0.6, 0.45, img.r / max( img.g, 1e-4 ) ) ); // 南の海の浅瀬も
     // 写真がある所では、海岸線は写真の形に合わせる（粗い標高データの四角い段に合わせない）
     bool water = iceCap < 0.5 && ( img.a < 0.5 ? h < 0.0 : ( h < -60.0 || ( wLike > 0.5 && h < 5.0 ) ) );
     if ( water ) {

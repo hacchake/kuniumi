@@ -47,7 +47,10 @@ export function photoForest(photo, u, v) {
 export function photoWater(photo, u, v) {
   const [r, g, b] = photoAt(photo, u, v, tmp);
   const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  return smooth(0.88, 1.0, b / (g + 1e-4)) * (1 - smooth(0.07, 0.11, lum));
+  const deep = smooth(0.88, 1.0, b / (g + 1e-4)) * (1 - smooth(0.07, 0.11, lum));
+  // 南の海の浅瀬（明るい青緑）：赤が緑よりずっと少なく、青が緑に近い
+  const shallow = smooth(0.85, 0.95, b / (g + 1e-4)) * (1 - smooth(0.45, 0.6, r / (g + 1e-4)));
+  return Math.max(deep, shallow);
 }
 
 // 写真の明るさを地表の色（反射率）に合わせる倍率。衛星写真は大気の明るさも含むので少し下げる

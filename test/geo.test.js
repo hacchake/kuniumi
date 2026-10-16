@@ -180,6 +180,8 @@ describe('海か陸か（衛星写真も使う）', () => {
     expect(one([0.03, 0.067, 0.074].map(enc))).toBeGreaterThan(0.8); // 瀬戸内海
     expect(one([0.067, 0.117, 0.098].map(enc))).toBeLessThan(0.1); // 水田
     expect(one([0.275, 0.275, 0.227].map(enc))).toBeLessThan(0.05); // 街
+    expect(one([0.05, 0.25, 0.25].map(enc))).toBeGreaterThan(0.8); // 南の海の浅瀬（青緑）
+    expect(one([0.112, 0.138, 0.117].map(enc))).toBeLessThan(0.1); // 干拓地
   });
 });
 
