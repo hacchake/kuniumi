@@ -185,6 +185,12 @@ export class WalkControls {
     }
     this.boatRoll = roll;
     this.boatPitch = pitchOff;
+    // 飛ぶとき：向きを変える速さに合わせて、曲がる側へ体を傾ける（飛行機のバンク）
+    const yawRate = (this.yaw - (this.lastYaw ?? this.yaw)) / Math.max(dt, 1e-3);
+    this.lastYaw = this.yaw;
+    const bankWant = this.mode === 'fly' ? THREE.MathUtils.clamp(yawRate * 0.25, -0.45, 0.45) : 0;
+    this.bank = (this.bank ?? 0) + (bankWant - (this.bank ?? 0)) * Math.min(1, dt * 3);
+    roll += this.bank;
     cam.quaternion.setFromEuler(new THREE.Euler(this.pitch + pitchOff, this.yaw, roll, 'YXZ'));
     cam.updateMatrixWorld();
     return true;
