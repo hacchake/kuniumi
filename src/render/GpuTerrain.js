@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { TERRAIN_SHADING_GLSL, createTerrainShadingUniforms, updateTerrainShadingUniforms } from './terrainShadingGLSL.js';
 import { CURVE_GLSL, curvePoint } from './curvatureGLSL.js';
-import { detailBaseWavelength } from '../core/terrainDetail.js';
+import { detailBaseWavelength, detailHeight } from '../core/terrainDetail.js';
 
 // リアルタイム表示の地形：近くは細かく、遠くは粗く（CDLOD）。数 km の島から数千 km の大陸まで同じ仕組みで描く。
 //
@@ -373,6 +373,14 @@ export class GpuTerrain {
     const fx = gx - i, fz = gz - j, f = this.field, k = j * res + i;
     const h = (f[k] * (1 - fx) + f[k + 1] * fx) * (1 - fz) + (f[k + res] * (1 - fx) + f[k + res + 1] * fx) * fz;
     return t.baseHeight + h * t.heightScale;
+  }
+
+  // 足元の高さ：細部の起伏まで含めて、GPU が足元に描く形と同じ（歩き回るモード用）
+  groundAt(x, z) {
+    const t = this.terrain;
+    if (!this.field || !t) return 0;
+    const cell = t.size / Math.max(1, this.res - 1);
+    return this.heightAt(x, z) + detailHeight(x, z, cell, this.uniforms.tMinCell.value, t.detail ?? 1);
   }
 
   // 光線と地形の交点（世界座標・平らな地図の上で）。無ければ null

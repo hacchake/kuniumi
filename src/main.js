@@ -475,6 +475,26 @@ stillActions.addEventListener('click', async (e) => {
   }
 });
 
+// ---- 歩き回るモード ----
+const walkBtn = document.getElementById('walk-btn');
+const hintEl = document.querySelector('.hint');
+const hintDefault = hintEl?.textContent ?? '';
+view.onWalk = (mode, speed) => {
+  walkBtn.classList.toggle('active', !!mode);
+  walkBtn.textContent = mode ? t('✕ 歩くのをやめる') : t('🚶 歩く');
+  if (!hintEl) return;
+  const sp = speed && Math.abs(speed - 1) > 0.01 ? t('（速さ ×{k}）', { k: speed.toFixed(2) }) : '';
+  hintEl.textContent = !mode
+    ? hintDefault
+    : (mode === 'walk'
+        ? t('歩く：W/A/S/D 移動　マウス 見回す（クリックでカーソルを隠す）　Space ジャンプ　Shift 走る　F 飛ぶ　ホイール 速さ　Esc 戻る')
+        : t('飛ぶ：W/A/S/D 移動　Space/E 上昇　C/Q 下降　Shift 速く　F 歩く　ホイール 速さ　Esc 戻る')) + sp;
+};
+walkBtn.addEventListener('click', () => view.setWalk(view.walking ? null : 'walk'));
+document.addEventListener('pointerlockchange', () => {
+  // カーソルの固定を Esc で外したときは、そのまま歩き続ける（もう一度 Esc で戻る）
+});
+
 // ---- キーボード ----
 const modalOpen = () => !stillEl.hidden || !helpEl.hidden || geo.isOpen;
 window.addEventListener('keydown', (e) => {
@@ -483,6 +503,7 @@ window.addEventListener('keydown', (e) => {
   // ダイアログ・メニュー：Esc で閉じる。開いている間はほかの操作を受け付けない（後ろの物体を消したりしない）
   if (k === 'escape') {
     if (!menuEl.hidden) return closeMenu();
+    if (view.walking && !document.pointerLockElement) return view.setWalk(null);
     if (!helpEl.hidden) return closeHelp();
     if (geo.isOpen) return geo.close();
     if (!stillEl.hidden) {
@@ -493,6 +514,9 @@ window.addEventListener('keydown', (e) => {
   }
   if (modalOpen()) return;
   if (e.target instanceof Element && e.target.closest('input, select, textarea')) return;
+  // 歩いている間のキーは WalkControls が受け取る
+  if (view.walking) return;
+  if (k === 'g' && !e.ctrlKey && !e.metaKey && !e.altKey) return view.setWalk('walk');
   const id = selection.get().selected;
 
   if (mod && k === 'z') {

@@ -404,4 +404,10 @@ export const EN = {
   "アイスランド": "Iceland",
   "ニュージーランド": "New Zealand",
   "標高データ：Mapzen Terrain Tiles（AWS Open Data）: SRTM, GMTED2010, ETOPO1, NED ほか": "Elevation: Mapzen Terrain Tiles (AWS Open Data): SRTM, GMTED2010, ETOPO1, NED and others",
+  "🚶 歩く": "🚶 Walk",
+  "✕ 歩くのをやめる": "✕ Stop walking",
+  "（速さ ×{k}）": " (speed ×{k})",
+  "歩く：W/A/S/D 移動　マウス 見回す（クリックでカーソルを隠す）　Space ジャンプ　Shift 走る　F 飛ぶ　ホイール 速さ　Esc 戻る": "Walk: W/A/S/D move · mouse look (click to capture cursor) · Space jump · Shift run · F fly · wheel speed · Esc back",
+  "飛ぶ：W/A/S/D 移動　Space/E 上昇　C/Q 下降　Shift 速く　F 歩く　ホイール 速さ　Esc 戻る": "Fly: W/A/S/D move · Space/E up · C/Q down · Shift fast · F walk · wheel speed · Esc back",
+  "歩き回る（G）：W/A/S/D で移動・マウスで見回す・Space でジャンプ・Shift で走る・F で飛ぶ・Esc で戻る": "Walk around (G): W/A/S/D move · mouse look · Space jump · Shift run · F fly · Esc back",
 };

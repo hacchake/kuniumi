@@ -12,6 +12,7 @@ import { GpuTerrain, ORIGIN_STEP } from './GpuTerrain.js';
 import { createCurveUniforms, curvePoint } from './curvatureGLSL.js';
 import { createWaterDisc, curveWater } from './waterDisc.js';
 import { planetRadius } from '../core/schema.js';
+import { WalkControls } from './WalkControls.js';
 import { createWaterNormals } from '../three/waterNormals.js';
 import { TextureService } from '../three/TextureService.js';
 import { ObjectLayer } from '../three/objectLayer.js';
@@ -135,6 +136,15 @@ export class RealtimeRenderer {
     this.shadowDirty = true;
     this.shadowFor = null; // 霧の影の地図を作ったときのカメラの周り { center, radius }
     this.#setupGizmo(canvas);
+    // 歩き回るモード（一人称）。足元は地形と水面の高い方
+    this.walk = new WalkControls(this.camera, canvas, {
+      groundAt: (x, z) => {
+        const s = this.store.get();
+        const g = this.gpuTerrain.groundAt(x, z);
+        return s.water.enabled ? Math.max(g, s.water.level + 0.2) : g;
+      },
+      onModeChange: (mode) => this.onWalk?.(mode, this.walk.speedScale),
+    });
 
     this.timer = new THREE.Timer();
     this.#resize();
@@ -303,7 +313,7 @@ export class RealtimeRenderer {
     let down = null;
     canvas.addEventListener('pointerdown', (e) => (down = { x: e.clientX, y: e.clientY }));
     canvas.addEventListener('pointerup', (e) => {
-      if (!down || e.button !== 0 || this.gizmo.dragging) return;
+      if (!down || e.button !== 0 || this.gizmo.dragging || this.walk?.active) return;
       const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
       down = null;
       if (moved > 4) return;
@@ -545,8 +555,33 @@ export class RealtimeRenderer {
   }
 
   // 表示中の画面を PNG にする（同じ処理の中で描いてすぐ読み出す）
+  // 歩き回るモードの出入り（mode: 'walk' | 'fly' | null）
+  get walking() {
+    return this.walk.active;
+  }
+
+  setWalk(mode) {
+    if (mode) {
+      this.flight = null;
+      this.gizmo.detach();
+      this.controls.enabled = false;
+      this.walk.enter(mode);
+    } else if (this.walk.active) {
+      this.walk.exit();
+      // 戻るときは、見ていた方向の少し先を中心に回れるようにする
+      const fwd = this.walk.forward();
+      const s = this.store.get();
+      const above = Math.max(5, this.camera.position.y - this.gpuTerrain.groundAt(this.camera.position.x, this.camera.position.z));
+      this.controls.target.copy(this.camera.position).addScaledVector(fwd, Math.min(s.terrain.size * 0.3, Math.max(30, above * 3)));
+      this.controls.enabled = true;
+      this.controls.update();
+      this.#commitCamera();
+      this.#attachGizmo();
+    }
+  }
+
   capture() {
-    this.controls.update();
+    if (!this.walk.active) this.controls.update();
     this.#draw();
     return new Promise((r) => this.renderer.domElement.toBlob(r, 'image/png'));
   }
@@ -620,8 +655,16 @@ export class RealtimeRenderer {
     this.#adaptQuality(dt);
     if (this.envDirty) this.#updateEnvironment();
     this.water.material.uniforms.time.value += dt * 0.6;
-    this.#updateFlight();
-    this.controls.update();
+    if (this.walk.active) {
+      this.walk.update(dt);
+      // 丸みの中心と影の範囲は、見ている方向の少し先
+      const p = this.camera.position;
+      const above = Math.max(2, p.y - this.gpuTerrain.groundAt(p.x, p.z));
+      this.controls.target.copy(p).addScaledVector(this.walk.forward(), Math.max(20, above * 2));
+    } else {
+      this.#updateFlight();
+      this.controls.update();
+    }
     this.#draw();
   }
 }

@@ -388,3 +388,5 @@ html[lang='en'] .create-title { letter-spacing: 0.08em; }
   .geo-body { grid-template-columns: 1fr; }
   .geo-sub { display: none; }
 }
+
+#walk-btn.active { border-color: var(--gold); color: var(--gold-2); background: rgba(217, 181, 108, 0.12); }
