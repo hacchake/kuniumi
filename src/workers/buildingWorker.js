@@ -19,6 +19,8 @@ self.onmessage = async (e) => {
       return [p.e, -p.n];
     };
     const pos = [], col = [], ids = [], centers = [];
+    // ぶつかる判定用：建物ごとの外形（x, z の並び）と高さ
+    const ring = [], ringStart = [], tops = [];
     let bid = 0;
     for (const f of features) {
       if (f.type !== 3) continue;
@@ -69,11 +71,16 @@ self.onmessage = async (e) => {
           push([all[i2][0], h, all[i2][1]], roof);
         }
         centers.push(cx, cz);
+        ringStart.push(ring.length / 2);
+        for (const p of outer) ring.push(p[0], p[1]);
+        tops.push(h);
         bid++;
       }
     }
+    ringStart.push(ring.length / 2);
     const P = new Float32Array(pos), C = new Float32Array(col), I = new Uint32Array(ids), M = new Float32Array(centers);
-    self.postMessage({ key, positions: P, colors: C, ids: I, centers: M, count: bid }, [P.buffer, C.buffer, I.buffer, M.buffer]);
+    const RG = new Float32Array(ring), RS = new Uint32Array(ringStart), T = new Float32Array(tops);
+    self.postMessage({ key, positions: P, colors: C, ids: I, centers: M, count: bid, ring: RG, ringStart: RS, tops: T }, [P.buffer, C.buffer, I.buffer, M.buffer, RG.buffer, RS.buffer, T.buffer]);
   } catch (err) {
     self.postMessage({ key, error: String(err?.message ?? err) });
   }

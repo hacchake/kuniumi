@@ -92,6 +92,41 @@ export class Buildings {
     }
   }
 
+  // 歩くときに建物の壁で押し戻す（p: 足元〜目の高さの位置。body: 体の半径）
+  pushOut(p, body = 0.35) {
+    if (!this.group.visible) return false;
+    let hit = false;
+    const key = `${Math.floor(p.x / 50)},${Math.floor(p.z / 50)}`;
+    for (const t of this.tiles.values()) {
+      const list = t.hit?.cells.get(key);
+      if (!list) continue;
+      const { ring, ringStart, top } = t.hit;
+      for (const b of list) {
+        if (p.y > top[b] + 1.7) continue; // 屋根より上にいる（飛んでいる）
+        const s = ringStart[b], e = ringStart[b + 1];
+        // 外形の内側か（交差の数）と、いちばん近い壁の点
+        let inside = false, best = Infinity, bx = 0, bz = 0;
+        for (let q = s, r = e - 1; q < e; r = q++) {
+          const ax = ring[r * 2], az = ring[r * 2 + 1], cx = ring[q * 2], cz = ring[q * 2 + 1];
+          if (az > p.z !== cz > p.z && p.x < ((cx - ax) * (p.z - az)) / (cz - az) + ax) inside = !inside;
+          const dx = cx - ax, dz = cz - az, l2 = dx * dx + dz * dz || 1;
+          const f = Math.max(0, Math.min(1, ((p.x - ax) * dx + (p.z - az) * dz) / l2));
+          const nx = ax + dx * f, nz = az + dz * f, d = Math.hypot(p.x - nx, p.z - nz);
+          if (d < best) (best = d), (bx = nx), (bz = nz);
+        }
+        if (!inside && best >= body) continue;
+        // 壁の外側へ、体の半径だけ離す
+        let ox = p.x - bx, oz = p.z - bz;
+        const l = Math.hypot(ox, oz) || 1;
+        if (inside) (ox = -ox), (oz = -oz);
+        p.x = bx + (ox / l) * body;
+        p.z = bz + (oz / l) * body;
+        hit = true;
+      }
+    }
+    return hit;
+  }
+
   async #request(tx, ty, k, geo, groundAt) {
     const tile = { state: 'loading', used: this.frame, mesh: null };
     this.tiles.set(k, tile);
@@ -131,5 +166,22 @@ export class Buildings {
     this.group.add(mesh);
     tile.mesh = mesh;
     tile.state = 'ready';
+    // ぶつかる判定用：建物の外形を 50 m の升目に振り分けておく
+    const cells = new Map();
+    for (let b = 0; b < m.count; b++) {
+      let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+      for (let q = m.ringStart[b]; q < m.ringStart[b + 1]; q++) {
+        const x = m.ring[q * 2], z = m.ring[q * 2 + 1];
+        x0 = Math.min(x0, x), x1 = Math.max(x1, x), z0 = Math.min(z0, z), z1 = Math.max(z1, z);
+      }
+      for (let i = Math.floor(x0 / 50); i <= Math.floor(x1 / 50); i++) {
+        for (let j = Math.floor(z0 / 50); j <= Math.floor(z1 / 50); j++) {
+          const k2 = `${i},${j}`;
+          if (!cells.has(k2)) cells.set(k2, []);
+          cells.get(k2).push(b);
+        }
+      }
+    }
+    tile.hit = { cells, ring: m.ring, ringStart: m.ringStart, top: m.tops.map((h, b) => base[b] + 2 + h) };
   }
 }
