@@ -731,4 +731,4 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 }
 
 // デバッグ・自動検証用
-window.KUNIUMI = { store, view, actions, openAny, selection, renderStill, history, miniMap, get stillResult() { return stillResult; } };
+window.KUNIUMI = { store, view, actions, openAny, selection, renderStill, history, miniMap, geoDialog: geo, get stillResult() { return stillResult; } };
