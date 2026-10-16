@@ -72,6 +72,80 @@ async function waterTextures(maskUrl, photoTex) {
   return { rough, color };
 }
 
+// 季節を写真に焼き込む（GpuTerrain の季節の規則と同じ）。field: 高さ場 { field(0..1), res }
+function seasonalPhoto(photoTex, season, terrain, { field, res }) {
+  const img = photoTex.image;
+  if (!img?.width) return null;
+  const P = img.width;
+  const c = document.createElement('canvas');
+  c.width = c.height = P;
+  const x = c.getContext('2d', { willReadFrequently: true });
+  x.drawImage(img, 0, 0);
+  const d = x.getImageData(0, 0, P, P);
+  const lin = (v) => ((v /= 255) <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+  const enc = (v) => 255 * (v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(Math.max(0, v), 1 / 2.4) - 0.055);
+  const hAt = (u, v) => {
+    const fx = Math.min(res - 1, Math.max(0, u * (res - 1))), fy = Math.min(res - 1, Math.max(0, v * (res - 1)));
+    const i = Math.min(res - 2, Math.floor(fx)), j = Math.min(res - 2, Math.floor(fy)), a = fx - i, b = fy - j;
+    const f = (field[j * res + i] * (1 - a) + field[j * res + i + 1] * a) * (1 - b) + (field[(j + 1) * res + i] * (1 - a) + field[(j + 1) * res + i + 1] * a) * b;
+    return terrain.baseHeight + f * terrain.heightScale;
+  };
+  const cell = terrain.size / P;
+  const hash = (i, j) => {
+    let h = (i * 374761393 + j * 668265263) | 0;
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+  };
+  const noise = (u, v) => {
+    // 約 130 m の大きさの斑（秋の赤〜黄のばらつき）
+    const s = terrain.size / 130;
+    const X = u * s, Y = v * s, i = Math.floor(X), j = Math.floor(Y), fx = X - i, fy = Y - j;
+    const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+    return (hash(i, j) * (1 - sx) + hash(i + 1, j) * sx) * (1 - sy) + (hash(i, j + 1) * (1 - sx) + hash(i + 1, j + 1) * sx) * sy;
+  };
+  for (let j = 0; j < P; j++) {
+    for (let i = 0; i < P; i++) {
+      const k = (j * P + i) * 4;
+      let r = lin(d.data[k]), g = lin(d.data[k + 1]), b = lin(d.data[k + 2]);
+      const gr = Math.min(1, Math.max(0, ((g - r) / (g + r + 1e-4)) * 4));
+      const lm = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      const u = (i + 0.5) / P, v = (j + 0.5) / P;
+      if (season === 'spring') {
+        r += (r * 1.05 - r) * gr * 0.7;
+        g += (g * 1.25 - g) * gr * 0.7;
+        b += (b * 0.85 - b) * gr * 0.7;
+      } else if (season === 'autumn') {
+        const n = noise(u, v);
+        const k2 = lm * 2.2 + 0.03, w = gr * 0.85;
+        r += ((0.62 + 0.1 * n) * k2 - r) * w;
+        g += ((0.16 + 0.32 * n) * k2 - g) * w;
+        b += ((0.04 + 0.04 * n) * k2 - b) * w;
+      } else if (season === 'winter') {
+        const h = hAt(u, v);
+        const gx = (hAt(u + 1 / P, v) - hAt(u - 1 / P, v)) / (2 * cell), gz = (hAt(u, v + 1 / P) - hAt(u, v - 1 / P)) / (2 * cell);
+        const sl = Math.hypot(gx, gz);
+        const sm = (a, b2, x2) => {
+          const q = Math.min(1, Math.max(0, (x2 - a) / (b2 - a)));
+          return q * q * (3 - 2 * q);
+        };
+        const snow = sm(terrain.winterSnow - 150, terrain.winterSnow + 250, h) * (1 - sm(0.55, 1.0, sl));
+        const dull = 1 - 0.25 * gr;
+        r = r * 0.95 * dull + (0.82 - r * 0.95 * dull) * snow;
+        g = g * 0.92 * dull + (0.85 - g * 0.92 * dull) * snow;
+        b = b * 0.85 * dull + (0.9 - b * 0.85 * dull) * snow;
+      }
+      d.data[k] = enc(r);
+      d.data[k + 1] = enc(g);
+      d.data[k + 2] = enc(b);
+    }
+  }
+  x.putImageData(d, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+
 // 衛星写真（JPEG の data URL）をテクスチャに。行 0 = 北 = uv の v 1（flipY のまま）
 function loadPhotoTexture(url) {
   return new Promise((resolve) => {
@@ -344,7 +418,25 @@ export class StillJob {
       innerPhoto = inlandWater.color;
     }
     if (inlandWater) this.disposers.push(() => inlandWater.rough.dispose());
-    const outerPhoto = usePhoto && t.heightmap?.surround?.photo ? await loadPhotoTexture(t.heightmap.surround.photo) : null;
+    // 季節（紅葉・若葉・雪）を写真に焼き込む（リアルタイム表示と同じ規則）
+    const season = t.season ?? 'summer';
+    if (innerPhoto && season !== 'summer' && this.view.terrainData) {
+      const tex = seasonalPhoto(innerPhoto, season, t, this.view.terrainData);
+      if (tex) {
+        innerPhoto.dispose();
+        innerPhoto = tex;
+      }
+    }
+    let outerPhoto = usePhoto && t.heightmap?.surround?.photo ? await loadPhotoTexture(t.heightmap.surround.photo) : null;
+    // 周りの地形の写真にも季節を（高さは周りの地形の標高 m）
+    const S = this.view.surround;
+    if (outerPhoto && season !== 'summer' && S?.meters) {
+      const tex = seasonalPhoto(outerPhoto, season, { size: S.size, baseHeight: 0, heightScale: 1, winterSnow: t.winterSnow }, { field: S.meters, res: S.res });
+      if (tex) {
+        outerPhoto.dispose();
+        outerPhoto = tex;
+      }
+    }
     for (const tex of [innerPhoto, outerPhoto]) if (tex) this.disposers.push(() => tex.dispose());
     const terrainMesh = new THREE.Mesh(
       geo,
@@ -443,9 +535,9 @@ export class StillJob {
       const con = coniferGeometry(), brd = broadleafGeometry();
       const trunk = new THREE.Color('#3a2b20');
       add(con.trunk, trunk, P.conifer);
-      add(con.crown, new THREE.Color('#1b3317'), P.conifer, { colorVar: 0.35, seed: 3 });
+      add(con.crown, new THREE.Color(s.terrain.season === 'winter' ? '#3b4a42' : '#1b3317'), P.conifer, { colorVar: 0.35, seed: 3 });
       add(brd.trunk, trunk, P.broadleaf);
-      add(brd.crown, new THREE.Color('#2e4d1f'), P.broadleaf, { colorVar: 0.4, seed: 5 });
+      add(brd.crown, new THREE.Color({ spring: '#4c7a26', autumn: '#9a4614', winter: '#4d4136' }[s.terrain.season] ?? '#2e4d1f'), P.broadleaf, { colorVar: 0.4, seed: 5 });
       const grassCol = new THREE.Color(s.terrain.palette.low).lerp(new THREE.Color('#b7b05a'), 0.15);
       add(grassGeometry(), grassCol, P.grass, { side: THREE.DoubleSide, roughness: 0.7, colorVar: 0.45, seed: 9 });
       this.stats.trees = (P.conifer.length + P.broadleaf.length) / 5;

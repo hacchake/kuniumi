@@ -418,6 +418,7 @@ export class RealtimeRenderer {
       this.gpuTerrain.setScene(s);
       this.gpuTerrain.setSeason(s.terrain.season, s.terrain.winterSnow);
       this.trees.setSeason(s.terrain.season);
+      this.surround?.terrain.setSeason(s.terrain.season, s.terrain.winterSnow);
       this.#updatePhotos(s);
       this.#updateSurround(s);
       this.shadowDirty = true;
@@ -602,6 +603,7 @@ export class RealtimeRenderer {
         this.world.add(terrain.mesh);
         this.surround = { terrain };
         terrain.setPhoto(this.photoTex?.outer ?? null);
+        terrain.setSeason(this.store.get().terrain.season, this.store.get().terrain.winterSnow);
       }
       // 標高 (m) で持ち、本来の地形と同じ「基準の標高・起伏の高さ」で 0..1 に直して使う（色の規則が内外でそろう）
       const m = new Float32Array(img.data.length);
