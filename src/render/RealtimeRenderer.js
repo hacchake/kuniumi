@@ -5,7 +5,7 @@ import { Sky } from 'three/addons/objects/Sky.js';
 import { Water } from 'three/addons/objects/Water.js';
 import { touches } from '../core/schema.js';
 import { t } from '../i18n/index.js';
-import { sunDirection, sunLight, hazeColor } from '../core/sun.js';
+import { sunDirection, sunLight, hazeColor, nightFactor, NIGHT_SKY } from '../core/sun.js';
 import { TerrainService, fieldKeyOf } from '../three/TerrainService.js';
 import { createColorTexture } from '../three/terrainMesh.js';
 import { GpuTerrain, ORIGIN_STEP } from './GpuTerrain.js';
@@ -83,6 +83,9 @@ export class RealtimeRenderer {
     this.sun.shadow.mapSize.set(4096, 4096);
     this.sun.shadow.bias = -0.0002;
     this.world.add(this.sun, this.sun.target);
+    // 夜の光（月明かり・星明かり）。太陽が沈むと強くなる
+    this.nightLight = new THREE.HemisphereLight(new THREE.Color(...NIGHT_SKY).multiplyScalar(8), 0x101014, 0);
+    this.world.add(this.nightLight);
 
     // 水
     this.water = new Water(createWaterDisc(2e7), {
@@ -406,6 +409,8 @@ export class RealtimeRenderer {
       // 照り返しは強すぎると遠くの波が粒状にちらつくので控えめに
       this.water.material.uniforms.sunColor.value.setRGB(...color).multiplyScalar(Math.min(1, strength / 25) * 0.35);
 
+      this.nightLight.intensity = nightFactor(s.sun.elevation) * Math.PI * 0.15;
+      this.atmosphere.uniforms.nightSky.value.set(...NIGHT_SKY).multiplyScalar(nightFactor(s.sun.elevation));
       this.renderer.toneMappingExposure = a.exposure;
       this.scene.environmentIntensity = a.ambient;
       const hz = hazeColor(s.sun, a);
@@ -675,6 +680,9 @@ export class RealtimeRenderer {
     this.cloudUniforms.cloudOrigin.value.copy(this.origin);
     this.cloudUniforms.cloudCam.value.set(tgt.x, 0, tgt.z);
     this.atmosphere.setView(this.origin, R, this.curveUniforms.kCenter.value);
+    // 高く昇るほど「宇宙から眺める」表現へ（地表から 15 km〜120 km で切り替える）
+    this.atmosphere.uniforms.spaceW.value = R > 0 ? THREE.MathUtils.smoothstep(flatPos.y, 15000, 120000) : 0;
+    this.atmosphere.uniforms.starI.value = 8 / Math.max(0.02, s.atmosphere.exposure / 0.12);
     this.scene.updateMatrixWorld();
     this.gpuTerrain.update(cam, this.origin);
     if (this.surround?.ready && this.surround.terrain.mesh.visible) this.surround.terrain.update(cam, this.origin);

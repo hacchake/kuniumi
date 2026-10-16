@@ -53,6 +53,11 @@ export class RealtimeAtmosphere {
       cloudOrigin: { value: new THREE.Vector2() },
       cloudPlanetR: { value: 0 },
       cloudCam: { value: new THREE.Vector3() },
+      spaceW: { value: 0 }, // 宇宙から眺める度合い（0 = 地上、1 = 宇宙）
+      atmoH: { value: 8000 }, // 大気の厚みの目安（スケールハイト）
+      atmoTop: { value: 100000 }, // 大気の上端
+      starI: { value: 8 }, // 星の明るさ
+      nightSky: { value: new THREE.Vector3() }, // 夜空のほのかな明るさ（地平線ほど明るい）
     };
 
     const vs = /* glsl */ `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4( position.xy, 0.0, 1.0 ); }`;
@@ -67,7 +72,7 @@ export class RealtimeAtmosphere {
         uniform sampler2D depthTex, sceneTex;
         uniform mat4 invProj, camWorld;
         uniform vec3 camPos, sunDir, sunE, ambient;
-        uniform float maxDist, frame, logDepthK;
+        uniform float maxDist, frame, logDepthK, spaceW, atmoH, atmoTop;
         uniform int hasShadow;
         ${CLOUD_UNIFORMS_GLSL}
         ${CLOUD_FUNCS_GLSL}
@@ -96,7 +101,34 @@ export class RealtimeAtmosphere {
           float far = 1.0 - exp( - max( 0.0, tc ) / 70000.0 );
           cl.rgb = mix( cl.rgb, ambient * ( 1.0 - cl.a ), far );
           vec4 fg = marchFog( camPos, dir, dist, sunDir, sunE, ambient, 20, j );
-          gl_FragColor = vec4( fg.rgb + cl.rgb * fg.a, cl.a * fg.a );
+          vec4 o = vec4( fg.rgb + cl.rgb * fg.a, cl.a * fg.a );
+          // 宇宙から眺めるとき：大気の層の厚み（視線が通る空気の量）で、空は黒く・縁は青く光り、地表は青くかすむ
+          if ( spaceW > 0.0 && cloudPlanetR > 0.0 ) {
+            vec3 so = camPos - kSphereC();
+            vec2 T = kSphereT( so, dir, length( so ) - cloudPlanetR, atmoTop );
+            float od = 0.0;
+            if ( T.x <= T.y && T.y > 0.0 ) {
+              float t0 = max( 0.0, T.x ), t1 = sky ? T.y : min( dist, T.y );
+              float dt = max( 0.0, t1 - t0 ) / 12.0;
+              for ( int i = 0; i < 12; i ++ ) {
+                vec3 p = camPos + dir * ( t0 + ( float( i ) + j ) * dt );
+                od += exp( - max( 0.0, kAlt( p ) ) / atmoH ) * dt;
+              }
+            }
+            float n = od / atmoH; // 真上を見上げたときの空気の量 = 1
+            // 空気の散乱（レイリー）の青。明るさは空の光に合わせる
+            vec3 blue = vec3( 0.28, 0.52, 1.0 ) * dot( ambient, vec3( 0.2126, 0.7152, 0.0722 ) ) * 1.6;
+            if ( sky ) {
+              // 空気の無い方向は真っ暗な宇宙。太陽の円盤は残す
+              float keep = max( 1.0 - exp( - n * 0.8 ), smoothstep( 0.99985, 0.99997, dot( dir, sunDir ) ) );
+              float k = mix( 1.0, keep, spaceW );
+              o = vec4( o.rgb * k + blue * ( 1.0 - exp( - n * 0.25 ) ) * spaceW * 0.7, o.a * k );
+            } else {
+              float ext = exp( - n * 0.05 );
+              o = vec4( o.rgb * mix( 1.0, ext, spaceW ) + blue * ( 1.0 - ext ) * spaceW * 0.6, o.a * mix( 1.0, ext, spaceW ) );
+            }
+          }
+          gl_FragColor = o;
         }`,
     });
 
@@ -107,15 +139,47 @@ export class RealtimeAtmosphere {
       vertexShader: vs,
       fragmentShader: /* glsl */ `
         varying vec2 vUv;
-        uniform sampler2D sceneTex, atmTex;
+        uniform sampler2D sceneTex, atmTex, depthTex;
         uniform vec2 atmTexel;
+        uniform mat4 invProj, camWorld;
+        uniform float starI;
+        uniform vec3 nightSky;
+        float sHash( vec3 p ) { p = fract( p * 0.3183099 + 0.1 ); p *= 17.0; return fract( p.x * p.y * p.z * ( p.x + p.y + p.z ) ); }
+        // 星：方向を細かい格子に分け、まれな格子に 1 つずつ点を置く（明るさと色は格子ごとの乱数）
+        vec3 stars( vec3 d ) {
+          vec3 s = vec3( 0.0 );
+          for ( int l = 0; l < 2; l ++ ) {
+            float sc = l == 0 ? 180.0 : 520.0;
+            vec3 q = d * sc;
+            vec3 c = floor( q );
+            float h = sHash( c );
+            float th = l == 0 ? 0.988 : 0.975;
+            if ( h > th ) {
+              vec3 pos = c + vec3( sHash( c + 1.37 ), sHash( c + 2.11 ), sHash( c + 3.73 ) );
+              float dd = length( q - pos );
+              float b = pow( ( h - th ) / ( 1.0 - th ), 3.0 ) * ( l == 0 ? 1.0 : 0.35 );
+              float tint = sHash( c + 7.7 );
+              s += mix( vec3( 1.0, 0.78, 0.6 ), vec3( 0.7, 0.82, 1.0 ), tint ) * b * exp( - dd * dd * 30.0 );
+            }
+          }
+          return s;
+        }
         void main() {
           vec4 c = texture2D( sceneTex, vUv );
           // 半分の解像度の計算結果を、少しぼかして拾う（ざらつきを均す）
           vec4 a = texture2D( atmTex, vUv ) * 0.4
             + texture2D( atmTex, vUv + vec2( atmTexel.x, 0.0 ) ) * 0.15 + texture2D( atmTex, vUv - vec2( atmTexel.x, 0.0 ) ) * 0.15
             + texture2D( atmTex, vUv + vec2( 0.0, atmTexel.y ) ) * 0.15 + texture2D( atmTex, vUv - vec2( 0.0, atmTexel.y ) ) * 0.15;
-          gl_FragColor = vec4( c.rgb * a.a + a.rgb, 1.0 );
+          vec3 col = c.rgb * a.a + a.rgb;
+          // 空が暗いとき（夜・宇宙）だけ星が見える
+          if ( starI > 0.0 && texture2D( depthTex, vUv ).r >= 0.99999 && c.a > 0.5 ) {
+            vec4 v = invProj * vec4( vUv * 2.0 - 1.0, -1.0, 1.0 ); v /= v.w;
+            vec3 d = normalize( ( camWorld * vec4( v.xyz, 0.0 ) ).xyz );
+            float lum = dot( col, vec3( 0.2126, 0.7152, 0.0722 ) );
+            col += stars( d ) * starI * exp( - lum * 6.0 );
+            col += nightSky * a.a * ( 0.35 + 0.65 * ( 1.0 - clamp( d.y, 0.0, 1.0 ) ) );
+          }
+          gl_FragColor = vec4( col, 1.0 );
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
         }`,

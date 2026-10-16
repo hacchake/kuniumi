@@ -5,7 +5,7 @@ import { WebGPUPathTracer, OIDNDenoiser, TRANSMISSIVE_BACKGROUND_ENVIRONMENT } f
 import { initUNetFromURL } from 'oidn-web';
 // OIDN の学習済み重み（HDR・アルベド・法線つき）。同梱してオフラインでも使えるようにする
 import OIDN_WEIGHTS from 'oidn-weights/rt_hdr_alb_nrm.tza?url';
-import { sunDirection } from '../core/sun.js';
+import { sunDirection, nightFactor, NIGHT_SKY } from '../core/sun.js';
 import { skyParams, renderSkyEquirect } from '../core/skyModel.js';
 import { toneMapToRGBA8 } from '../core/tonemap.js';
 import { sunIrradiance, discScaleFor } from '../core/skyModel.js';
@@ -368,9 +368,22 @@ export class StillJob {
       textures.push(tex);
       return tex;
     };
-    scene.environment = mkEnv(renderSkyEquirect(p, ew, eh, { ...opts, discScale }));
+    // 夜は月明かり・星明かり程度の青い光を空に足す（リアルタイム表示の夜の光と同じ明るさ）
+    const night = nightFactor(s.sun.elevation);
+    const addNight = (data) => {
+      if (night <= 0) return data;
+      for (let r = 0; r < eh; r++) {
+        const up = Math.max(0.15, Math.min(1, (r / eh - 0.5) * 2 + 0.3)); // 上ほど明るい（行 0 = 真下、最後の行 = 真上）
+        for (let c = 0; c < ew; c++) {
+          const o = (r * ew + c) * 4;
+          for (let k = 0; k < 3; k++) data[o + k] += NIGHT_SKY[k] * night * up;
+        }
+      }
+      return data;
+    };
+    scene.environment = mkEnv(addNight(renderSkyEquirect(p, ew, eh, { ...opts, discScale })));
     // 背景は見た目だけなので、半精度に収まるよう太陽の芯だけ頭打ちにする（眩しさは変わらない）
-    const bg = renderSkyEquirect(p, ew, eh, opts);
+    const bg = addNight(renderSkyEquirect(p, ew, eh, opts));
     for (let i = 0; i < bg.length; i++) if (bg[i] > 65000) bg[i] = 65000;
     scene.background = discScale > 1 ? mkEnv(bg) : scene.environment;
 

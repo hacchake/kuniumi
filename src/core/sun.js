@@ -6,6 +6,14 @@ import { skyParams, skyRadiance, sunIrradiance } from './skyModel.js';
 const D2R = Math.PI / 180;
 
 // 地面から太陽へ向かう単位ベクトル
+// 夜の明るさ（月明かり・星明かりの近似）の度合い：太陽が沈むほど 1 に近づく
+export function nightFactor(elevation) {
+  const t = Math.min(1, Math.max(0, (2 - elevation) / 12));
+  return t * t * (3 - 2 * t);
+}
+// 夜の空の光の色と明るさ（放射輝度。物理的な昼の空の 1 万分の 1 程度を、見える明るさまで持ち上げたもの）
+export const NIGHT_SKY = [0.15, 0.2, 0.36];
+
 export function sunDirection(elevationDeg, azimuthDeg) {
   const e = elevationDeg * D2R;
   const a = azimuthDeg * D2R;
