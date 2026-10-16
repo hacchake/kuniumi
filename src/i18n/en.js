@@ -545,4 +545,6 @@ export const EN = {
   "月齢": "Moon age",
   "月の満ち欠け（0 = 新月、約 7 = 上弦、約 15 = 満月、約 22 = 下弦）。月の形と空の位置、夜の明るさが変わる。「日時から」で合わせるとその日の月齢になる": "Moon phase in days (0 = new, ~7 = first quarter, ~15 = full, ~22 = last quarter). Changes the moon's shape, its place in the sky and the night brightness. Setting from a date uses that day's moon age",
   "日": "d",
+  "オーロラ": "Aurora",
+  "夜の北の空（南半球の地形では南の空）に、ゆらめくオーロラを出す強さ。雲が多いと隠れる（リアルタイム表示）": "Strength of the shimmering aurora in the night sky to the north (to the south for southern-hemisphere terrain). Hidden by heavy cloud (realtime view)",
 };

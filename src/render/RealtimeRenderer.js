@@ -19,6 +19,7 @@ import { Precipitation } from './Precipitation.js';
 import { Rainbow } from './Rainbow.js';
 import { Fireflies } from './Fireflies.js';
 import { Moon } from './Moon.js';
+import { Aurora } from './Aurora.js';
 import { RealtimeTrees } from './RealtimeTrees.js';
 import { decodePng } from '../core/png16.js';
 import { decodePhoto } from '../io/photo.js';
@@ -201,6 +202,7 @@ void main() {`)
     this.rainbow = new Rainbow(this.scene);
     this.fireflies = new Fireflies(this.scene);
     this.moon = new Moon(this.scene);
+    this.aurora = new Aurora(this.scene);
     // 建物（地球から取り込んだ景観で、地面に近いとき）
     this.buildings = new Buildings(this.world, (m) => patchStandardMaterial(m, this.shared));
     this.walk = new WalkControls(this.camera, canvas, {
@@ -973,6 +975,11 @@ void main() {`)
       const pr = this.store.get().atmosphere.precip; // 雨のときの虹
       this.rainbow.update(cam.position, this.sky.material.uniforms.sunPosition.value, pr === 'rain' || pr === 'storm', this.baseExposure ?? 1, this.store.get().atmosphere.clouds ?? 0);
       this.moon.update(cam.position, this.sky.material.uniforms.sunPosition.value, this.store.get().sun.moonAge ?? 12, this.baseExposure ?? 1, 1 - nightFactor(this.store.get().sun.elevation));
+      {
+        const sa = this.store.get();
+        const geo = sa.terrain.mode === 'heightmap' ? sa.terrain.heightmap?.geo : null;
+        this.aurora.update(cam.position, (sa.atmosphere.aurora ?? 0) * (1 - 0.85 * (sa.atmosphere.clouds ?? 0)), nightFactor(sa.sun.elevation), this.baseExposure ?? 1, (geo?.lat ?? 1) < 0);
+      }
       // 蛍：春・夏の夜、雨や雪でないとき、地面から 200 m より低い所で
       const st = this.store.get();
       const above = flatPos.y - this.gpuTerrain.groundAt(flatPos.x, flatPos.z);

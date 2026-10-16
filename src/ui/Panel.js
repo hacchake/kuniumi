@@ -46,6 +46,7 @@ const HINTS = {
   'vegetation.trees': '森の広さと密度。リアルタイムでは森の色、一枚絵では木そのものが描かれる',
   'vegetation.grass': '一枚絵で、カメラが地面に近いときに足元へ草を置く',
   'sun.elevation': '地平線からの太陽の高さ。マイナスは日没後',
+  'atmosphere.aurora': '夜の北の空（南半球の地形では南の空）に、ゆらめくオーロラを出す強さ。雲が多いと隠れる（リアルタイム表示）',
   'sun.moonAge': '月の満ち欠け（0 = 新月、約 7 = 上弦、約 15 = 満月、約 22 = 下弦）。月の形と空の位置、夜の明るさが変わる。「日時から」で合わせるとその日の月齢になる',
   'sun.azimuth': '北を 0° として東回りの方角（90° = 東、180° = 南）',
   'atmosphere.rayleigh': '空の青さ。大きいほど深い青、夕焼けは赤く',
@@ -190,6 +191,7 @@ const SECTIONS = [
       { path: 'atmosphere.cloudThickness', label: '雲の厚み', min: 50, max: 3000, step: 10, unit: 'm' },
       { path: 'atmosphere.fogHeight', label: '霧の厚み', min: 100, max: 4000, step: 10, unit: 'm' },
       { path: 'atmosphere.rays', label: '光の筋', min: 0, max: 0.9, step: 0.01 },
+      { path: 'atmosphere.aurora', label: 'オーロラ', min: 0, max: 1, step: 0.01 },
     ],
   },
   {

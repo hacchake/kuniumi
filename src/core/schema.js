@@ -106,6 +106,7 @@ export function createDefaultScene() {
       fogHeight: 900, // 霧が薄くなる高さの目安 (m)。一枚絵の立体的な霧
       rays: 0.65, // 光の筋の強さ（霧が日光を前へ散らす度合い 0..0.9）
       precip: 'none', // 降るもの：'none' | 'rain'（雨）| 'storm'（雷雨：雨に稲光と雷鳴）| 'snow'（雪）。リアルタイム表示でカメラの周りに
+      aurora: 0, // オーロラの強さ（0..1）。夜の北の空（南半球の地形では南の空）に出る。リアルタイム表示
     },
     camera: {
       position: [-5600, 2100, 6400],
