@@ -5,7 +5,7 @@ import { WebGPUPathTracer, OIDNDenoiser, TRANSMISSIVE_BACKGROUND_ENVIRONMENT } f
 import { initUNetFromURL } from 'oidn-web';
 // OIDN の学習済み重み（HDR・アルベド・法線つき）。同梱してオフラインでも使えるようにする
 import OIDN_WEIGHTS from 'oidn-weights/rt_hdr_alb_nrm.tza?url';
-import { sunDirection, nightFactor, NIGHT_SKY } from '../core/sun.js';
+import { sunDirection, nightFactor, NIGHT_SKY, moonDirection, moonIllumination } from '../core/sun.js';
 import { skyParams, renderSkyEquirect } from '../core/skyModel.js';
 import { toneMapToRGBA8 } from '../core/tonemap.js';
 import { sunIrradiance, discScaleFor } from '../core/skyModel.js';
@@ -603,7 +603,10 @@ export class StillJob {
     // 夜は月明かり・星明かり程度の青い光を空に足す（リアルタイム表示の夜の光と同じ明るさ）
     const night = nightFactor(s.sun.elevation);
     const addNight = (data) => {
-      if (night <= 0) return data;
+      if (night <= 0) {
+        addMoon(data);
+        return data;
+      }
       for (let r = 0; r < eh; r++) {
         const up = Math.max(0.15, Math.min(1, (r / eh - 0.5) * 2 + 0.3)); // 上ほど明るい（行 0 = 真下、最後の行 = 真上）
         for (let c = 0; c < ew; c++) {
@@ -611,8 +614,43 @@ export class StillJob {
           for (let k = 0; k < 3; k++) data[o + k] += NIGHT_SKY[k] * night * up;
         }
       }
+      addMoon(data);
       return data;
     };
+    // 月：リアルタイム表示と同じ位置・満ち欠け・大きさ（1.5°）の円盤を空に描き込む（背景に映り、わずかに照らす）
+    function addMoon(data) {
+      const age = s.sun.moonAge ?? 12;
+      if (moonIllumination(age) < 0.01) return;
+      const S = sunDirection(s.sun.elevation, s.sun.azimuth);
+      const m = moonDirection(S, age);
+      if (m[1] < -0.02) return;
+      const rho = THREE.MathUtils.degToRad(0.75), sinR = Math.sin(rho), cosR = Math.cos(rho);
+      // 夜は表示で白く見える明るさ、昼は空に溶けて淡く（リアルタイム表示と同じ考え）
+      const gain = (0.9 / Math.max(0.02, s.atmosphere.exposure)) * (1 - 0.75 * (1 - night));
+      const r0 = Math.max(0, Math.floor(((Math.asin(m[1]) - rho * 2) / Math.PI + 0.5) * eh) - 1);
+      const r1 = Math.min(eh - 1, Math.ceil(((Math.asin(m[1]) + rho * 2) / Math.PI + 0.5) * eh) + 1);
+      for (let r = r0; r <= r1; r++) {
+        const lat = ((r + 0.5) / eh - 0.5) * Math.PI;
+        const y = Math.sin(lat), cl = Math.cos(lat);
+        for (let c = 0; c < ew; c++) {
+          const phi = ((c + 0.5) / ew - 0.5) * 2 * Math.PI;
+          const d = [Math.cos(phi) * cl, y, Math.sin(phi) * cl];
+          const cm = d[0] * m[0] + d[1] * m[1] + d[2] * m[2];
+          if (cm < cosR) continue;
+          // 円盤の上の点の法線：中心からのずれ（横）と、こちら向き（−m）から
+          const o = [(d[0] - m[0] * cm) / sinR, (d[1] - m[1] * cm) / sinR, (d[2] - m[2] * cm) / sinR];
+          const x2 = Math.min(1, o[0] * o[0] + o[1] * o[1] + o[2] * o[2]);
+          const z = Math.sqrt(1 - x2);
+          const n = [o[0] - m[0] * z, o[1] - m[1] * z, o[2] - m[2] * z];
+          const lit = THREE.MathUtils.smoothstep(n[0] * S[0] + n[1] * S[1] + n[2] * S[2], -0.04, 0.12) + 0.01;
+          const v = gain * lit * (y > 0 ? 1 : 0.5);
+          const off = (r * ew + c) * 4;
+          data[off] += v;
+          data[off + 1] += v * 0.97;
+          data[off + 2] += v * 0.9;
+        }
+      }
+    }
     scene.environment = mkEnv(addNight(renderSkyEquirect(p, ew, eh, { ...opts, discScale })));
     // 背景は見た目だけなので、半精度に収まるよう太陽の芯だけ頭打ちにする（眩しさは変わらない）
     const bg = addNight(renderSkyEquirect(p, ew, eh, opts));
