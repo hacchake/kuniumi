@@ -20,6 +20,7 @@ import { Rainbow } from './Rainbow.js';
 import { Fireflies } from './Fireflies.js';
 import { Moon } from './Moon.js';
 import { Aurora } from './Aurora.js';
+import { ShootingStars } from './ShootingStars.js';
 import { RealtimeTrees } from './RealtimeTrees.js';
 import { decodePng } from '../core/png16.js';
 import { decodePhoto } from '../io/photo.js';
@@ -203,6 +204,7 @@ void main() {`)
     this.fireflies = new Fireflies(this.scene);
     this.moon = new Moon(this.scene);
     this.aurora = new Aurora(this.scene);
+    this.shootingStars = new ShootingStars(this.scene);
     // 建物（地球から取り込んだ景観で、地面に近いとき）
     this.buildings = new Buildings(this.world, (m) => patchStandardMaterial(m, this.shared));
     this.walk = new WalkControls(this.camera, canvas, {
@@ -979,6 +981,9 @@ void main() {`)
         const sa = this.store.get();
         const geo = sa.terrain.mode === 'heightmap' ? sa.terrain.heightmap?.geo : null;
         this.aurora.update(cam.position, (sa.atmosphere.aurora ?? 0) * (1 - 0.85 * (sa.atmosphere.clouds ?? 0)), nightFactor(sa.sun.elevation), this.baseExposure ?? 1, (geo?.lat ?? 1) < 0);
+        // 流れ星：晴れた夜ほど出やすい
+        const clear = sa.atmosphere.precip === 'none' ? Math.max(0, 1 - 1.4 * (sa.atmosphere.clouds ?? 0)) : 0;
+        this.shootingStars.update(cam.position, Math.max(0, nightFactor(sa.sun.elevation) * 1.2 - 0.2) * clear, this.baseExposure ?? 1);
       }
       // 蛍：春・夏の夜、雨や雪でないとき、地面から 200 m より低い所で
       const st = this.store.get();
