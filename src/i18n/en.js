@@ -552,4 +552,9 @@ export const EN = {
   "望遠": "Zoom",
   "対地": "AGL",
   "道のり": "Dist",
+  "歩いた道すじ（GPX）": "Walked track (GPX)",
+  "歩いた道すじ（右上の地図の赤い線）を GPX で保存。地球から取り込んだ地形のときだけ（地図アプリ・登山アプリで開ける）": "Save the walked track (the red line on the map) as GPX. Only for terrain imported from the Earth (opens in map and hiking apps)",
+  "GPX は地球から取り込んだ地形で歩いたときだけ書き出せます": "GPX can only be exported after walking on terrain imported from the Earth",
+  "まだ歩いた道すじがありません（「歩く」で歩くと記録されます）": "No track yet (walk with “Walk” to record one)",
+  "歩いた道すじ（{km} km）を GPX で保存しました": "Saved the walked track ({km} km) as GPX",
 };

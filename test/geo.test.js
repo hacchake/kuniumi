@@ -262,3 +262,28 @@ describe('ベクトルタイル（MVT）の読み取り', () => {
     expect(polys[0].outer[2]).toEqual([30, 30]);
   });
 });
+
+describe('GPX', () => {
+  it('道すじを緯度経度に戻し、飛び移った所で区間を分ける', async () => {
+    const { trackToGpx } = await import('../src/core/gpx.js');
+    const geo = { lat: 35.36, lon: 138.73 };
+    const gpx = trackToGpx(
+      [
+        { x: 0, z: 0, y: 3776 },
+        { x: 1000, z: 0, y: 3000 },
+        { x: 5000, z: -5000, y: 1000, jump: true },
+        { x: 5000, z: -6000, y: 900 },
+      ],
+      geo,
+      '富士山 & 周辺',
+    );
+    expect(gpx).toContain('<trkpt lat="35.3600000" lon="138.7300000"><ele>3776.0</ele>');
+    expect((gpx.match(/<trkseg>/g) ?? []).length).toBe(2);
+    expect(gpx).toContain('富士山 &amp; 周辺');
+    // 東へ 1 km は経度で約 0.011°、北（z が負）へは緯度が増える
+    const lons = [...gpx.matchAll(/lon="([\d.]+)"/g)].map((m) => +m[1]);
+    expect(lons[1] - lons[0]).toBeCloseTo(0.011, 3);
+    const lats = [...gpx.matchAll(/lat="([\d.]+)"/g)].map((m) => +m[1]);
+    expect(lats[3]).toBeGreaterThan(lats[2]);
+  });
+});

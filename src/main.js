@@ -9,6 +9,7 @@ import { GeoDialog } from './ui/GeoDialog.js';
 import { GlobeMode } from './ui/GlobeMode.js';
 import { MiniMap } from './ui/MiniMap.js';
 import { WalkHud } from './ui/WalkHud.js';
+import { trackToGpx } from './core/gpx.js';
 import { Labels } from './ui/Labels.js';
 import { loadSkeleton, loadBigParts, saveScene } from './io/autosave.js';
 import { createStore } from './core/store.js';
@@ -362,6 +363,14 @@ const actions = {
     location.reload();
   },
   record: async () => toggleRecord(),
+  'export-gpx': async () => {
+    const geo = store.get().terrain.heightmap?.geo;
+    if (!geo || store.get().terrain.mode !== 'heightmap') return toast(t('GPX は地球から取り込んだ地形で歩いたときだけ書き出せます'), 'error');
+    if (miniMap.track.length < 2) return toast(t('まだ歩いた道すじがありません（「歩く」で歩くと記録されます）'), 'error');
+    const name = store.get().meta?.name || baseName();
+    downloadBlob(new Blob([trackToGpx(miniMap.track, geo, name)], { type: 'application/gpx+xml' }), `${baseName()}_track.gpx`);
+    toast(t('歩いた道すじ（{km} km）を GPX で保存しました', { km: (miniMap.dist / 1000).toFixed(2) }));
+  },
   'export-view': async () => {
     const blob = await view.capture();
     downloadBlob(blob, `${baseName()}_view.png`);
