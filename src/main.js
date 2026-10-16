@@ -7,6 +7,7 @@ import '@fontsource/zen-kaku-gothic-new/700.css';
 import { createDefaultScene, normalizeScene, deepMerge, EARTH_RADIUS } from './core/schema.js';
 import { GeoDialog } from './ui/GeoDialog.js';
 import { GlobeMode } from './ui/GlobeMode.js';
+import { loadSkeleton, loadBigParts, saveScene } from './io/autosave.js';
 import { createStore } from './core/store.js';
 import { PRESETS } from './core/presets.js';
 import { RealtimeRenderer } from './render/RealtimeRenderer.js';
@@ -29,13 +30,11 @@ document.title = t('KUNIUMI — 星をつくる景観工房');
 translateDom();
 watchDom();
 
-const AUTOSAVE_KEY = 'kuniumi.autosave.v1';
-
-// 前回の作業をこのブラウザに残しておく（なくても動く）
+// 前回の作業をこのブラウザに残しておく（なくても動く）。骨組みは localStorage、大きな部分は IndexedDB（io/autosave.js）
 function loadAutosave() {
   try {
-    const raw = localStorage.getItem(AUTOSAVE_KEY);
-    return raw ? normalizeScene(JSON.parse(raw)) : null;
+    const skel = loadSkeleton();
+    return skel ? normalizeScene(skel) : null;
   } catch {
     return null;
   }
@@ -44,24 +43,11 @@ function loadAutosave() {
 const store = createStore(loadAutosave() ?? createDefaultScene());
 
 let saveTimer = 0;
+let saving = Promise.resolve();
 store.subscribe((s) => {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    try {
-      localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(s));
-    } catch {
-      // 大きなハイトマップや画像で容量を超えたときは、それらを除いて残す。
-      // 地球から取り込んだ地形なら、範囲だけ覚えておき、次に開いたときに取り寄せ直す
-      try {
-        const lite = structuredClone(s);
-        if (s.terrain.mode === 'heightmap' && s.terrain.heightmap?.geo) lite.terrain.geoRestore = s.terrain.heightmap.geo;
-        lite.terrain.heightmap = null;
-        lite.terrain.mode = 'noise';
-        for (const o of lite.objects) if (o.material.image) o.material.image = null;
-        localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(lite));
-      } catch {}
-    }
-  }, 600);
+  // 書き込みは 1 つずつ（大きな地形を書いている途中に次の保存が重ならないように）
+  saveTimer = setTimeout(() => (saving = saving.then(() => saveScene(s)).catch(() => {})), 600);
 });
 
 // ---- 表示 ----
@@ -238,14 +224,16 @@ const geo = new GeoDialog({
     if (!restore) view.terrainService.idle().then(() => setTimeout(() => view.frameAll(), 50));
   },
 });
-// 前回、地球から取り込んだ地形（自動保存に入りきらなかった分）を取り寄せ直す
-{
+// 前回の地形・画像（大きな部分）を IndexedDB から戻す。無ければ、地球から取り込んだ地形は取り寄せ直す
+(async () => {
+  const patch = await loadBigParts(loadSkeleton());
+  if (patch) return store.patch(patch, { source: 'io', history: false });
   const gr = store.get().terrain.geoRestore;
   if (gr) {
     toast(t('前回の {name} の地形を取り寄せ直しています…', { name: gr.name }));
     geo.importRegion({ lat: gr.lat, lon: gr.lon, size: gr.size }, gr.res, gr.name, { quiet: true, restore: true });
   }
-}
+})();
 
 // 地球モード：地球全体を眺め、気に入った所を景観として取り込む
 const globeBtn = document.getElementById('globe-btn');

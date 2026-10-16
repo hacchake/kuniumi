@@ -18,6 +18,8 @@ export function createHistory(store, { onChange } = {}) {
     const prev = last;
     last = state;
     if (applying) return;
+    // 自動保存からの復元など、元に戻す対象にしない変更
+    if (meta.history === false) return;
     if (changed.every((p) => p === 'camera' || p.startsWith('camera.'))) return;
     const key = `${meta.source ?? ''}|${changed.join(',')}`;
     const now = performance.now();
