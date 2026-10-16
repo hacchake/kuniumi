@@ -57,6 +57,7 @@ export function createDefaultScene() {
       heightmap: null, // { id, name, png(dataURL 16bit推奨), width, height, geo?: { 範囲・出典 }, photo?: 衛星写真(JPEG dataURL), surround?: { …, photo? } }
       photo: true, // 地球から取り込んだ地形で、衛星写真の色を使う（写真が無ければ手続きの色）
       labels: true, // 地球から取り込んだ地形の地名（山・市・町・村）を出す
+      buildings: true, // 地球から取り込んだ景観に、地面に近いとき建物を立てる（OpenFreeMap）
       season: 'summer', // 季節：'summer'（そのまま）| 'spring' | 'autumn' | 'winter'
       winterSnow: 600, // 冬に雪が積もる高さ (m)
       palette: {

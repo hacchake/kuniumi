@@ -14,6 +14,7 @@ import { createWaterDisc, curveWater } from './waterDisc.js';
 import { planetRadius } from '../core/schema.js';
 import { WalkControls } from './WalkControls.js';
 import { WalkAudio } from './WalkAudio.js';
+import { Buildings } from './Buildings.js';
 import { RealtimeTrees } from './RealtimeTrees.js';
 import { decodePng } from '../core/png16.js';
 import { decodePhoto } from '../io/photo.js';
@@ -157,6 +158,8 @@ export class RealtimeRenderer {
     this.#setupGizmo(canvas);
     // 歩き回るモード（一人称）。足元は地形と水面の高い方
     this.audio = new WalkAudio();
+    // 建物（地球から取り込んだ景観で、地面に近いとき）
+    this.buildings = new Buildings(this.world, (m) => patchStandardMaterial(m, this.shared));
     this.walk = new WalkControls(this.camera, canvas, {
       groundAt: (x, z) => {
         const s = this.store.get();
@@ -348,8 +351,11 @@ export class RealtimeRenderer {
       // 映り込みには木を描かない（揺らぐ水面では見分けがつかず、重い）
       const treesVis = this.trees.group.visible;
       this.trees.group.visible = false;
+      const bVis = this.buildings?.group.visible;
+      if (this.buildings) this.buildings.group.visible = false;
       waterBefore.apply(this.water, args);
       this.trees.group.visible = treesVis;
+      if (this.buildings) this.buildings.group.visible = bVis;
       det.value = savedDet;
       if (detO) detO.value = savedDetO;
       cov.value = saved;
@@ -820,6 +826,7 @@ export class RealtimeRenderer {
     this.water.position.set(cam.position.x, s.water.level, cam.position.z);
     this.#placeSun(s);
     if (this.terrain) this.trees.update(s, cam.position, this.treeTerrain, this.controls.target.clone().sub(cam.position));
+    if (this.terrain) this.buildings.update(s, cam.position, (x, z) => this.gpuTerrain.groundAt(x, z));
     const shift = new THREE.Vector3(ox, 0, oz);
     const flatPos = cam.position.clone();
     const flatQuat = cam.quaternion.clone();

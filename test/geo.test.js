@@ -236,3 +236,27 @@ describe('地名（OpenStreetMap）', () => {
     expect(y.ele).toBe(3180);
   });
 });
+
+describe('ベクトルタイル（MVT）の読み取り', () => {
+  it('building 層の面と高さを読む', async () => {
+    const { readLayer, polygonsOf } = await import('../src/core/mvt.js');
+    // 小さな MVT を手で組む：層 building、キー render_height、値 12、四角い面 1 つ
+    const varint = (n) => { const o = []; while (n > 127) { o.push((n & 127) | 128); n >>>= 7; } o.push(n); return o; };
+    const zz = (n) => (n << 1) ^ (n >> 31);
+    const field = (f, t, bytes) => [...varint((f << 3) | t), ...(t === 2 ? varint(bytes.length) : []), ...bytes];
+    const str = (s) => [...new TextEncoder().encode(s)];
+    const geom = [...varint((1 & 7) | (1 << 3)), ...varint(zz(10)), ...varint(zz(10)), ...varint((2 & 7) | (3 << 3)), ...varint(zz(20)), ...varint(zz(0)), ...varint(zz(0)), ...varint(zz(20)), ...varint(zz(-20)), ...varint(zz(0)), ...varint(7 | (1 << 3))];
+    const feature = [...field(2, 2, [0, 0]), ...field(3, 0, varint(3)), ...field(4, 2, geom)];
+    const value = field(5, 0, varint(12)); // uint
+    const layer = [...field(1, 2, str('building')), ...field(2, 2, feature), ...field(3, 2, str('render_height')), ...field(4, 2, value), ...field(5, 0, varint(4096))];
+    const tile = new Uint8Array(field(3, 2, layer));
+    const { features, extent } = readLayer(tile.buffer, 'building');
+    expect(extent).toBe(4096);
+    expect(features.length).toBe(1);
+    expect(features[0].props.render_height).toBe(12);
+    const polys = polygonsOf(features[0].rings);
+    expect(polys.length).toBe(1);
+    expect(polys[0].outer.length).toBe(4);
+    expect(polys[0].outer[2]).toEqual([30, 30]);
+  });
+});
