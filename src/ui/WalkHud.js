@@ -1,6 +1,6 @@
 import { t } from '../i18n/index.js';
 
-// 歩く・飛ぶときの計器：方位（帯の目盛り）・標高・地面からの高さ・速さ。画面の上の真ん中に小さく
+// 歩く・飛ぶときの計器：方位（帯の目盛り）・標高・地面からの高さ・速さ・歩いた道のり。画面の上の真ん中に小さく
 const DIRS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 
 export class WalkHud {
@@ -10,7 +10,7 @@ export class WalkHud {
     this.el.hidden = true;
     this.el.innerHTML = `
       <div class="hud-compass"><div class="hud-tape"></div><div class="hud-mark"></div></div>
-      <div class="hud-nums"><span data-hd></span><span data-alt></span><span data-agl></span><span data-spd></span></div>`;
+      <div class="hud-nums"><span data-hd></span><span data-alt></span><span data-agl></span><span data-spd></span><span data-dst></span></div>`;
     host.appendChild(this.el);
     this.tape = this.el.querySelector('.hud-tape');
     // 方位の帯：0〜720° を並べておき、ずらして見せる（一周しても途切れない）
@@ -26,6 +26,7 @@ export class WalkHud {
       alt: this.el.querySelector('[data-alt]'),
       agl: this.el.querySelector('[data-agl]'),
       spd: this.el.querySelector('[data-spd]'),
+      dst: this.el.querySelector('[data-dst]'),
     };
   }
 
@@ -42,5 +43,7 @@ export class WalkHud {
     this.f.alt.textContent = `${t('標高')} ${m(info.alt)}`;
     this.f.agl.textContent = info.fly ? `${t('対地')} ${m(info.above)}` : '';
     this.f.spd.textContent = `${Math.round(info.speed * 3.6)} km/h`;
+    // 歩いた道のり（地図の赤い線）
+    this.f.dst.textContent = info.dist > 0 ? `${t('道のり')} ${info.dist >= 1000 ? `${(info.dist / 1000).toFixed(2)} km` : `${Math.round(info.dist)} m`}` : '';
   }
 }

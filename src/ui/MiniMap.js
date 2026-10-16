@@ -11,6 +11,8 @@ export class MiniMap {
     this.store = store;
     this.zoom = 1;
     this.layers = []; // { img, size }（大きい順）
+    this.track = []; // 歩いた道すじ（平らな地図の座標 [x, z]）。3 m 動くごとに 1 点、新しい 5000 点まで
+    this.dist = 0; // 歩いた（飛んだ）道のり (m)
     this.key = null;
     const el = document.createElement('div');
     el.className = 'minimap';
@@ -117,6 +119,14 @@ export class MiniMap {
     const half = SPANS[this.zoom] || tr.size / 2;
     const k = px / (2 * half); // 画素 / m
     const p = this.view.camera.position;
+    // 道すじを記録（大きく飛び移ったときは線をつながない）
+    const last = this.track[this.track.length - 1];
+    const d = last ? Math.hypot(p.x - last[0], p.z - last[1]) : Infinity;
+    if (d > 3) {
+      if (d < 500) this.dist += d;
+      this.track.push(d < 500 ? [p.x, p.z] : [p.x, p.z, 1]);
+      if (this.track.length > 5000) this.track.shift();
+    }
     ctx.fillStyle = '#0b0f1a';
     ctx.fillRect(0, 0, px, px);
     // 写真・陰影図（どれも原点が中心の正方形）
@@ -128,6 +138,20 @@ export class MiniMap {
     ctx.strokeStyle = 'rgba(241, 215, 154, 0.5)';
     ctx.lineWidth = 1 * dpr;
     ctx.strokeRect(px / 2 + (-tr.size / 2 - p.x) * k, px / 2 + (-tr.size / 2 - p.z) * k, tr.size * k, tr.size * k);
+    // 歩いた道すじ（赤い線）
+    if (this.track.length > 1) {
+      ctx.beginPath();
+      for (const [x, z, jump] of this.track) {
+        const sx = px / 2 + (x - p.x) * k, sy = px / 2 + (z - p.z) * k;
+        if (jump) ctx.moveTo(sx, sy);
+        else ctx.lineTo(sx, sy);
+      }
+      ctx.lineTo(px / 2, px / 2);
+      ctx.strokeStyle = 'rgba(255, 110, 90, 0.85)';
+      ctx.lineWidth = 2 * dpr;
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+    }
     // 地名（取り込んだ地形の山・市・町・村）。広く見ているときは大きな所だけ
     const labels = tr.mode === 'heightmap' && tr.labels !== false ? tr.heightmap?.labels ?? [] : [];
     if (labels.length) {

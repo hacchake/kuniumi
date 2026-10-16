@@ -559,7 +559,7 @@ const miniMap = new MiniMap(document.getElementById('stage'), view, store);
 view.labels = new Labels(document.getElementById('stage'));
 // 歩く・飛ぶときの計器（方位・標高・速さ）
 const walkHud = new WalkHud(document.getElementById('stage'));
-view.onHud = (info) => walkHud.show(view.walking ? info : null);
+view.onHud = (info) => walkHud.show(view.walking ? { ...info, dist: miniMap.dist } : null);
 // 歩いている間の音を消す／出す（地図の下のボタンか M キー）
 const soundBtn = document.createElement('button');
 soundBtn.type = 'button';
@@ -698,4 +698,4 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 }
 
 // デバッグ・自動検証用
-window.KUNIUMI = { store, view, actions, openAny, selection, renderStill, history, get stillResult() { return stillResult; } };
+window.KUNIUMI = { store, view, actions, openAny, selection, renderStill, history, miniMap, get stillResult() { return stillResult; } };

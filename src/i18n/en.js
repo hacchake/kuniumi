@@ -551,4 +551,5 @@ export const EN = {
   "夜側の両極のまわりに、オーロラの輪（磁気緯度 約 67°、高さ 100〜300 km）を出す": "Show the auroral ovals around both poles on the night side (magnetic latitude ~67°, 100–300 km high)",
   "望遠": "Zoom",
   "対地": "AGL",
+  "道のり": "Dist",
 };
