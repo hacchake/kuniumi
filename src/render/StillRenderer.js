@@ -99,7 +99,12 @@ export class StillJob {
       const img = await decodePng(await (await fetch(sur.png)).arrayBuffer());
       if (img) {
         const meters = new Float32Array(img.data.length);
-        for (let k = 0; k < meters.length; k++) meters[k] = sur.min + img.data[k] * (sur.max - sur.min);
+        // 範囲の地形と同じ変換（「基準の標高」「起伏の高さ」を変えていれば周りもそのぶん動かす）
+        const g = s.terrain.heightmap?.geo;
+        const g0 = Number.isFinite(g?.min) ? g.min : s.terrain.baseHeight;
+        const g1 = Number.isFinite(g?.max) ? g.max : s.terrain.baseHeight + s.terrain.heightScale;
+        const k1 = s.terrain.heightScale / Math.max(1, g1 - g0);
+        for (let k = 0; k < meters.length; k++) meters[k] = s.terrain.baseHeight + (sur.min + img.data[k] * (sur.max - sur.min) - g0) * k1;
         const photo = s.terrain.photo !== false && !!sur.photo;
         terrain.surround = buildSurroundMesh(meters, img.width, sur.size, { innerSize: s.terrain.size, terrain: s.terrain, water: s.water, place: this.place, photo });
       }

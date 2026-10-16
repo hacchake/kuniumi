@@ -129,7 +129,8 @@ export class GeoDialog {
       for (let k = 0; k < field.length; k++) field[k] = (heights[k] - min) / span;
       this.#progressText(t('地形をまとめています…'));
       const hm = await fieldToHeightmap(field, res, `${name}.png`);
-      hm.geo = { lat: region.lat, lon: region.lon, size: region.size, res, zoom: r.zoom, name, source: ELEVATION_ATTRIBUTION };
+      // min / max：高さ場（0..1）を取り込んだときの標高 (m)。周りの地形を同じ変換で動かすのに使う
+      hm.geo = { lat: region.lat, lon: region.lon, size: region.size, res, zoom: r.zoom, name, source: ELEVATION_ATTRIBUTION, min, max };
       if (o) {
         const ospan = Math.max(1, o.max - o.min);
         const of = new Float32Array(o.heights.length);

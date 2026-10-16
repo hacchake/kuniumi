@@ -512,6 +512,8 @@ export class RealtimeRenderer {
       this.terrainData = { field, res };
       this.gpuTerrain.setField(field, res, wear);
       if (!colors) this.colorKey = null;
+      // 周りの地形を範囲の高さ場に合わせ直す（以前の取り込みの標高の幅を求めるにも高さ場が要る）
+      this.#updateSurround(s);
     }
     // 計算中に起伏や大きさが変わっていても、最新のシーンで合わせる
     this.gpuTerrain.setScene(s);
@@ -599,13 +601,27 @@ export class RealtimeRenderer {
     const S = this.surround;
     if (!S?.meters) return;
     const cur = this.store.get().terrain;
-    if (S.base !== cur.baseHeight || S.scale !== cur.heightScale) {
+    // 周りの地形も、範囲の地形と同じ変換で 0..1 に直す：取り込んだときの標高の幅（geo.min / max）が分かれば、
+    // 「基準の標高」「起伏の高さ」を変えたとき、範囲と周りがいっしょに動く（範囲だけ浮いたり沈んだりしない）
+    let g = cur.heightmap?.geo;
+    // 以前に取り込んだ地形には幅が残っていないので、範囲の縁（周りの地形と同じ高さに寄せてある）から求めて、シーンに書き足す
+    if (g && !Number.isFinite(g.min) && this.terrainData && !this.terrainService.busy && this.terrainData.res === cur.resolution) {
+      const est = estimateGeoRange(this.terrainData.field, this.terrainData.res, cur.size, S.meters, S.res, S.size);
+      if (est) {
+        g = { ...g, ...est };
+        this.store.patch({ 'terrain.heightmap': { ...cur.heightmap, geo: g } }, { source: 'io', history: false });
+        return;
+      }
+    }
+    const g0 = Number.isFinite(g?.min) ? g.min : cur.baseHeight;
+    const g1 = Number.isFinite(g?.max) ? g.max : cur.baseHeight + cur.heightScale;
+    if (S.base !== g0 || S.scale !== g1) {
       const f = new Float32Array(S.meters.length);
-      const sc = Math.max(1, cur.heightScale);
-      for (let k = 0; k < f.length; k++) f[k] = (S.meters[k] - cur.baseHeight) / sc;
+      const sc = Math.max(1, g1 - g0);
+      for (let k = 0; k < f.length; k++) f[k] = (S.meters[k] - g0) / sc;
       S.terrain.setField(f, S.res, null);
-      S.base = cur.baseHeight;
-      S.scale = cur.heightScale;
+      S.base = g0;
+      S.scale = g1;
     }
     S.terrain.setScene(this.store.get(), { size: S.size, clipHalf: cur.size / 2 });
     S.terrain.mesh.visible = true;
@@ -838,3 +854,30 @@ function colorKeyOf(s) {
 }
 
 const round1 = (v) => Math.round(v * 10) / 10;
+
+// 範囲の高さ場（0..1）と周りの地形（m）から、取り込んだときの標高の幅を求める。
+// 範囲の縁は取り込むときに周りの地形の高さへ寄せてあるので、縁では m = min + f (max − min) が成り立つ（最小二乗）
+function estimateGeoRange(field, res, size, meters, mres, msize) {
+  const at = (a, r, u, v) => {
+    const x = Math.min(r - 1, Math.max(0, u * (r - 1))), y = Math.min(r - 1, Math.max(0, v * (r - 1)));
+    const i = Math.min(r - 2, Math.floor(x)), j = Math.min(r - 2, Math.floor(y)), fx = x - i, fy = y - j;
+    return (a[j * r + i] * (1 - fx) + a[j * r + i + 1] * fx) * (1 - fy) + (a[(j + 1) * r + i] * (1 - fx) + a[(j + 1) * r + i + 1] * fx) * fy;
+  };
+  let n = 0, sf = 0, sm = 0, sff = 0, sfm = 0;
+  const e = 0.001; // 縁のほんの少し内側
+  for (let k = 0; k <= 400; k++) {
+    const t = k / 400;
+    for (const [u, v] of [[t, e], [t, 1 - e], [e, t], [1 - e, t]]) {
+      const f = at(field, res, u, v);
+      const x = (u - 0.5) * size, z = (v - 0.5) * size;
+      const m = at(meters, mres, x / msize + 0.5, z / msize + 0.5);
+      n++, (sf += f), (sm += m), (sff += f * f), (sfm += f * m);
+    }
+  }
+  const den = n * sff - sf * sf;
+  if (!(den > 1e-9 * n * n)) return null;
+  const span = (n * sfm - sf * sm) / den;
+  if (!(span > 1)) return null;
+  const min = (sm - span * sf) / n;
+  return { min, max: min + span };
+}
