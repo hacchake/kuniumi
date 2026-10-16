@@ -17,6 +17,7 @@ import { WalkAudio } from './WalkAudio.js';
 import { Buildings } from './Buildings.js';
 import { Precipitation } from './Precipitation.js';
 import { Rainbow } from './Rainbow.js';
+import { Fireflies } from './Fireflies.js';
 import { RealtimeTrees } from './RealtimeTrees.js';
 import { decodePng } from '../core/png16.js';
 import { decodePhoto } from '../io/photo.js';
@@ -197,6 +198,7 @@ void main() {`)
     // 雨・雪（カメラの周りだけ）
     this.precip = new Precipitation(this.scene);
     this.rainbow = new Rainbow(this.scene);
+    this.fireflies = new Fireflies(this.scene);
     // 建物（地球から取り込んだ景観で、地面に近いとき）
     this.buildings = new Buildings(this.world, (m) => patchStandardMaterial(m, this.shared));
     this.walk = new WalkControls(this.camera, canvas, {
@@ -965,6 +967,11 @@ void main() {`)
     {
       const pr = this.store.get().atmosphere.precip; // 雨のときの虹
       this.rainbow.update(cam.position, this.sky.material.uniforms.sunPosition.value, pr === 'rain' || pr === 'storm', this.baseExposure ?? 1, this.store.get().atmosphere.clouds ?? 0);
+      // 蛍：春・夏の夜、雨や雪でないとき、地面から 200 m より低い所で
+      const st = this.store.get();
+      const above = flatPos.y - this.gpuTerrain.groundAt(flatPos.x, flatPos.z);
+      const on = (st.terrain.season === 'summer' || st.terrain.season === 'spring') && st.sun.elevation < -3 && pr === 'none' && above < 200;
+      this.fireflies.update(cam.position, flatPos, (x, z) => this.gpuTerrain.groundAt(x, z), on, this.baseExposure ?? 1, st.water.enabled ? st.water.level : -Infinity);
     }
     this.cloudUniforms.cloudOrigin.value.copy(this.origin);
     this.cloudUniforms.cloudCam.value.set(tgt.x, 0, tgt.z);
