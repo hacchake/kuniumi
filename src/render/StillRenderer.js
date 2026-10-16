@@ -105,6 +105,11 @@ export class StillJob {
     renderer.backend.device?.addEventListener('uncapturederror', (e) => {
       this.gpuError ??= e.error?.message ?? String(e.error);
     });
+    // GPU が止まった（重すぎて OS に打ち切られた等）ときは、待っている処理を終わらせて知らせる
+    const lost = renderer.backend.device?.lost.then((info) => {
+      this.gpuError ??= info?.message || 'GPU device lost';
+    });
+    const gpuWait = (p) => (lost ? Promise.race([p, lost]) : p);
     this.disposers.push(() => renderer.dispose());
     renderer.setPixelRatio(1);
     renderer.setSize(W, H, false);
@@ -119,7 +124,9 @@ export class StillJob {
     pt.fadeDuration = 0;
     pt.dynamicLowRes = false;
     pt.maxBounces = this.tuning.bounces ?? 6;
-    if (this.tuning.frameBudget) pt.frameBudget = this.tuning.frameBudget;
+    // 1 回に GPU へ積む光線の数。大きな大地は 1 本あたりの計算が重く、まとめて積むと
+    // OS の監視（約 2 秒）で GPU が打ち切られるので、小分けにする
+    pt.frameBudget = this.tuning.frameBudget ?? (s.terrain.size > 200000 ? 50000 : 250000);
     if (this.tuning.megakernel) this.useMegakernel = true;
     pt.maxSamples = st.samples;
     pt.filterGlossyFactor = 0.5;
@@ -149,12 +156,13 @@ export class StillJob {
       pt.renderSample();
       frame++;
       if (frame === 1) {
-        if (device) await device.queue.onSubmittedWorkDone();
+        if (device) await gpuWait(device.queue.onSubmittedWorkDone());
         mark('firstSample');
       }
-      if (device && frame % 2 === 0) await device.queue.onSubmittedWorkDone();
+      if (device && frame % 2 === 0) await gpuWait(device.queue.onSubmittedWorkDone());
       if (frame % 16 === 0) {
-        counts = await pt.getSampleCountsAsync();
+        counts = await gpuWait(pt.getSampleCountsAsync());
+        if (this.gpuError || !counts) continue;
         const sec = (performance.now() - t0) / 1000;
         const left = counts.avg > 0 ? (sec / counts.avg) * Math.max(0, st.samples - counts.avg) : 0;
         this.ui.onProgress(Math.min(counts.avg, st.samples), st.samples, { sec, left, denoising: counts.min >= st.samples });
@@ -347,8 +355,13 @@ export class StillJob {
 
   #camera(s, aspect) {
     const P = this.place;
-    const far = Math.max(2e6, s.terrain.size * 200);
-    const cam = new THREE.PerspectiveCamera(s.camera.fov, aspect, 0.5, far);
+    // パストレーサは「手前の面」と「奥の面」の点から光線を作るので、near と far の比が大きすぎると
+    // 計算が壊れて（NaN）GPU が止まる。比は 10 万倍までにし、地面からの高さに合わせて決める
+    const [px, py, pz] = s.camera.position;
+    const above = Math.max(10, py - Math.max(s.water.enabled ? s.water.level : -Infinity, this.view.gpuTerrain.heightAt(px, pz)));
+    const near = Math.min(2000, Math.max(0.3, above * 0.03));
+    const far = Math.max(near * 1e5, 1e5);
+    const cam = new THREE.PerspectiveCamera(s.camera.fov, aspect, near, far);
     const [x, y, z] = s.camera.position;
     const c = curvePoint(x - P.ox, y, z - P.oz, 0, 0, P.R);
     cam.position.set(c[0], c[1], c[2]);
@@ -463,10 +476,10 @@ function flipRows(data, W, H) {
 
 // 丸い星の水面（と海底）：注視点（原点）を中心に、近くは細かく遠くは粗い同心円の円盤を、標高 level の球面に沿って曲げる
 function curvedDisc(R, level) {
-  const SEG = 720;
+  const SEG = 256;
   const maxR = Math.PI * R * 0.98;
   const radii = [0];
-  for (let r = 1; r < maxR; r *= 1.035) radii.push(r);
+  for (let r = 2; r < maxR; r *= 1.06) radii.push(r);
   radii.push(maxR);
   const pos = new Float32Array((1 + (radii.length - 1) * SEG) * 3);
   const p = [0, 0, 0];

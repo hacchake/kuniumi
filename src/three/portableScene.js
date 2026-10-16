@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import { createTerrainGeometry, applyHeights, createTerrainMaterial } from './terrainMesh.js';
 import { sunDirection, sunLight } from '../core/sun.js';
+import { resampleImage } from '../core/heightfield.js';
+
+// 書き出す地形メッシュの格子の上限（4097 のままだと 1600 万頂点・数百 MB になり、Blender でも扱いにくい）
+const EXPORT_MAX_RES = 1025;
 
 // 「どの描画器でも解釈できる」標準的な素材だけで組んだシーン。
 // glTF 書き出しに使い、将来の高画質一枚絵モード（パストレーサ等）もここを入力にする想定。
@@ -20,7 +24,11 @@ export function buildPortableScene(scene, { field, res, colorTexture, objectMesh
   root.name = scene.meta.name || 'KUNIUMI';
   const t = scene.terrain;
 
-  // 地形
+  // 地形（大きな高さ場は間引いてから）
+  if (res > EXPORT_MAX_RES) {
+    field = resampleImage(field, res, res, EXPORT_MAX_RES);
+    res = EXPORT_MAX_RES;
+  }
   const geo = createTerrainGeometry(res);
   applyHeights(geo, field, res, t);
   const terrain = new THREE.Mesh(geo, createTerrainMaterial(colorTexture, t.size));

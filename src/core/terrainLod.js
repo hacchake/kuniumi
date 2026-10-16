@@ -35,6 +35,8 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
   const halfDiag = Math.atan(Math.tan(halfV) * Math.hypot(1, view.aspect));
   const pixel = (2 * Math.tan(halfV)) / view.height; // 1 画素の角度（おおよそ）
   const yLo = baseHeight, yHi = baseHeight + heightScale;
+  // 丸い星では、地平線より向こう（いちばん高い山でも隠れる距離）の区画は作らない
+  const horizon = P.R > 0 ? (Math.sqrt(2 * P.R * Math.max(1, C[1] - Math.min(0, yLo))) + Math.sqrt(2 * P.R * Math.max(0, yHi))) * 1.05 : Infinity;
 
   const collect = (detail) => {
     const tiles = [];
@@ -44,6 +46,7 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
       const dz = Math.max(z0 - C[2], 0, C[2] - (z0 + L));
       const dy = Math.max(yLo - C[1], 0, C[1] - yHi);
       const d = Math.max(1, Math.hypot(dx, dy, dz));
+      if (Math.hypot(dx, dz) > horizon) return;
       // 視野に入っているか（中心方向と視線の角度、区画の見かけの大きさを足して判定）
       const cx = x0 + L / 2 - C[0], cz = z0 + L / 2 - C[2], cy = (yLo + yHi) / 2 - C[1];
       const cd = Math.hypot(cx, cy, cz) || 1;
