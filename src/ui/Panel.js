@@ -4,12 +4,14 @@ import { t } from '../i18n/index.js';
 
 // 天気のひな形（大気の項目をまとめて変える）
 const WEATHER = {
-  clear: { label: '快晴', set: { clouds: 0, cloudDensity: 0.4, turbidity: 2, haze: 0.12, mieCoefficient: 0.003, fogHeight: 400, rays: 0.4 } },
-  fine: { label: '晴れ', set: { clouds: 0.3, cloudDensity: 0.5, turbidity: 3.5, haze: 0.22, mieCoefficient: 0.006, fogHeight: 900, rays: 0.65 } },
-  thin: { label: '薄曇り', set: { clouds: 0.6, cloudDensity: 0.35, turbidity: 5, haze: 0.35, mieCoefficient: 0.008, fogHeight: 1200, rays: 0.5 } },
-  cloudy: { label: '曇り', set: { clouds: 0.92, cloudDensity: 0.8, cloudThickness: 1500, turbidity: 7, haze: 0.5, mieCoefficient: 0.01, fogHeight: 1500, rays: 0.3 } },
-  fog: { label: '霧', set: { clouds: 0.5, cloudDensity: 0.6, turbidity: 9, haze: 1.0, mieCoefficient: 0.02, fogHeight: 2500, rays: 0.8 } },
-  hazy: { label: 'かすみ（春）', set: { clouds: 0.15, cloudDensity: 0.4, turbidity: 10, haze: 0.7, mieCoefficient: 0.015, fogHeight: 1500, rays: 0.6 } },
+  clear: { label: '快晴', set: { clouds: 0, cloudDensity: 0.4, turbidity: 2, haze: 0.12, mieCoefficient: 0.003, fogHeight: 400, rays: 0.4, precip: 'none' } },
+  fine: { label: '晴れ', set: { clouds: 0.3, cloudDensity: 0.5, turbidity: 3.5, haze: 0.22, mieCoefficient: 0.006, fogHeight: 900, rays: 0.65, precip: 'none' } },
+  thin: { label: '薄曇り', set: { clouds: 0.6, cloudDensity: 0.35, turbidity: 5, haze: 0.35, mieCoefficient: 0.008, fogHeight: 1200, rays: 0.5, precip: 'none' } },
+  cloudy: { label: '曇り', set: { clouds: 0.92, cloudDensity: 0.8, cloudThickness: 1500, turbidity: 7, haze: 0.5, mieCoefficient: 0.01, fogHeight: 1500, rays: 0.3, precip: 'none' } },
+  fog: { label: '霧', set: { clouds: 0.5, cloudDensity: 0.6, turbidity: 9, haze: 1.0, mieCoefficient: 0.02, fogHeight: 2500, rays: 0.8, precip: 'none' } },
+  hazy: { label: 'かすみ（春）', set: { clouds: 0.15, cloudDensity: 0.4, turbidity: 10, haze: 0.7, mieCoefficient: 0.015, fogHeight: 1500, rays: 0.6, precip: 'none' } },
+  rain: { label: '雨', set: { clouds: 0.98, cloudDensity: 0.9, cloudThickness: 2000, turbidity: 8, haze: 0.75, mieCoefficient: 0.012, fogHeight: 1800, rays: 0.2, precip: 'rain' } },
+  snow: { label: '雪', set: { clouds: 0.95, cloudDensity: 0.75, cloudThickness: 1500, turbidity: 6, haze: 0.6, mieCoefficient: 0.01, fogHeight: 1500, rays: 0.2, precip: 'snow' } },
 };
 
 // 項目の説明（マウスを乗せると出る）

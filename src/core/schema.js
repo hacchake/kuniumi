@@ -104,6 +104,7 @@ export function createDefaultScene() {
       cloudThickness: 900, // 雲の厚み (m)
       fogHeight: 900, // 霧が薄くなる高さの目安 (m)。一枚絵の立体的な霧
       rays: 0.65, // 光の筋の強さ（霧が日光を前へ散らす度合い 0..0.9）
+      precip: 'none', // 降るもの：'none' | 'rain'（雨）| 'snow'（雪）。リアルタイム表示でカメラの周りに
     },
     camera: {
       position: [-5600, 2100, 6400],

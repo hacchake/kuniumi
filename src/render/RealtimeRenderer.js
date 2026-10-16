@@ -15,6 +15,7 @@ import { planetRadius } from '../core/schema.js';
 import { WalkControls } from './WalkControls.js';
 import { WalkAudio } from './WalkAudio.js';
 import { Buildings } from './Buildings.js';
+import { Precipitation } from './Precipitation.js';
 import { RealtimeTrees } from './RealtimeTrees.js';
 import { decodePng } from '../core/png16.js';
 import { decodePhoto } from '../io/photo.js';
@@ -158,6 +159,8 @@ export class RealtimeRenderer {
     this.#setupGizmo(canvas);
     // 歩き回るモード（一人称）。足元は地形と水面の高い方
     this.audio = new WalkAudio();
+    // 雨・雪（カメラの周りだけ）
+    this.precip = new Precipitation(this.scene);
     // 建物（地球から取り込んだ景観で、地面に近いとき）
     this.buildings = new Buildings(this.world, (m) => patchStandardMaterial(m, this.shared));
     this.walk = new WalkControls(this.camera, canvas, {
@@ -465,6 +468,8 @@ export class RealtimeRenderer {
       this.water.material.uniforms.kWaterGain.value = (0.75 / Math.max(0.02, a.exposure)) * Math.max(0.03, Math.min(1, strength / 25));
 
       this.nightLight.intensity = nightFactor(s.sun.elevation) * Math.PI * 0.15;
+      this.precip.set(a.precip);
+      this.precipLight = 1 - nightFactor(s.sun.elevation) * 0.8;
       this.#applyLights();
       this.atmosphere.uniforms.nightSky.value.set(...NIGHT_SKY).multiplyScalar(nightFactor(s.sun.elevation));
       this.renderer.toneMappingExposure = a.exposure;
@@ -852,6 +857,7 @@ export class RealtimeRenderer {
     if (R > 0) cam.lookAt(tgt);
     cam.updateMatrixWorld();
     this.sky.position.copy(cam.position);
+    this.precip.update(cam.position, flatPos, this.precipLight ?? 1);
     this.cloudUniforms.cloudOrigin.value.copy(this.origin);
     this.cloudUniforms.cloudCam.value.set(tgt.x, 0, tgt.z);
     this.atmosphere.setView(this.origin, R, this.curveUniforms.kCenter.value);
