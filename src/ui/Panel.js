@@ -85,11 +85,17 @@ const SECTIONS = [
       { path: 'terrain.baseHeight', label: '基準の標高', min: -12000, max: 5000, step: 10, unit: 'm' },
       { path: 'terrain.resolution', label: '解像度', type: 'select', options: RESOLUTIONS.map((r) => [r, `${r} × ${r}`]), number: true },
       { path: 'terrain.detail', label: '細部の起伏', min: 0, max: 3, step: 0.05 },
+    ],
+  },
+  {
+    id: 'earth',
+    title: '実際の景観',
+    sub: 'Real world',
+    geoOnly: true,
+    fields: [
       { path: 'terrain.photo', label: '衛星写真の色', type: 'toggle' },
       { path: 'terrain.labels', label: '地名を表示', type: 'toggle' },
       { path: 'terrain.buildings', label: '建物（3D）', type: 'toggle' },
-      { path: 'terrain.season', label: '季節', type: 'select', options: [['summer', '夏（そのまま）'], ['spring', '春'], ['autumn', '秋（紅葉）'], ['winter', '冬（雪）']] },
-      { path: 'terrain.winterSnow', label: '冬の雪の高さ', min: -100, max: 4000, step: 10, unit: 'm' },
     ],
   },
   {
@@ -115,6 +121,8 @@ const SECTIONS = [
     title: '地表',
     sub: 'Surface',
     fields: [
+      { path: 'terrain.season', label: '季節', type: 'select', options: [['summer', '夏（そのまま）'], ['spring', '春'], ['autumn', '秋（紅葉）'], ['winter', '冬（雪）']] },
+      { path: 'terrain.winterSnow', label: '冬の雪の高さ', min: -100, max: 4000, step: 10, unit: 'm' },
       { path: 'terrain.palette.low', label: '低地', type: 'color' },
       { path: 'terrain.palette.high', label: '高地', type: 'color' },
       { path: 'terrain.palette.rock', label: '岩肌', type: 'color' },
@@ -452,6 +460,9 @@ export class Panel {
     }
     const noise = s.terrain.mode === 'noise';
     for (const { sec, el } of this.sections) if (sec.noiseOnly) el.classList.toggle('dim', !noise);
+    // 実際の景観の欄は、地球から取り込んだ地形のときだけ使える
+    const geo = s.terrain.mode === 'heightmap' && !!s.terrain.heightmap?.geo;
+    for (const { sec, el } of this.sections) if (sec.geoOnly) el.classList.toggle('dim', !geo);
     const modeSel = this.bindings.find((b) => b.f.path === 'terrain.mode').el;
     modeSel.options[1].disabled = !s.terrain.heightmap;
     modeSel.options[1].text = s.terrain.heightmap ? t('ハイトマップ（{name}）', { name: s.terrain.heightmap.name }) : t('ハイトマップ（未読込）');

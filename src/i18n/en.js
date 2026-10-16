@@ -519,4 +519,5 @@ export const EN = {
   "冬に雪が積もり始める標高": "Elevation where winter snow begins",
   "建物（3D）": "Buildings (3D)",
   "地球から取り込んだ景観で、地面から 2 km より低い所から見ると、周り約 1.5 km の建物を立体で出す（OpenFreeMap / OpenStreetMap）": "On terrain imported from Earth, show 3D buildings within about 1.5 km when viewing from below 2 km (OpenFreeMap / OpenStreetMap)",
+  "実際の景観": "Real world",
 };
