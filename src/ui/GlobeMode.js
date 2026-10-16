@@ -235,6 +235,32 @@ export class GlobeMode {
     const fmt = (x, p, n) => `${Math.abs(x).toFixed(3)}°${x >= 0 ? p : n}`;
     const alt = i.alt >= 10000 ? `${(i.alt / 1000).toFixed(i.alt >= 1e5 ? 0 : 1)} km` : `${Math.round(i.alt)} m`;
     const ground = i.ground < 0 ? t('水深 {d} m', { d: Math.round(-i.ground) }) : t('標高 {h} m', { h: Math.round(i.ground) });
-    this.info.textContent = `${fmt(i.lat, 'N', 'S')}  ${fmt(i.lon, 'E', 'W')}  ・ ${ground} ・ ${t('高度')} ${alt}` + (i.loading ? ` ・ ${t('取り寄せ中')}…` : '');
+    const place = this.place && this.placeFor && Math.abs(this.placeFor.lat - i.lat) < 1e-6 && Math.abs(this.placeFor.lon - i.lon) < 1e-6 ? `${this.place} ・ ` : '';
+    this.info.textContent = `${place}${fmt(i.lat, 'N', 'S')}  ${fmt(i.lon, 'E', 'W')}  ・ ${ground} ・ ${t('高度')} ${alt}` + (i.loading ? ` ・ ${t('取り寄せ中')}…` : '');
+    this.#watchPlace(i);
+  }
+
+  // 見ている所の地名：動かすのを止めて 1.2 秒たったら逆引きする（OpenStreetMap の Nominatim。1 秒に 1 回までの約束を守る）
+  #watchPlace(i) {
+    const key = `${i.lat.toFixed(6)},${i.lon.toFixed(6)},${Math.round(Math.log2(i.range))}`;
+    if (key === this.placeKey) return;
+    this.placeKey = key;
+    clearTimeout(this.placeTimer);
+    if (i.range > 3e6) return (this.place = null); // 宇宙から地球全体を見ているときは出さない
+    this.placeTimer = setTimeout(async () => {
+      const zoom = i.range > 1e6 ? 3 : i.range > 2e5 ? 5 : i.range > 4e4 ? 8 : i.range > 8e3 ? 10 : 14;
+      try {
+        const r = await fetch(`${NOMINATIM}/reverse?format=jsonv2&zoom=${zoom}&accept-language=${encodeURIComponent(navigator.language || 'ja')}&lat=${i.lat}&lon=${i.lon}`, {
+          headers: { Accept: 'application/json' },
+        });
+        if (!r.ok || this.placeKey !== key) return;
+        const j = await r.json();
+        const a = j.address ?? {};
+        // 細かすぎず粗すぎない名前（市区町村と都道府県・国）
+        const parts = [j.name, a.city || a.town || a.village || a.county, a.state || a.province, a.country].filter(Boolean);
+        this.place = [...new Set(parts)].slice(0, 3).join('、') || null;
+        this.placeFor = { lat: i.lat, lon: i.lon };
+      } catch {}
+    }, 1200);
   }
 }
