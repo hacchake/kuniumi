@@ -24,7 +24,7 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
   const pp = [0, 0, 0], pn = [0, 0, 0];
   const { size, heightScale, baseHeight } = terrain;
 
-  const surface = createTerrainSurface(terrain, heightmapImage);
+  const surface = createTerrainSurface(terrain, heightmapImage, water?.enabled ? water.level : null);
   const { heightAt, wearAt } = surface;
 
   // ---- 四分木で区画を決める ----

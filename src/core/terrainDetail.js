@@ -33,6 +33,15 @@ export function detailBaseWavelength(cell) {
 }
 
 // cell: 高さ場の格子の間隔 (m)、spacing: これより細かい起伏は足さない (m)、amount: 強さ（0 = なし）
+// 海面の近くでは細部の起伏を弱める（海岸線は元の地形で決める）。
+// 海面すれすれの平野で、細かい凹凸が水面の上下をまたいで水たまりの縞・ちらつきになるのを防ぐ。
+// h: 細部を足す前の標高、sea: 水面の高さ（水が無ければ null）
+export const SHORE_FADE = 4; // m
+export function shoreFade(h, sea) {
+  if (sea == null) return 1;
+  return Math.min(1, Math.abs(h - sea) / SHORE_FADE);
+}
+
 export function detailHeight(x, z, cell, spacing, amount) {
   if (!(amount > 0)) return 0;
   let lambda = detailBaseWavelength(cell);

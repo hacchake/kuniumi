@@ -96,6 +96,21 @@ describe('沿岸の海底を補う', () => {
     expect(r[0]).toBeCloseTo(-800);
     expect(r[1]).toBe(50);
   });
+  it('海につながらない 0 m 以下の低地（干拓地・水田）は海にしない', async () => {
+    const { fillSeaFloor } = await import('../src/core/geo.js');
+    // 5 × 5：左の列は海（粗いデータも海）、真ん中に陸で囲まれた −1 m の窪地、右下は海から陸続きに 0 m の点
+    const res = 5, inner = new Float32Array(25).fill(3);
+    for (let j = 0; j < 5; j++) inner[j * 5] = -0.2;
+    inner[2 * 5 + 2] = -1; // 囲まれた窪地
+    inner[4 * 5 + 1] = 0; // 海とつながる浅い所
+    const outer = new Float32Array(9 * 9).fill(50);
+    for (let j = 0; j < 9; j++) outer[j * 9] = -300; // 粗いデータでは西の端だけ海
+    const r = fillSeaFloor(inner, res, 100, outer, 9, 100);
+    expect(r[2 * 5 + 2]).toBe(1.5);
+    expect(r[0]).toBeLessThan(-1);
+    expect(r[4 * 5 + 1]).toBeLessThan(0);
+    expect(r[1]).toBe(3);
+  });
 });
 
 describe('範囲の縁を周りの地形へ寄せる', () => {

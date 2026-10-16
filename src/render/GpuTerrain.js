@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { TERRAIN_SHADING_GLSL, createTerrainShadingUniforms, updateTerrainShadingUniforms } from './terrainShadingGLSL.js';
 import { CURVE_GLSL, curvePoint } from './curvatureGLSL.js';
-import { detailBaseWavelength, detailHeight } from '../core/terrainDetail.js';
+import { detailBaseWavelength, detailHeight, shoreFade, SHORE_FADE } from '../core/terrainDetail.js';
 
 // リアルタイム表示の地形：近くは細かく、遠くは粗く（CDLOD）。数 km の島から数千 km の大陸まで同じ仕組みで描く。
 //
@@ -66,6 +66,8 @@ const VERTEX_GLSL = /* glsl */ `
     float sp = tSpacing( local, hc );
     // 細部の起伏は値と傾きを一度に出す（法線のために何度も計算しない）
     vec3 dd = tDetailD( local, tDetailL0, sp, tDetailAmt );
+    // 海面の近くでは細部を弱める（core/terrainDetail.js の shoreFade と同じ）
+    if ( tWater > 0.5 ) dd *= min( 1.0, abs( hc - tSea ) / ${SHORE_FADE.toFixed(1)} );
     float H = hc + dd.x;
     vec2 grad = dd.yz;
     vTDetGrad = dd.yz;
@@ -429,7 +431,10 @@ export class GpuTerrain {
     const t = this.terrain;
     if (!this.field || !t) return 0;
     const cell = t.size / Math.max(1, this.res - 1);
-    return this.heightAt(x, z) + detailHeight(x, z, cell, this.uniforms.tMinCell.value, t.detail ?? 1);
+    const h = this.heightAt(x, z);
+    const u = this.uniforms;
+    const sea = u.tWater.value > 0.5 ? u.tSea.value : null;
+    return h + detailHeight(x, z, cell, this.uniforms.tMinCell.value, t.detail ?? 1) * shoreFade(h, sea);
   }
 
   // 光線と地形の交点（世界座標・平らな地図の上で）。無ければ null

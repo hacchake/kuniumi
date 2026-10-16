@@ -1,6 +1,6 @@
 import { createNoiseSampler, generateNoiseFieldWithRange, sampleField, edgeFade } from './heightfield.js';
 import { applyErosion } from './erosion.js';
-import { detailHeight } from './terrainDetail.js';
+import { detailHeight, shoreFade } from './terrainDetail.js';
 
 // 地形の「任意の地点の高さ」を返す部品。一枚絵の細かい地形と、木・草の配置が使う。
 //   heightAt(x, z, spacing): 標高 (m)。spacing (m) より細かい起伏は描かない
@@ -12,9 +12,10 @@ import { detailHeight } from './terrainDetail.js';
 const BASE = 513; // ノイズ地形の侵食と正規化の基準格子（リアルタイム表示の侵食と同じ）
 
 // heightmapImage: { data: Float32Array(0..1), width, height }（ハイトマップ地形のとき）
-export function createTerrainSurface(terrain, heightmapImage = null) {
+// sea: 水面の高さ（水が無ければ null）。海面の近くでは細部の起伏を弱める
+export function createTerrainSurface(terrain, heightmapImage = null, sea = null) {
   const { size, heightScale, baseHeight } = terrain;
-  if (terrain.mode === 'heightmap' && heightmapImage) return heightmapSurface(terrain, heightmapImage);
+  if (terrain.mode === 'heightmap' && heightmapImage) return heightmapSurface(terrain, heightmapImage, sea);
 
   const noise = terrain.noise;
   const base = generateNoiseFieldWithRange(noise, BASE);
@@ -35,7 +36,7 @@ export function createTerrainSurface(terrain, heightmapImage = null) {
   return { heightAt, wearAt, coarse: coarseFrom(gh, BASE, terrain, wearAt) };
 }
 
-function heightmapSurface(terrain, img) {
+function heightmapSurface(terrain, img, sea) {
   const { size, heightScale, baseHeight } = terrain;
   const { data, width: W, height: H } = img;
   const px = (i, j) => data[Math.min(H - 1, Math.max(0, j)) * W + Math.min(W - 1, Math.max(0, i))];
@@ -51,7 +52,10 @@ function heightmapSurface(terrain, img) {
   const pixelM = size / Math.max(1, Math.max(W, H) - 1);
   const amount = terrain.detail ?? 1;
   const detailAt = (x, z, spacing) => detailHeight(x, z, pixelM, spacing, amount);
-  const heightAt = (x, z, spacing) => baseHeight + bicubic(x / size + 0.5, z / size + 0.5) * heightScale + detailAt(x, z, spacing);
+  const heightAt = (x, z, spacing) => {
+    const h = baseHeight + bicubic(x / size + 0.5, z / size + 0.5) * heightScale;
+    return h + detailAt(x, z, spacing) * shoreFade(h, sea);
+  };
   const wearAt = () => 0;
   return { heightAt, wearAt, coarse: coarseFrom((u, v) => bicubic(u, v), Math.max(W, H), terrain, wearAt) };
 }

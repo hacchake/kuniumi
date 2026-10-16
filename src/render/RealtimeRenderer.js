@@ -107,6 +107,12 @@ export class RealtimeRenderer {
     this.shared = { ...this.cloudUniforms, ...this.curveUniforms };
     patchWaterMaterial(this.water.material, this.cloudUniforms);
     curveWater(this.water.material, this.curveUniforms, this.cloudUniforms.cloudOrigin.value);
+    // 景色は物理的な明るさ（露出で 1/8 ほどに下げて表示）なので、水面の色・映り込みも同じ明るさの尺度へ上げる。
+    // そのままでは水面だけが 1/8 の暗さになり、真っ黒に見える
+    this.water.material.uniforms.kWaterGain = { value: 1 };
+    this.water.material.fragmentShader = this.water.material.fragmentShader
+      .replace('uniform vec3 waterColor;', 'uniform vec3 waterColor;\nuniform float kWaterGain;')
+      .replace(/vec3 albedo = mix\([^;]*\);/, (m) => `${m}\nalbedo *= kWaterGain;`);
     // Water シェーダは霧をトーンマップの「後」に混ぜる。霧の色は物理的な明るさ（1 を超える）なので、
     // そのままでは遠くの水面が白く飛ぶ。霧を先に混ぜてから、ほかの物体と同じようにトーンマップする
     const wfs = this.water.material.fragmentShader;
@@ -420,6 +426,8 @@ export class RealtimeRenderer {
       this.sun.intensity = strength;
       // 照り返しは強すぎると遠くの波が粒状にちらつくので控えめに
       this.water.material.uniforms.sunColor.value.setRGB(...color).multiplyScalar(Math.min(1, strength / 25) * 0.35);
+      // 水面の明るさを景色の尺度へ（昼は露出の逆数ほど、夜は暗く）
+      this.water.material.uniforms.kWaterGain.value = (0.75 / Math.max(0.02, a.exposure)) * Math.max(0.03, Math.min(1, strength / 25));
 
       this.nightLight.intensity = nightFactor(s.sun.elevation) * Math.PI * 0.15;
       this.atmosphere.uniforms.nightSky.value.set(...NIGHT_SKY).multiplyScalar(nightFactor(s.sun.elevation));

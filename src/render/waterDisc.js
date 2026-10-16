@@ -67,22 +67,26 @@ export function curveWater(material, curveUniforms, origin) {
       `#include <logdepthbuf_fragment>
       #if defined( USE_LOGARITHMIC_DEPTH_BUFFER )
       if ( kPlanetR > 0.0 ) {
+        // 球の中心からの距離（約 640 万 m）どうしを引くと、32bit の小数では 0.5 m ほどずれる。
+        // 低い陸（海抜 0.5〜2 m）と前後を取り違えて縞・ちらつきになるので、曲げの中心（地表）からの相対で解く：
+        //   |e + (0, R, 0) + t d|² = (R + L)²  →  t² + 2 b t + c = 0,  b = d·e + R d.y,  c = |e|² + 2R (e.y − L) − L²
         vec3 kRd = normalize( worldPosition.xyz - eye );
-        vec3 kO = eye - vec3( kCenter.x, - kPlanetR, kCenter.y );
-        float kAltO = length( kO ) - kPlanetR;
-        float kB = dot( kO, kRd );
-        float kC = ( kAltO - kWaterLevel ) * ( 2.0 * kPlanetR + kAltO + kWaterLevel );
+        vec3 kE = eye - vec3( kCenter.x, 0.0, kCenter.y );
+        float kB = dot( kRd, kE ) + kPlanetR * kRd.y;
+        float kEE = dot( kE, kE );
+        float kC = kEE + 2.0 * kPlanetR * ( kE.y - kWaterLevel ) - kWaterLevel * kWaterLevel;
         float kDisc = kB * kB - kC;
         // 遠くの地形は粗い三角形（弦）なので、本当の高さより少し沈む。
         // 低い海岸が水に沈んで見えないよう、遠いほど水面もその分だけ下げる（地形の頂点の間隔 ≒ 距離 / 118）
-        if ( kDisc >= 0.0 ) {
-          float kL = ( - kB - sqrt( kDisc ) ) / 118.0;
+        if ( kDisc >= 0.0 && kB < 0.0 ) {
+          float kL = ( kC / ( - kB + sqrt( kDisc ) ) ) / 118.0;
           float kA = kWaterLevel - kL * kL / ( 4.0 * kPlanetR );
-          kC = ( kAltO - kA ) * ( 2.0 * kPlanetR + kAltO + kA );
+          kC = kEE + 2.0 * kPlanetR * ( kE.y - kA ) - kA * kA;
           kDisc = kB * kB - kC;
         }
-        if ( kDisc >= 0.0 ) {
-          float kT = - kB - sqrt( kDisc );
+        if ( kDisc >= 0.0 && kB < 0.0 ) {
+          // 近い方の交点（打ち消し合いの無い形）
+          float kT = kC / ( - kB + sqrt( kDisc ) );
           if ( kT > 0.0 ) {
             float kW = - ( viewMatrix * vec4( eye + kRd * kT, 1.0 ) ).z;
             gl_FragDepth = log2( 1.0 + kW ) * logDepthBufFC * 0.5;

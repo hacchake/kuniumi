@@ -24,7 +24,8 @@ export function defaultVegetation() {
 // 地球から取り込んだ地形（realWorld）では、平野が砂浜にならないよう 5 m までにする
 export function shoreBandOf(heightScale, baseHeight, sea, realWorld = false) {
   const b = Math.max(4, Math.min(heightScale * 0.012, (baseHeight + heightScale - sea) * 0.012, 30));
-  return realWorld ? Math.min(b, 5) : b;
+  // 実際の地形では海面すれすれの平野（水田・干拓地）が多いので、浜の帯はごく細く（0.4 m。砂色は海抜 1 m ほどまで）
+  return realWorld ? Math.min(b, 0.4) : b;
 }
 
 // ctx: { heightScale, baseHeight, waterLevel, waterEnabled, palette, vegetation }

@@ -132,22 +132,60 @@ export const GEO_PRESETS = [
 
 // 高ズームの標高タイルは、沿岸の海が 0 m 付近の平らな値になっていて海底の深さが入っていないことがある。
 // 粗いズームの「周りの地形」（ETOPO1 などの海底地形が入っている）で、範囲の海の部分を補う。
+// ただし「0 m 以下 = 海」とはしない：海につながっている所だけを海にする。
+// 平野の干拓地・水田など海面すれすれの陸（0 m 以下の点がまだらに混じる）を海にすると、
+// 陸の中に水たまりが散らばり、細かさが変わるたびにちらつくため。海につながらない低い所は陸（1.5 m）にする。
 // inner: 範囲の標高 (m)、res × res・一辺 size。outer: 同じ中心の周りの地形、ores × ores・一辺 osize
 export function fillSeaFloor(inner, res, size, outer, ores, osize) {
   const out = new Float32Array(inner);
   const k = size / osize;
-  for (let j = 0; j < res; j++) {
+  const outerAt = (i, j) => {
     const v = (0.5 + (j / (res - 1) - 0.5) * k) * (ores - 1);
     const j0 = Math.min(ores - 2, Math.max(0, Math.floor(v))), fy = v - j0;
+    const u = (0.5 + (i / (res - 1) - 0.5) * k) * (ores - 1);
+    const i0 = Math.min(ores - 2, Math.max(0, Math.floor(u))), fx = u - i0;
+    const a = outer[j0 * ores + i0], b = outer[j0 * ores + i0 + 1], c = outer[(j0 + 1) * ores + i0], d = outer[(j0 + 1) * ores + i0 + 1];
+    return (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy;
+  };
+  // 海の種：もともと深さの入っている海（−40 m より深い）と、粗いデータでも海（−2 m より深い）の 0 m 以下の点
+  const sea = new Uint8Array(res * res);
+  const stack = [];
+  for (let j = 0; j < res; j++) {
     for (let i = 0; i < res; i++) {
-      const h = inner[j * res + i];
-      if (h > 0 || h < -40) continue; // 陸地と、もともと深さの入っている海はそのまま
-      const u = (0.5 + (i / (res - 1) - 0.5) * k) * (ores - 1);
-      const i0 = Math.min(ores - 2, Math.max(0, Math.floor(u))), fx = u - i0;
-      const a = outer[j0 * ores + i0], b = outer[j0 * ores + i0 + 1], c = outer[(j0 + 1) * ores + i0], d = outer[(j0 + 1) * ores + i0 + 1];
-      const o = (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy;
+      const n = j * res + i, h = inner[n];
+      if (h > 0) continue;
+      if (h < -40 || outerAt(i, j) < -2) {
+        sea[n] = 1;
+        stack.push(n);
+      }
+    }
+  }
+  // 0 m 以下の点をたどって、海につながっている所を広げる
+  while (stack.length) {
+    const n = stack.pop();
+    const i = n % res, j = (n - i) / res;
+    if (i > 0) visit(n - 1);
+    if (i < res - 1) visit(n + 1);
+    if (j > 0) visit(n - res);
+    if (j < res - 1) visit(n + res);
+  }
+  function visit(m) {
+    if (sea[m] || inner[m] > 0) return;
+    sea[m] = 1;
+    stack.push(m);
+  }
+  for (let j = 0; j < res; j++) {
+    for (let i = 0; i < res; i++) {
+      const n = j * res + i, h = inner[n];
+      if (h > 0) continue;
+      if (!sea[n]) {
+        out[n] = 1.5; // 海につながらない低地は陸（浜の砂色にならない高さ）
+        continue;
+      }
+      if (h < -40) continue; // もともと深さの入っている海はそのまま
+      const o = outerAt(i, j);
       // 粗いデータでは海岸近くが陸の値になるので、そこは浅瀬（−1.5 m）にとどめる
-      out[j * res + i] = Math.min(h, o < -2 ? o : -1.5);
+      out[n] = Math.min(h, o < -2 ? o : -1.5);
     }
   }
   return out;
