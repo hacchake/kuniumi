@@ -1,4 +1,5 @@
 import { getIn, RESOLUTIONS, SIZE_MIN, SIZE_MAX, createDefaultScene } from '../core/schema.js';
+import { solarPosition } from '../core/sun.js';
 import { t } from '../i18n/index.js';
 
 // 項目の説明（マウスを乗せると出る）
@@ -7,6 +8,7 @@ const HINTS = {
   'terrain.size': '大地の一辺の長さ。箱庭の 200 m から、大陸がまるごと入る 1 万 km まで',
   'terrain.detail': '高さ場の格子より細かい所に足す小さな起伏。近づいたときの平らな面を和らげる',
   'terrain.labels': '地球から取り込んだ地形に、山（標高つき）・市・町・村の名前を出す（OpenStreetMap）',
+  'sun.when': '日時を選んで「合わせる」と、その場所（地球から取り込んだ地形ならその中心、ほかは東京）の実際の太陽の高さと方位にする',
   'terrain.photo': '地球から取り込んだ地形の色を、衛星写真（Sentinel-2 cloudless・NASA Blue Marble）にする。切ると標高と傾きから塗る',
   'planet.curvature': '星の丸みを描く。遠くの地面や海が地平線の向こうへ沈み、高く昇ると丸い星が見える',
   'planet.radius': '星の半径。地球は 6371 km。小さいほど地平線が近く、丸みが強い',
@@ -126,6 +128,7 @@ const SECTIONS = [
       { path: 'sun.elevation', label: '高度', min: -12, max: 90, step: 0.1, unit: '°' },
       { path: 'sun.azimuth', label: '方位', min: 0, max: 360, step: 0.5, unit: '°' },
       { path: 'sun.intensity', label: '強さ', min: 0, max: 3, step: 0.01 },
+      { path: 'sun.when', label: '日時から', type: 'sunTime' },
     ],
   },
   {
@@ -241,7 +244,7 @@ export class Panel {
     const changes = {};
     for (const f of sec.fields) {
       // 種と生成方法は作品の中身そのものなので戻さない
-      if (f.type === 'seed' || f.type === 'sizePreset' || f.path === 'terrain.mode') continue;
+      if (f.type === 'seed' || f.type === 'sizePreset' || f.type === 'sunTime' || f.path === 'terrain.mode') continue;
       changes[f.path] = getIn(def, f.path);
     }
     this.store.patch(changes, { source: 'ui-reset' });
@@ -258,6 +261,27 @@ export class Panel {
     row.appendChild(name);
     const set = (v) => this.store.set(f.path, v, { source: 'ui' });
 
+    if (f.type === 'sunTime') {
+      // その場所（地球から取り込んだ地形ならその中心、ほかは東京）の、選んだ日時の実際の太陽にする
+      const when = document.createElement('input');
+      when.type = 'datetime-local';
+      const now = new Date();
+      when.value = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+      const go = document.createElement('button');
+      go.type = 'button';
+      go.className = 'sun-go';
+      go.textContent = t('合わせる');
+      go.onclick = (e) => {
+        e.preventDefault();
+        const g = this.store.get().terrain.heightmap?.geo;
+        const lat = g?.lat ?? 35.68, lon = g?.lon ?? 139.77;
+        const d = when.value ? new Date(when.value) : new Date();
+        const p = solarPosition(lat, lon, d);
+        this.store.patch({ 'sun.elevation': Math.round(Math.max(-12, p.elevation) * 10) / 10, 'sun.azimuth': Math.round(p.azimuth * 2) / 2 }, { source: 'ui' });
+      };
+      row.append(when, go);
+      return row;
+    }
     if (f.type === 'sizePreset') {
       // 幅と高さをまとめて選ぶ（どれにも当てはまらなければ「指定の大きさ」）
       const sel = document.createElement('select');

@@ -127,7 +127,7 @@ button, select, input { font: inherit; color: inherit; }
   display: grid; grid-template-columns: 92px 1fr 58px 18px; align-items: center; gap: 8px; font-size: 12.5px;
 }
 .row-label { color: #cfc9b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.row-select, .row-seed, .row-color, .row-toggle { grid-template-columns: 92px 1fr auto; }
+.row-select, .row-seed, .row-color, .row-toggle, .row-sunTime { grid-template-columns: 92px 1fr auto; }
 .unit { font-size: 10.5px; color: var(--muted); }
 .row input[type='number'] {
   width: 100%; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--line); border-radius: 4px;
@@ -454,3 +454,5 @@ body.walking #create { display: none; }
 .label-town { font-size: 13.5px; font-weight: 500; }
 .label-peak { color: #ffe8b0; font-size: 12px; }
 .label-suburb, .label-village { font-size: 11.5px; color: #e9e4d8; }
+.row-sunTime input[type='datetime-local'] { min-width: 0; background: var(--ink); color: var(--text); border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: 12px; padding: 3px 4px; color-scheme: dark; }
+.sun-go { background: rgba(217, 181, 108, 0.14); color: var(--gold-2); border: 1px solid var(--gold); border-radius: 6px; font: inherit; font-size: 12px; padding: 3px 8px; cursor: pointer; }

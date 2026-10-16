@@ -53,3 +53,22 @@ export function hazeColor(sun, atmosphere) {
   }
   return sum;
 }
+
+// 実際の太陽の位置：緯度・経度（度）と日時から、高度と方位（北から東回り、度）。精度は 1° 未満（NOAA の略式）
+export function solarPosition(lat, lon, date = new Date()) {
+  const R = Math.PI / 180;
+  const n = date.getTime() / 86400000 + 2440587.5 - 2451545.0;
+  const L = (((280.46 + 0.9856474 * n) % 360) + 360) % 360;
+  const g = ((((357.528 + 0.9856003 * n) % 360) + 360) % 360) * R;
+  const lam = (L + 1.915 * Math.sin(g) + 0.02 * Math.sin(2 * g)) * R;
+  const eps = (23.439 - 0.0000004 * n) * R;
+  const ra = Math.atan2(Math.cos(eps) * Math.sin(lam), Math.cos(lam));
+  const dec = Math.asin(Math.sin(eps) * Math.sin(lam));
+  const gmst = ((((18.697374558 + 24.06570982441908 * n) % 24) + 24) % 24) * 15;
+  const H = (gmst + lon) * R - ra;
+  const p = lat * R;
+  const el = Math.asin(Math.sin(p) * Math.sin(dec) + Math.cos(p) * Math.cos(dec) * Math.cos(H));
+  let az = Math.atan2(-Math.sin(H), Math.tan(dec) * Math.cos(p) - Math.sin(p) * Math.cos(H)) / R;
+  az = ((az % 360) + 360) % 360;
+  return { elevation: el / R, azimuth: az };
+}

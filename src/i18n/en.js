@@ -463,4 +463,7 @@ export const EN = {
   "地名を表示": "Place names",
   "地球から取り込んだ地形に、山（標高つき）・市・町・村の名前を出す（OpenStreetMap）": "Show names of peaks (with elevation), cities, towns and villages on terrain imported from Earth (OpenStreetMap)",
   "川・海岸線・地名（OpenStreetMap）を取り寄せられませんでした（混み合っています）。地形はそのまま取り込みます": "Could not fetch rivers, coastline and place names from OpenStreetMap (busy). Importing the terrain without them",
+  "日時から": "From date & time",
+  "合わせる": "Set",
+  "日時を選んで「合わせる」と、その場所（地球から取り込んだ地形ならその中心、ほかは東京）の実際の太陽の高さと方位にする": "Pick a date and time and press Set to use the real sun position there (center of terrain imported from Earth, otherwise Tokyo)",
 };

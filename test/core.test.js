@@ -158,3 +158,16 @@ describe('トーンマップ', () => {
     expect(out[8]).toBeLessThanOrEqual(255);
   });
 });
+
+describe('実際の太陽の位置', () => {
+  it('東京・夏至の正午ごろは南の高い空、春分の日の出は東', async () => {
+    const { solarPosition } = await import('../src/core/sun.js');
+    const noon = solarPosition(35.68, 139.77, new Date(Date.UTC(2026, 5, 21, 2, 40)));
+    expect(noon.elevation).toBeGreaterThan(75);
+    expect(Math.abs(noon.azimuth - 180)).toBeLessThan(15);
+    const rise = solarPosition(35.68, 139.77, new Date(Date.UTC(2026, 2, 20, 20, 45)));
+    expect(Math.abs(rise.elevation)).toBeLessThan(3);
+    expect(Math.abs(rise.azimuth - 90)).toBeLessThan(5);
+    expect(solarPosition(35.68, 139.77, new Date(Date.UTC(2026, 5, 21, 15, 0))).elevation).toBeLessThan(-20); // 真夜中
+  });
+});
