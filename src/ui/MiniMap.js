@@ -128,6 +128,31 @@ export class MiniMap {
     ctx.strokeStyle = 'rgba(241, 215, 154, 0.5)';
     ctx.lineWidth = 1 * dpr;
     ctx.strokeRect(px / 2 + (-tr.size / 2 - p.x) * k, px / 2 + (-tr.size / 2 - p.z) * k, tr.size * k, tr.size * k);
+    // 地名（取り込んだ地形の山・市・町・村）。広く見ているときは大きな所だけ
+    const labels = tr.mode === 'heightmap' && tr.labels !== false ? tr.heightmap?.labels ?? [] : [];
+    if (labels.length) {
+      const minRank = half > 6000 ? 1 : half > 1500 ? 2 : 4; // 0 市, 1 山, 2 町, 3 地区, 4 村
+      const rank = { city: 0, peak: 1, town: 2, suburb: 3, village: 4 };
+      ctx.font = `${10.5 * dpr}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.lineWidth = 3 * dpr;
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
+      // 大事な順（市 → 高い山 → 町 …）に置き、重なるものは出さない
+      const order = labels.filter((l) => rank[l.kind] <= minRank).sort((a, b) => rank[a.kind] - rank[b.kind] || (b.ele ?? 0) - (a.ele ?? 0));
+      const placed = [];
+      for (const l of order) {
+        const x = px / 2 + (l.x - p.x) * k, y = px / 2 + (l.z - p.z) * k;
+        if (x < 0 || y < 0 || x > px || y > px) continue;
+        const text = l.kind === 'peak' ? `▲${l.name}` : l.name;
+        const w = ctx.measureText(text).width, h = 12 * dpr;
+        const r = { l: x - w / 2 - 2, r: x + w / 2 + 2, t: y - h, b: y + 2 };
+        if (placed.some((q) => r.l < q.r && r.r > q.l && r.t < q.b && r.b > q.t)) continue;
+        placed.push(r);
+        ctx.fillStyle = l.kind === 'peak' ? '#ffe8b0' : '#ffffff';
+        ctx.strokeText(text, x, y);
+        ctx.fillText(text, x, y);
+      }
+    }
     // 自分（向いている方へ矢印）
     const f = this.view.walk.forward();
     const ang = Math.atan2(f.z, f.x);
