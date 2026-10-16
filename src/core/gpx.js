@@ -66,3 +66,9 @@ export function routeLength(pts) {
   }
   return d;
 }
+
+// GPX の経路の名前（trk → rte → 全体の metadata の順。無ければ null）
+export function gpxName(text) {
+  const pick = (re) => re.exec(text)?.[1]?.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').replace(/&amp;/g, '&').trim() || null;
+  return pick(/<trk\b[^>]*>(?:(?!<trkseg)[\s\S])*?<name>([\s\S]*?)<\/name>/) ?? pick(/<rte\b[^>]*>(?:(?!<rtept)[\s\S])*?<name>([\s\S]*?)<\/name>/) ?? pick(/<metadata\b[^>]*>[\s\S]*?<name>([\s\S]*?)<\/name>/);
+}

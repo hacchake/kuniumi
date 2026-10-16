@@ -10,7 +10,7 @@ import { GlobeMode } from './ui/GlobeMode.js';
 import { MiniMap } from './ui/MiniMap.js';
 import { WalkHud } from './ui/WalkHud.js';
 import { RouteProfile } from './ui/RouteProfile.js';
-import { trackToGpx, parseGpx, parseGpxWaypoints, routeLength } from './core/gpx.js';
+import { trackToGpx, parseGpx, parseGpxWaypoints, routeLength, gpxName } from './core/gpx.js';
 import { aeqdForward } from './core/geo.js';
 import { Labels } from './ui/Labels.js';
 import { loadSkeleton, loadBigParts, saveScene } from './io/autosave.js';
@@ -269,29 +269,21 @@ async function openGpx(file) {
       ext = Math.max(ext, Math.abs(e), Math.abs(n));
     }
     const size = Math.min(80000, Math.max(3000, Math.ceil((ext * 2 * 1.3) / 500) * 500));
-    const name = /<name>\s*([^<]+?)\s*<\/name>/.exec(text)?.[1] ?? file.name.replace(/\.gpx$/i, '');
+    const name = gpxName(text) ?? file.name.replace(/\.gpx$/i, '');
     toast(t('経路のまわり（{km} km 四方）を地球から取り込んでいます…', { km: (size / 1000).toFixed(1) }));
     await geo_dialog_import({ ...c, size }, size > 20000 ? 2049 : 1025, name);
     geo = store.get().terrain.heightmap?.geo;
     if (!geo) throw new Error(t('経路のまわりの地形を取り込めませんでした'));
     imported = true;
   }
-  const toXZ = (lat, lon) => {
-    const { e, n } = aeqdForward(lat, lon, geo.lat, geo.lon);
-    return { x: e, z: -n };
-  };
-  const route = pts.map(({ lat, lon }) => toXZ(lat, lon));
+  // 経路はシーンに入れておく（自動保存・シーンの保存でも残る）。描くのは下の applyRoute
+  store.patch(
+    { 'terrain.route': { name: gpxName(text) ?? file.name, pts: pts.map((p) => [p.lat, p.lon]), wpts: parseGpxWaypoints(text) } },
+    { source: 'io' },
+  );
+  const route = applyRoute();
   const half = store.get().terrain.size / 2;
   const inside = route.filter((p) => Math.abs(p.x) <= half && Math.abs(p.z) <= half).length;
-  view.setRoute(route);
-  // 地点（山頂・分岐など）は名前つきで景観と地図に
-  const wpts = parseGpxWaypoints(text).map((w) => ({ name: w.name, ...toXZ(w.lat, w.lon), ele: w.ele }));
-  view.setWaypoints(wpts);
-  miniMap.wpts = wpts;
-  miniMap.route = route;
-  followBtn.hidden = !view.walking;
-  routeProfile.set(route, (x, z) => view.treeTerrain.groundAt(x, z));
-  routeProfile.show(view.walking);
   // 取り込んだばかりなら、経路全体が見えるよう南東の空から見下ろす
   if (imported) {
     const xs = route.map((p) => p.x), zs = route.map((p) => p.z);
@@ -302,6 +294,44 @@ async function openGpx(file) {
   }
   toast(t('経路を描きました（{km} km、{n} 点。範囲の中は {pct}%）', { km: (routeLength(pts) / 1000).toFixed(2), n: pts.length, pct: Math.round((inside / route.length) * 100) }));
 }
+// シーンの経路（terrain.route）を、いまの取り込んだ地形の座標にして描く（景観・地図・断面図）。描いた点を返す
+let routeShown = null;
+function applyRoute() {
+  const s = store.get();
+  const r = s.terrain.route;
+  const geo = s.terrain.mode === 'heightmap' ? s.terrain.heightmap?.geo : null;
+  routeShown = r && geo ? `${s.terrain.heightmap?.id}|${r.pts.length}|${r.pts[0]}` : null;
+  if (!routeShown) {
+    view.setRoute(null);
+    view.setWaypoints(null);
+    miniMap.route = miniMap.wpts = null;
+    routeProfile.set(null);
+    followBtn.hidden = true;
+    return [];
+  }
+  const toXZ = (lat, lon) => {
+    const { e, n } = aeqdForward(lat, lon, geo.lat, geo.lon);
+    return { x: e, z: -n };
+  };
+  const route = r.pts.map(([lat, lon]) => toXZ(lat, lon));
+  const wpts = (r.wpts ?? []).map((w) => ({ name: w.name, ...toXZ(w.lat, w.lon), ele: w.ele }));
+  view.setRoute(route);
+  view.setWaypoints(wpts);
+  miniMap.route = route;
+  miniMap.wpts = wpts;
+  followBtn.hidden = !view.walking;
+  routeProfile.set(route, (x, z) => view.treeTerrain.groundAt(x, z));
+  routeProfile.show(view.walking);
+  return route;
+}
+// 地形の高さ場ができたら、経路を地面に置き直す
+view.onTerrainField = () => routeShown && applyRoute();
+// 経路・地形が変わったら描き直す（自動保存からの復元・シーンを開いたとき・元に戻すも）。地形の高さが入ってから
+store.subscribe((s) => {
+  const r = s.terrain.route;
+  const key = r && s.terrain.mode === 'heightmap' && s.terrain.heightmap?.geo ? `${s.terrain.heightmap?.id}|${r.pts.length}|${r.pts[0]}` : null;
+  if (key !== routeShown) setTimeout(applyRoute, 300);
+});
 // GPX から呼ぶ取り込み（ダイアログを開かずに）
 const geo_dialog_import = (region, res, name) => geo.importRegion(region, res, name);
 
@@ -332,7 +362,7 @@ const geo = new GeoDialog({
         'water.level': 0,
         'planet.curvature': true,
         'planet.radius': EARTH_RADIUS,
-        ...(restore ? {} : { 'meta.name': name }),
+        ...(restore ? {} : { 'meta.name': name, 'terrain.route': null }), // 別の所を取り込んだら古い経路は消す
       },
       { source: 'io' },
     );

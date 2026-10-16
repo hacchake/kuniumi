@@ -635,6 +635,8 @@ void main() {`)
       if (!colors) this.colorKey = null;
       // 周りの地形を範囲の高さ場に合わせ直す（以前の取り込みの標高の幅を求めるにも高さ場が要る）
       this.#updateSurround(s);
+      // 高さ場が変わった：経路などを地面に置き直してもらう
+      queueMicrotask(() => this.onTerrainField?.());
     }
     // 計算中に起伏や大きさが変わっていても、最新のシーンで合わせる
     this.gpuTerrain.setScene(s);

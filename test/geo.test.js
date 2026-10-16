@@ -317,3 +317,12 @@ describe('GPX の地点', () => {
     ]);
   });
 });
+
+describe('GPX の名前', () => {
+  it('経路の名前を地点の名前より優先する', async () => {
+    const { gpxName } = await import('../src/core/gpx.js');
+    expect(gpxName('<gpx><wpt lat="1" lon="2"><name>山頂</name></wpt><trk><name>1号路</name><trkseg/></trk></gpx>')).toBe('1号路');
+    expect(gpxName('<gpx><rte><name>A &amp; B</name><rtept lat="1" lon="2"/></rte></gpx>')).toBe('A & B');
+    expect(gpxName('<gpx><trk><trkseg><trkpt lat="1" lon="2"><name>点</name></trkpt></trkseg></trk></gpx>')).toBe(null);
+  });
+});
