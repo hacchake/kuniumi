@@ -460,4 +460,6 @@ export const EN = {
   "位置情報を取得できませんでした: {msg}": "Could not get your location: {msg}",
   "たたくと地図の広さが変わる": "Tap to change the map scale",
   "川と海岸線を描いています…": "Drawing rivers and coastline…",
+  "地名を表示": "Place names",
+  "地球から取り込んだ地形に、山（標高つき）・市・町・村の名前を出す（OpenStreetMap）": "Show names of peaks (with elevation), cities, towns and villages on terrain imported from Earth (OpenStreetMap)",
 };

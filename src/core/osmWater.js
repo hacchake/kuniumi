@@ -33,6 +33,7 @@ export async function fetchOsmWater(region, { timeoutMs = 90000 } = {}) {
     `way["waterway"="riverbank"](${bb});relation["waterway"="riverbank"](${bb});` +
     `way["waterway"~"^(river|canal)$"](${bb});` +
     `way["natural"="coastline"](${bb});` +
+    `node["natural"="peak"]["name"](${bb});node["place"~"^(city|town|village|suburb)$"]["name"](${bb});` +
     `);out tags geom;`;
   let lastErr = null;
   for (const ep of ENDPOINTS) {
@@ -167,6 +168,25 @@ export function rasterizeOsmWater(elements, region, res, heightAt) {
     if (n && high / n > 0.1) sea = null;
   }
   return { inland, sea };
+}
+
+// 地名（山・市・町・村）を、範囲の世界座標（x = 東、z = 南）に。多すぎるときは大事なものから
+export function labelsFrom(elements, region, { maxPeaks = 150, maxPlaces = 250 } = {}) {
+  const half = region.size / 2;
+  const out = [];
+  for (const el of elements) {
+    if (el.type !== 'node' || !el.tags?.name) continue;
+    const kind = el.tags.natural === 'peak' ? 'peak' : el.tags.place;
+    if (!['peak', 'city', 'town', 'village', 'suburb'].includes(kind)) continue;
+    const { e, n } = aeqdForward(el.lat, el.lon, region.lat, region.lon);
+    if (Math.abs(e) > half || Math.abs(n) > half) continue;
+    const ele = parseFloat(el.tags.ele);
+    out.push({ name: el.tags['name:ja'] || el.tags.name, kind, x: Math.round(e), z: Math.round(-n), ...(Number.isFinite(ele) ? { ele } : {}) });
+  }
+  const peaks = out.filter((l) => l.kind === 'peak').sort((a, b) => (b.ele ?? 0) - (a.ele ?? 0)).slice(0, maxPeaks);
+  const rank = { city: 0, town: 1, suburb: 2, village: 3 };
+  const places = out.filter((l) => l.kind !== 'peak').sort((a, b) => rank[a.kind] - rank[b.kind]).slice(0, maxPlaces);
+  return [...places, ...peaks];
 }
 
 // 内水の印を PNG（グレー）の data URL に。一辺 maxSize まで縮める

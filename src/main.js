@@ -8,6 +8,7 @@ import { createDefaultScene, normalizeScene, deepMerge, EARTH_RADIUS } from './c
 import { GeoDialog } from './ui/GeoDialog.js';
 import { GlobeMode } from './ui/GlobeMode.js';
 import { MiniMap } from './ui/MiniMap.js';
+import { Labels } from './ui/Labels.js';
 import { loadSkeleton, loadBigParts, saveScene } from './io/autosave.js';
 import { createStore } from './core/store.js';
 import { PRESETS } from './core/presets.js';
@@ -495,6 +496,7 @@ const walkBtn = document.getElementById('walk-btn');
 const hintEl = document.querySelector('.hint');
 const hintDefault = hintEl?.textContent ?? '';
 const miniMap = new MiniMap(document.getElementById('stage'), view, store);
+view.labels = new Labels(document.getElementById('stage'));
 view.onWalk = (mode, speed) => {
   walkBtn.classList.toggle('active', !!mode);
   miniMap.show(!!mode);

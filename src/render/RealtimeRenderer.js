@@ -803,6 +803,32 @@ export class RealtimeRenderer {
     this.atmosphere.uniforms.spaceW.value = R > 0 ? THREE.MathUtils.smoothstep(flatPos.y, 15000, 120000) : 0;
     this.atmosphere.uniforms.starI.value = 8 / Math.max(0.02, s.atmosphere.exposure / 0.12);
     this.scene.updateMatrixWorld();
+    // 地名を画面の位置へ（曲げた地形と同じ式で、平らな地図の点を画面へ）
+    if (this.labels) {
+      const t = s.terrain;
+      const v = new THREE.Vector3();
+      const W = this.renderer.domElement.clientWidth, Hh = this.renderer.domElement.clientHeight;
+      const project = (x, y, z) => {
+        const q = curvePoint(x - ox, y, z - oz, tgt.x, tgt.z, R);
+        v.set(q[0], q[1], q[2]);
+        const dist = v.distanceTo(cam.position);
+        v.project(cam);
+        return { x: (v.x * 0.5 + 0.5) * W, y: (0.5 - v.y * 0.5) * Hh, front: v.z < 1 && v.z > -1, dist };
+      };
+      const hm = t.mode === 'heightmap' ? t.heightmap : null;
+      this.labels.set(hm?.labels ?? null);
+      // 手前の山に隠れていないか：カメラから地名までの間の地面を 16 か所見る（丸みの沈みも足す）
+      const blocked = (x, y, z) => {
+        const dx = x - flatPos.x, dz = z - flatPos.z, len = Math.hypot(dx, dz);
+        for (let k = 1; k < 16; k++) {
+          const f = k / 16;
+          const sag = R > 0 ? (f * (1 - f) * len * len) / (2 * R) : 0;
+          if (this.gpuTerrain.heightAt(flatPos.x + dx * f, flatPos.z + dz * f) > flatPos.y + (y - flatPos.y) * f + sag) return true;
+        }
+        return false;
+      };
+      this.labels.update(project, (x, z) => this.gpuTerrain.groundAt(x, z), t.labels !== false && !!this.terrain, blocked);
+    }
     this.gpuTerrain.update(cam, this.origin);
     if (this.surround?.ready && this.surround.terrain.mesh.visible) this.surround.terrain.update(cam, this.origin);
 

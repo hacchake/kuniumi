@@ -4,7 +4,7 @@ import { fieldToHeightmap } from '../io/heightmap.js';
 import { SIZE_MAX } from '../core/schema.js';
 import { IMAGERY_ATTRIBUTION } from '../core/globe.js';
 import { decodePhoto, photoWater } from '../io/photo.js';
-import { fetchOsmWater, rasterizeOsmWater, maskToDataUrl, OSM_MAX_SIZE, OSM_ATTRIBUTION } from '../core/osmWater.js';
+import { fetchOsmWater, rasterizeOsmWater, maskToDataUrl, labelsFrom, OSM_MAX_SIZE, OSM_ATTRIBUTION } from '../core/osmWater.js';
 
 // 「地球の地形を取り込む」ダイアログ。
 // 地名検索（OpenStreetMap の Nominatim）か、ひな形・緯度経度で範囲を決め、
@@ -173,6 +173,10 @@ export class GeoDialog {
       hm.geo = { lat: region.lat, lon: region.lon, size: region.size, res, zoom: r.zoom, name, source: ELEVATION_ATTRIBUTION, min, max };
       if (water) hm.geo.water = OSM_ATTRIBUTION;
       if (waterMask) hm.water = waterMask; // 川・湖の印（PNG、行 0 = 北）
+      if (els?.length) {
+        const labels = labelsFrom(els, region);
+        if (labels.length) hm.labels = labels; // 地名（山・市・町・村）
+      }
       if (o) {
         const ospan = Math.max(1, o.max - o.min);
         const of = new Float32Array(o.heights.length);

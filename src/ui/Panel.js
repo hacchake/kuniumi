@@ -6,6 +6,7 @@ const HINTS = {
   'terrain.noise.seed': '地形の元になる乱数。数字を変えると別の大地になる（⟳ で無作為に）',
   'terrain.size': '大地の一辺の長さ。箱庭の 200 m から、大陸がまるごと入る 1 万 km まで',
   'terrain.detail': '高さ場の格子より細かい所に足す小さな起伏。近づいたときの平らな面を和らげる',
+  'terrain.labels': '地球から取り込んだ地形に、山（標高つき）・市・町・村の名前を出す（OpenStreetMap）',
   'terrain.photo': '地球から取り込んだ地形の色を、衛星写真（Sentinel-2 cloudless・NASA Blue Marble）にする。切ると標高と傾きから塗る',
   'planet.curvature': '星の丸みを描く。遠くの地面や海が地平線の向こうへ沈み、高く昇ると丸い星が見える',
   'planet.radius': '星の半径。地球は 6371 km。小さいほど地平線が近く、丸みが強い',
@@ -69,6 +70,7 @@ const SECTIONS = [
       { path: 'terrain.resolution', label: '解像度', type: 'select', options: RESOLUTIONS.map((r) => [r, `${r} × ${r}`]), number: true },
       { path: 'terrain.detail', label: '細部の起伏', min: 0, max: 3, step: 0.05 },
       { path: 'terrain.photo', label: '衛星写真の色', type: 'toggle' },
+      { path: 'terrain.labels', label: '地名を表示', type: 'toggle' },
     ],
   },
   {

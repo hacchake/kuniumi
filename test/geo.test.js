@@ -217,3 +217,22 @@ describe('標高タイルの偽の穴を埋める', () => {
     expect(a[50 * N + 5]).toBe(-4000);
   });
 });
+
+describe('地名（OpenStreetMap）', () => {
+  it('範囲の中の山・市・町だけを世界座標に、山は高い順', async () => {
+    const { labelsFrom } = await import('../src/core/osmWater.js');
+    const region = { lat: 36.3, lon: 137.64, size: 24000 };
+    const els = [
+      { type: 'node', lat: 36.2894, lon: 137.6481, tags: { natural: 'peak', name: '奥穂高岳', ele: '3190' } },
+      { type: 'node', lat: 36.342, lon: 137.6476, tags: { natural: 'peak', name: '槍ヶ岳', ele: '3180' } },
+      { type: 'node', lat: 35.0, lon: 135.0, tags: { place: 'city', name: '範囲の外' } },
+      { type: 'node', lat: 36.2497, lon: 137.6385, tags: { place: 'village', name: '上高地' } },
+      { type: 'way', tags: { natural: 'water' } },
+    ];
+    const l = labelsFrom(els, region);
+    expect(l.map((x) => x.name)).toEqual(['上高地', '奥穂高岳', '槍ヶ岳']);
+    const y = l.find((x) => x.name === '槍ヶ岳');
+    expect(y.z).toBeLessThan(0); // 北は −z
+    expect(y.ele).toBe(3180);
+  });
+});
