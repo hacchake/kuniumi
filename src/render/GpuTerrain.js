@@ -152,6 +152,8 @@ export class GpuTerrain {
       tHasWear: { value: 0 },
       tPhoto: { value: null }, // 地表の衛星写真（範囲と同じ正方形、行 0 = 北）
       tWaterMask: { value: null }, // 川・湖の印（OpenStreetMap。白 = 水）
+      tSeason: { value: 0 }, // 季節（0 = そのまま、1 = 春、2 = 秋、3 = 冬）
+      tWinterSnow: { value: 600 }, // 冬に雪が積もる高さ (m)
       tHasWaterMask: { value: 0 },
       tHasPhoto: { value: 0 },
       tOriginUV: { value: new THREE.Vector2() },
@@ -195,7 +197,7 @@ export class GpuTerrain {
           .replace('#include <beginnormal_vertex>', 'vec3 objectNormal; vec3 kTP; kTerrainVertex( kTP, objectNormal );')
           .replace('#include <begin_vertex>', 'vec3 transformed = kTP;');
         shader.fragmentShader = shader.fragmentShader
-          .replace('#include <common>', `#include <common>\n${TERRAIN_SHADING_GLSL}\nvarying float vTH, vTSlope, vTWear, vTJit, vTClump;\nvarying vec2 vTLocal, vTDetGrad;\nuniform vec2 tOriginW;\nuniform float tClipHalf, tHasPhoto, tHasWaterMask;\nuniform sampler2D tPhoto, tWaterMask;\n${CURVE_GLSL}\n${FIELD_GLSL}`)
+          .replace('#include <common>', `#include <common>\n${TERRAIN_SHADING_GLSL}\nvarying float vTH, vTSlope, vTWear, vTJit, vTClump;\nvarying vec2 vTLocal, vTDetGrad;\nuniform vec2 tOriginW;\nuniform float tClipHalf, tHasPhoto, tHasWaterMask, tSeason, tWinterSnow;\nuniform sampler2D tPhoto, tWaterMask;\n${CURVE_GLSL}\n${FIELD_GLSL}`)
           // 面の向きと傾きは画素ごとに高さ場から出す（頂点の補間だと、区画の細かさが変わる所で線が出る）
           .replace(
             '#include <normal_fragment_begin>',
@@ -219,9 +221,24 @@ export class GpuTerrain {
               'vec3 kTC = terrainColor( vTH, length( kG0 ), vTWear, kJ, vTClump );\n' +
               // 衛星写真があれば、その色を地表の色にする（細かい色むらだけ手続きの色から少し残す）
               `if ( tHasPhoto > 0.5 ) kTC = texture2D( tPhoto, clamp( tUV( vTLocal ), 0.0, 1.0 ) ).rgb * ${PHOTO_ALBEDO.toFixed(3)} * ( 1.0 + kJ * 0.35 );\n` +
+
               // 川・湖：暗い水の色（写真の色を少し残す）。なめらかさは roughnessmap の後で
               'float kWm = tHasWaterMask > 0.5 ? smoothstep( 0.35, 0.65, texture2D( tWaterMask, clamp( tUV( vTLocal ), 0.0, 1.0 ) ).r ) : 0.0;\n' +
               'kTC = mix( kTC, kTC * 0.35 + vec3( 0.012, 0.03, 0.04 ), kWm );\n' +
+              // 季節：秋は森（緑の濃い所）を赤や黄に、春は若葉の明るい緑に、冬は高い所と平らな所に雪
+              'if ( tSeason > 0.5 ) {\n' +
+              '  float kGr = clamp( ( kTC.g - kTC.r ) / ( kTC.g + kTC.r + 1e-4 ) * 4.0, 0.0, 1.0 );\n' +
+              '  float kLm = dot( kTC, vec3( 0.2126, 0.7152, 0.0722 ) );\n' +
+              '  if ( tSeason < 1.5 ) kTC = mix( kTC, kTC * vec3( 1.05, 1.25, 0.85 ), kGr * 0.7 );\n' +
+              '  else if ( tSeason < 2.5 ) {\n' +
+              '    float kN = tValueNoise( vTLocal, 128.0, 77 ) * 0.7 + tValueNoise( vTLocal, 32.0, 78 ) * 0.3;\n' +
+              '    vec3 kAut = mix( vec3( 0.62, 0.16, 0.04 ), vec3( 0.72, 0.48, 0.08 ), kN );\n' +
+              '    kTC = mix( kTC, kAut * ( kLm * 2.2 + 0.03 ), kGr * 0.85 );\n' +
+              '  } else {\n' +
+              '    float kSn = smoothstep( tWinterSnow - 150.0, tWinterSnow + 250.0, vTH ) * ( 1.0 - smoothstep( 0.55, 1.0, length( kG0 ) ) );\n' +
+              '    kTC = mix( kTC * vec3( 0.95, 0.92, 0.85 ) * mix( 1.0, 0.75, kGr ), vec3( 0.82, 0.85, 0.9 ), kSn * ( 1.0 - kWm ) );\n' +
+              '  }\n' +
+              '}\n' +
               'diffuseColor.rgb *= kTC;',
           )
           .replace(
@@ -309,6 +326,12 @@ export class GpuTerrain {
   // over.size: 大地の大きさを差し替える（周りの地形用）。over.clipHalf: この半径の正方形の内側は描かない（内側は本来の地形が描く）
   // 地表の衛星写真（THREE.Texture、無ければ null）
   // 川・湖の印（THREE.Texture、無ければ null）
+  // 季節（'summer' = そのまま、'spring'、'autumn'、'winter'）と、冬に雪が積もる高さ
+  setSeason(season, winterSnow = 600) {
+    this.uniforms.tSeason.value = { spring: 1, autumn: 2, winter: 3 }[season] ?? 0;
+    this.uniforms.tWinterSnow.value = winterSnow;
+  }
+
   setWaterMask(tex) {
     this.uniforms.tWaterMask.value = tex;
     this.uniforms.tHasWaterMask.value = tex ? 1 : 0;

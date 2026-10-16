@@ -509,4 +509,12 @@ export const EN = {
   "音を出す（M）": "Sound on (M)",
   "いま見ている所を開くリンクをコピー": "Copy a link that opens this view",
   "リンクをコピーしました": "Link copied",
+  "季節": "Season",
+  "夏（そのまま）": "Summer (as is)",
+  "春": "Spring",
+  "秋（紅葉）": "Autumn (foliage)",
+  "冬（雪）": "Winter (snow)",
+  "冬の雪の高さ": "Winter snow line",
+  "季節の色。秋は森を紅葉の色に、春は若葉の色に、冬は「冬の雪の高さ」より上の平らな所に雪（リアルタイム表示）": "Seasonal colors: autumn foliage in forests, fresh spring green, winter snow above the snow line on gentle slopes (realtime view)",
+  "冬に雪が積もり始める標高": "Elevation where winter snow begins",
 };

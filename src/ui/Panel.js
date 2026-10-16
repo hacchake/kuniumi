@@ -17,6 +17,8 @@ const HINTS = {
   'terrain.noise.seed': '地形の元になる乱数。数字を変えると別の大地になる（⟳ で無作為に）',
   'terrain.size': '大地の一辺の長さ。箱庭の 200 m から、大陸がまるごと入る 1 万 km まで',
   'terrain.detail': '高さ場の格子より細かい所に足す小さな起伏。近づいたときの平らな面を和らげる',
+  'terrain.season': '季節の色。秋は森を紅葉の色に、春は若葉の色に、冬は「冬の雪の高さ」より上の平らな所に雪（リアルタイム表示）',
+  'terrain.winterSnow': '冬に雪が積もり始める標高',
   'terrain.labels': '地球から取り込んだ地形に、山（標高つき）・市・町・村の名前を出す（OpenStreetMap）',
   'sun.when': '日時を選んで「合わせる」と、その場所（地球から取り込んだ地形ならその中心、ほかは東京）の実際の太陽の高さと方位にする',
   'atmosphere.weather': '天気のひな形を選ぶと、雲・かすみ・霧・光の筋がまとめて変わる（その後も一つずつ調整できる）',
@@ -84,6 +86,8 @@ const SECTIONS = [
       { path: 'terrain.detail', label: '細部の起伏', min: 0, max: 3, step: 0.05 },
       { path: 'terrain.photo', label: '衛星写真の色', type: 'toggle' },
       { path: 'terrain.labels', label: '地名を表示', type: 'toggle' },
+      { path: 'terrain.season', label: '季節', type: 'select', options: [['summer', '夏（そのまま）'], ['spring', '春'], ['autumn', '秋（紅葉）'], ['winter', '冬（雪）']] },
+      { path: 'terrain.winterSnow', label: '冬の雪の高さ', min: -100, max: 4000, step: 10, unit: 'm' },
     ],
   },
   {

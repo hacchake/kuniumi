@@ -93,7 +93,7 @@ export async function loadBigParts(skel) {
 }
 
 // ---- 残す ----
-const saved = new Set(); // このページで IndexedDB に書いた鍵（同じものを何度も書かない）
+const saved = new Map(); // このページで IndexedDB に書いた鍵 → 書いた中身（同じ中身を何度も書かない。中身が変われば書き直す）
 export async function saveScene(s) {
   // 大きな部分を抜いた骨組み（元のシーンは変えない）
   const skel = { ...s, terrain: { ...s.terrain } };
@@ -101,9 +101,9 @@ export async function saveScene(s) {
   let idbOk = true;
   const put = async (key, value) => {
     keep.add(key);
-    if (saved.has(key)) return;
+    if (saved.get(key) === value) return;
     await idbPut(key, value);
-    saved.add(key);
+    saved.set(key, value);
   };
   try {
     const hm = s.terrain.mode === 'heightmap' ? s.terrain.heightmap : null;

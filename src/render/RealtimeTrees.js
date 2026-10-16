@@ -72,6 +72,7 @@ export class RealtimeTrees {
     };
     const conCrown = mat(new THREE.Color('#1b3317'));
     const brdCrown = mat(new THREE.Color('#2e4d1f'));
+    this.crowns = { conCrown, brdCrown };
     const wood = mat(trunk);
     this.near = {
       conifer: [mk(con.trunk, wood, MAX_NEAR, true), mk(con.crown, conCrown, MAX_NEAR, true)],
@@ -86,6 +87,13 @@ export class RealtimeTrees {
     this.origin = new THREE.Vector2(NaN, NaN);
     this.lastBuild = null;
     this.dirty = false;
+  }
+
+  // 季節の葉の色（広葉樹は春の若葉・秋の紅葉・冬の枯れ枝、針葉樹は冬に少し白く）
+  setSeason(season) {
+    const { conCrown, brdCrown } = this.crowns;
+    brdCrown.color.set({ spring: '#4c7a26', autumn: '#9a4614', winter: '#4d4136' }[season] ?? '#2e4d1f');
+    conCrown.color.set(season === 'winter' ? '#3b4a42' : '#1b3317');
   }
 
   dispose() {

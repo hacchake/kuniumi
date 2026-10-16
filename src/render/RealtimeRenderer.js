@@ -416,6 +416,8 @@ export class RealtimeRenderer {
     }
     if (has('terrain') || has('water') || has('vegetation')) {
       this.gpuTerrain.setScene(s);
+      this.gpuTerrain.setSeason(s.terrain.season, s.terrain.winterSnow);
+      this.trees.setSeason(s.terrain.season);
       this.#updatePhotos(s);
       this.#updateSurround(s);
       this.shadowDirty = true;
