@@ -426,3 +426,10 @@ html[lang='en'] .create-title { letter-spacing: 0.08em; }
 .walk-btns button[hidden] { display: none; }
 .walk-btns button:active, .walk-btns button.on { background: rgba(217, 181, 108, 0.35); border-color: var(--gold); }
 body.walking #create { display: none; }
+
+/* 地球モードの右側のボタン（方位磁針・寄る・離れる・現在地） */
+.globe-side { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 8px; }
+.globe-side button { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line); background: rgba(11, 15, 26, 0.75); color: var(--text); font: inherit; font-size: 20px; line-height: 1; cursor: pointer; display: grid; place-items: center; padding: 0; }
+.globe-side button:hover { border-color: var(--gold); }
+.globe-compass span { font-size: 13px; font-weight: 700; color: var(--danger); display: block; position: relative; }
+.globe-compass span::after { content: ''; position: absolute; left: 50%; top: 100%; margin-left: -1px; width: 2px; height: 9px; background: var(--muted); }

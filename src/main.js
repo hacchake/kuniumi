@@ -201,7 +201,7 @@ async function openAny(file) {
 // 地球の地形を取り込むダイアログ（取り込んだ高さ場をハイトマップ地形としてシーンへ）
 const geo = new GeoDialog({
   toast,
-  apply: ({ heightmap, region, res, min, max, name }, { restore = false } = {}) => {
+  apply: ({ heightmap, region, res, min, max, name }, { restore = false, after = null } = {}) => {
     selection.set('selected', null);
     store.patch(
       {
@@ -221,7 +221,7 @@ const geo = new GeoDialog({
       { source: 'io' },
     );
     // 高さ場ができてから全体を見渡す（自動保存からの復元では視点はそのまま）
-    if (!restore) view.terrainService.idle().then(() => setTimeout(() => view.frameAll(), 50));
+    if (!restore) view.terrainService.idle().then(() => setTimeout(() => (after ? after() : view.frameAll()), 50));
   },
 });
 // 前回の地形・画像（大きな部分）を IndexedDB から戻す。無ければ、地球から取り込んだ地形は取り寄せ直す
@@ -241,6 +241,11 @@ const globe = new GlobeMode(document.getElementById('stage'), {
   toast,
   getSun: () => ({ ...store.get().sun }),
   onImport: (region) => geo.openAt(region, region.name),
+  // 地球モードから地上へ：取り込み画面で進み具合を見せながら取り込み、終わったら範囲の中心で歩き始める
+  onWalkHere: ({ lat, lon, size, heading, name }) => {
+    geo.openAt({ lat, lon, size }, name);
+    geo.importRegion({ lat, lon, size }, 2049, name, { after: () => view.walkAt(0, 0, heading) });
+  },
   onClose: () => {
     view.paused = false;
     globeBtn.classList.remove('active');

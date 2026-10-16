@@ -704,6 +704,19 @@ export class RealtimeRenderer {
     return this.walk.active;
   }
 
+  // (x, z) の地面に立ち、heading（北 = 0、時計回り、度）を向いて歩き始める
+  walkAt(x, z, heading = 0) {
+    const g = this.gpuTerrain.groundAt(x, z);
+    const s = this.store.get();
+    const y = Math.max(g, s.water.enabled ? s.water.level : -Infinity) + 1.65;
+    const h = THREE.MathUtils.degToRad(heading);
+    this.flight = null;
+    this.camera.position.set(x, y, z);
+    this.controls.target.set(x + Math.sin(h) * 30, y, z - Math.cos(h) * 30);
+    this.camera.lookAt(this.controls.target);
+    this.setWalk('walk');
+  }
+
   setWalk(mode) {
     if (mode) {
       this.flight = null;

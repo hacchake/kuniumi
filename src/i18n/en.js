@@ -450,4 +450,12 @@ export const EN = {
   "歩行モード": "Walk",
   "移動": "Move",
   "雲": "Clouds",
+  "いま見ている所を取り込んで、地上に降りて歩く": "Import the spot in view and walk on the ground",
+  "ここに降りて歩く": "Land here & walk",
+  "北を上に": "North up",
+  "寄る": "Zoom in",
+  "離れる": "Zoom out",
+  "いまいる場所へ": "Go to my location",
+  "この端末では位置情報を使えません": "Location is not available on this device",
+  "位置情報を取得できませんでした: {msg}": "Could not get your location: {msg}",
 };

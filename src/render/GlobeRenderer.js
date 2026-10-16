@@ -27,7 +27,10 @@ export class GlobeRenderer {
     container.prepend(canvas);
     this.canvas = canvas;
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true, powerPreference: 'high-performance' });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // 画質（解像度の倍率）。重い端末では自動で下げ、軽ければ上げる（#adaptQuality）
+    this.maxRatio = Math.min(window.devicePixelRatio, 2);
+    this.quality = { ratio: this.maxRatio, frames: 0, sum: 0 };
+    renderer.setPixelRatio(this.maxRatio);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 0.22;
     this.renderer = renderer;
@@ -375,6 +378,18 @@ export class GlobeRenderer {
     }
   }
 
+  // 北を上に（傾きも戻す）
+  northUp() {
+    this.flyTo({ lat: this.view.lat, lon: this.view.lon, range: this.view.range, heading: 0, tilt: 0 });
+  }
+
+  // 寄る（k < 1）・離れる（k > 1）
+  zoomBy(k) {
+    this.flight = null;
+    this.view.range = THREE.MathUtils.clamp(this.view.range * k, 60, 6e7);
+    this.view.tilt = Math.min(this.view.tilt, this.#maxTilt());
+  }
+
   setClouds(on) {
     this.shared.cloudOn.value = on ? 1 : 0;
   }
@@ -700,8 +715,10 @@ export class GlobeRenderer {
   // ---- 毎コマ ----
   #frame() {
     const now = performance.now();
-    const dt = Math.min(0.1, (now - (this.lastT ?? now)) / 1000);
+    const raw = (now - (this.lastT ?? now)) / 1000;
+    const dt = Math.min(0.1, raw);
     this.lastT = now;
+    if (this.running) this.#adaptQuality(raw);
     this.frameNo++;
     this.#keys(dt);
     this.#flight(now);
@@ -876,9 +893,29 @@ export class GlobeRenderer {
   #report(cl, alt) {
     this.onInfo({
       lat: this.view.lat, lon: this.view.lon, camLat: cl.lat, camLon: cl.lon, alt,
-      range: this.view.range, ground: this.heightAt(this.view.lat, this.view.lon),
+      range: this.view.range, heading: this.view.heading, tilt: this.view.tilt, ground: this.heightAt(this.view.lat, this.view.lon),
       tiles: this.drawCount, loading: this.loading + (this.needCount ?? 0) > 0 ? this.loading : 0,
     });
+  }
+
+  // 1 秒ほどの平均の描画間隔を見て、解像度の倍率を上げ下げする（目安 30〜50 fps）
+  #adaptQuality(dt) {
+    const q = this.quality;
+    if (dt <= 0 || dt > 0.5) return; // 画面が隠れていた・止まっていた間は数えない
+    q.frames++;
+    q.sum += dt;
+    if (q.sum < 1) return;
+    const avg = q.sum / q.frames;
+    q.frames = 0;
+    q.sum = 0;
+    let next = q.ratio;
+    if (avg > 1 / 28) next = Math.max(0.5, q.ratio * 0.85);
+    else if (avg < 1 / 50) next = Math.min(this.maxRatio, q.ratio * 1.12);
+    if (Math.abs(next - q.ratio) > 0.02) {
+      q.ratio = next;
+      this.renderer.setPixelRatio(next);
+      this.#resize();
+    }
   }
 
   #resize() {

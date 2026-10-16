@@ -86,7 +86,8 @@ export class GeoDialog {
   }
 
   // 範囲を取り込んでシーンへ。ダイアログを開かずに（自動保存からの復元など）呼んでもよい
-  async importRegion(region, res, name, { quiet = false, restore = false } = {}) {
+  // after: 取り込んで地形ができた後に呼ぶ（無ければ全体を見渡す）
+  async importRegion(region, res, name, { quiet = false, restore = false, after = null } = {}) {
     this.busy = true;
     this.#setBusy(true);
     try {
@@ -135,7 +136,7 @@ export class GeoDialog {
         if (hm.surround && ph.outer) hm.surround.photo = ph.outer;
         hm.geo.photo = IMAGERY_ATTRIBUTION;
       }
-      this.apply({ heightmap: hm, region, res, min, max, name }, { restore });
+      this.apply({ heightmap: hm, region, res, min, max, name }, { restore, after });
       if (!quiet) this.toast(t('{name} の地形を取り込みました（{km} km 四方・{res}×{res}・タイル {n} 枚）', { name, km: Math.round(region.size / 1000), res, n: r.tiles }));
       this.busy = false;
       this.close();

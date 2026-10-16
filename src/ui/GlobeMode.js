@@ -9,9 +9,11 @@ const SAVE_KEY = 'kuniumi.globe.view';
 
 export class GlobeMode {
   // onImport({ lat, lon, size, name }): 「ここを取り込む」。onClose(): 戻る
-  constructor(stage, { onImport, onClose, getSun, toast }) {
+  // onWalkHere({ lat, lon, size, heading, name }): 「ここに降りて歩く」
+  constructor(stage, { onImport, onWalkHere, onClose, getSun, toast }) {
     this.stage = stage;
     this.onImport = onImport;
+    this.onWalkHere = onWalkHere;
     this.onClose = onClose;
     this.getSun = getSun;
     this.toast = toast;
@@ -99,9 +101,16 @@ export class GlobeMode {
             </select>
           </label>
           <button type="button" data-home title="${t('地球全体を見渡す')}">🌏 ${t('全体')}</button>
+          <button type="button" data-walk title="${t('いま見ている所を取り込んで、地上に降りて歩く')}">🚶 ${t('ここに降りて歩く')}</button>
           <button type="button" class="primary" data-import title="${t('いま見ている辺りを、細かい景観として取り込む（歩く・一枚絵ができる）')}">⤓ ${t('ここを景観に取り込む')}</button>
           <button type="button" data-close title="${t('景観の画面へ戻る（Esc）')}">✕ ${t('戻る')}</button>
         </div>
+      </div>
+      <div class="globe-side">
+        <button type="button" class="globe-compass" data-north title="${t('北を上に')}" aria-label="${t('北を上に')}"><span>N</span></button>
+        <button type="button" data-zoomin title="${t('寄る')}" aria-label="${t('寄る')}">＋</button>
+        <button type="button" data-zoomout title="${t('離れる')}" aria-label="${t('離れる')}">－</button>
+        <button type="button" data-here title="${t('いまいる場所へ')}" aria-label="${t('いまいる場所へ')}">◎</button>
       </div>
       <div class="globe-info"></div>
       <div class="globe-hint">${matchMedia('(pointer: coarse)').matches ? t('1 本指で移動・2 本指でつまんで寄る／ひねって向き／上下で傾き・2 回たたいてそこへ寄る') : t('ドラッグで移動・ホイールで寄る（カーソルの先へ）・右ドラッグで向きと傾き・ダブルクリックでそこへ寄る・W/A/S/D・Q/E・R/F')}</div>
@@ -126,6 +135,12 @@ export class GlobeMode {
     el.querySelector('[data-home]').onclick = () => this.renderer?.flyTo({ lat: this.renderer.view.lat, lon: this.renderer.view.lon, range: 2.2e7, tilt: 0 });
     el.querySelector('[data-close]').onclick = () => this.close();
     el.querySelector('[data-import]').onclick = () => this.#import();
+    el.querySelector('[data-walk]').onclick = () => this.#walkHere();
+    el.querySelector('[data-north]').onclick = () => this.renderer?.northUp();
+    el.querySelector('[data-zoomin]').onclick = () => this.renderer?.zoomBy(0.5);
+    el.querySelector('[data-zoomout]').onclick = () => this.renderer?.zoomBy(2);
+    el.querySelector('[data-here]').onclick = () => this.#gotoHere();
+    this.compass = el.querySelector('.globe-compass span');
   }
 
   async #search() {
@@ -160,6 +175,40 @@ export class GlobeMode {
     }
   }
 
+  // 端末の位置情報で、いまいる場所へ飛ぶ（許可を求められる）
+  #gotoHere() {
+    if (!navigator.geolocation) return this.toast?.(t('この端末では位置情報を使えません'), 'error');
+    navigator.geolocation.getCurrentPosition(
+      (p) => this.renderer?.flyTo({ lat: p.coords.latitude, lon: p.coords.longitude, range: 20000, tilt: 45 }),
+      (err) => this.toast?.(t('位置情報を取得できませんでした: {msg}', { msg: err.message }), 'error'),
+      { enableHighAccuracy: false, timeout: 15000, maximumAge: 600000 },
+    );
+  }
+
+  // 見ている所を 12 km 四方ほど取り込んで、その場所の地上で歩き始める（向きは地球モードの向き）
+  async #walkHere() {
+    const v = this.renderer?.view;
+    if (!v) return;
+    const name = await this.#placeName(v.lat, v.lon, 12000);
+    this.close();
+    this.onWalkHere?.({ lat: v.lat, lon: v.lon, size: 12000, heading: v.heading, name });
+  }
+
+  async #placeName(lat, lon, size) {
+    let name = null;
+    try {
+      const zoom = size > 1000e3 ? 3 : size > 200e3 ? 5 : size > 40e3 ? 8 : 10;
+      const r = await fetch(`${NOMINATIM}/reverse?format=jsonv2&zoom=${zoom}&accept-language=${encodeURIComponent(navigator.language || 'ja')}&lat=${lat}&lon=${lon}`, {
+        headers: { Accept: 'application/json' },
+      });
+      if (r.ok) {
+        const j = await r.json();
+        name = j.name || j.display_name?.split(',')[0] || null;
+      }
+    } catch {}
+    return name || `${lat.toFixed(2)}°, ${lon.toFixed(2)}°`;
+  }
+
   async #import() {
     const v = this.renderer?.view;
     if (!v) return;
@@ -182,6 +231,7 @@ export class GlobeMode {
   }
 
   #showInfo(i) {
+    if (this.compass) this.compass.parentElement.style.transform = `rotate(${-i.heading}deg)`;
     const fmt = (x, p, n) => `${Math.abs(x).toFixed(3)}°${x >= 0 ? p : n}`;
     const alt = i.alt >= 10000 ? `${(i.alt / 1000).toFixed(i.alt >= 1e5 ? 0 : 1)} km` : `${Math.round(i.alt)} m`;
     const ground = i.ground < 0 ? t('水深 {d} m', { d: Math.round(-i.ground) }) : t('標高 {h} m', { h: Math.round(i.ground) });
