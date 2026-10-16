@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 // 読み込んだ経路（GPX）：地面に沿った幅 WIDTH m（遠くでは太く）の帯を、地面から少し浮かせて描く（夜も見えるよう少し光る）。
 // 点は最初の点を原点にした相対で持つ（遠い所でも揺れないように）。間が長い所は STEP m ごとに地面の高さを拾う。
-const WIDTH = 2.5;
+const WIDTH = 1.6;
 const STEP = 8;
 
 export class Route {
@@ -13,6 +13,9 @@ export class Route {
       emissive: 0xff5a1c,
       emissiveIntensity: 0.6,
       roughness: 0.8,
+      transparent: true,
+      opacity: 0.7, // 下の地面が少し透ける（足元で目に痛くないように）
+      depthWrite: false,
       side: THREE.DoubleSide,
       polygonOffset: true,
       polygonOffsetFactor: -2,
@@ -33,6 +36,8 @@ void main() {`)
             vec3 kWp = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
             float kHalf = max( ${(WIDTH / 2).toFixed(2)}, distance( cameraPosition, kWp ) * 0.0025 );
             transformed += aSide * kHalf;
+            // 離れるほど少し浮かせる（遠くの地形の細かい起伏に潜らないように。足元は浮かない）
+            transformed.y += min( 6.0, distance( cameraPosition, kWp ) * 0.004 );
           }`,
         );
     };
@@ -68,7 +73,7 @@ void main() {`)
       dx /= l;
       dz /= l;
       // 進む向きに直交する左右
-      const y = groundAt(p.x, p.z) + 1.0; // 地形の細かい起伏に潜らないよう少し浮かせる
+      const y = groundAt(p.x, p.z) + 0.12; // 足元ではほぼ地面の上（離れるほど描くときに浮かせる）
       for (let s = 0; s < 2; s++) {
         const j = (i * 2 + s) * 3;
         pos[j] = p.x - o.x;

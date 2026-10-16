@@ -562,4 +562,9 @@ export const EN = {
   "経路（GPX）は、地球から取り込んだ地形の上にだけ描けます": "A route (GPX) can only be drawn on terrain imported from the Earth",
   "GPX に経路の点が見つかりません": "No route points found in the GPX",
   "経路を描きました（{km} km、{n} 点。範囲の中は {pct}%）": "Drew the route ({km} km, {n} points; {pct}% inside the area)",
+  "読み込んだ経路をたどって歩く（R）。移動のキーで止まる": "Follow the loaded route on foot (R). Movement keys stop it",
+  "経路の終わりに着きました": "Reached the end of the route",
+  "経路をたどるのをやめました": "Stopped following the route",
+  "経路をたどって歩きます（移動のキーで止まる）": "Following the route (movement keys stop it)",
+  "先に経路（GPX）を読み込んでください": "Load a route (GPX) first",
 };

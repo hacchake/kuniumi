@@ -1083,6 +1083,67 @@ void main() {`)
   // 読み込んだ経路（GPX）を地面に描く。pts: [{ x, z }]（平らな地図の座標）。null で消す
   setRoute(pts) {
     this.route.set(pts, (x, z) => this.#terrainAt(x, z).groundAt(x, z));
+    this.routePts = pts?.length > 1 ? pts : null;
+    this.follow = null;
+  }
+
+  // 経路をたどって歩く（歩くモードで）。いちばん近い所から歩き始め、行く先の方を向く。
+  // 移動のキーを押すか、経路の終わりに着くと止まる。onEnd(reason): 'end' | 'stop'
+  followRoute(on, onEnd) {
+    if (!on || !this.routePts) {
+      this.follow = null;
+      return false;
+    }
+    if (!this.walk.active) this.setWalk('walk');
+    // 経路を区切った累積距離
+    const P = this.routePts;
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + Math.hypot(P[i].x - P[i - 1].x, P[i].z - P[i - 1].z));
+    // いまの位置にいちばん近い所（遠ければ始点へ移る）
+    const p = this.camera.position;
+    let best = Infinity, s0 = 0;
+    for (let i = 1; i < P.length; i++) {
+      const a = P[i - 1], b = P[i];
+      const dx = b.x - a.x, dz = b.z - a.z, L = dx * dx + dz * dz || 1;
+      const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.z - a.z) * dz) / L));
+      const d = Math.hypot(a.x + dx * t - p.x, a.z + dz * t - p.z);
+      if (d < best) (best = d), (s0 = cum[i - 1] + t * (cum[i] - cum[i - 1]));
+    }
+    if (best > 200) s0 = 0;
+    this.follow = { s: s0, cum, onEnd };
+    return true;
+  }
+
+  #routeAt(s) {
+    const { cum } = this.follow, P = this.routePts;
+    let i = 1;
+    while (i < cum.length - 1 && cum[i] < s) i++;
+    const t = Math.max(0, Math.min(1, (s - cum[i - 1]) / Math.max(1e-6, cum[i] - cum[i - 1])));
+    return { x: P[i - 1].x + (P[i].x - P[i - 1].x) * t, z: P[i - 1].z + (P[i].z - P[i - 1].z) * t };
+  }
+
+  #stepFollow(dt) {
+    const f = this.follow, w = this.walk;
+    const moving = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].some((k) => w.keys.has(k)) || Math.hypot(w.stick.x, w.stick.y) > 0.1;
+    const total = f.cum[f.cum.length - 1];
+    if (moving || f.s >= total) {
+      this.follow = null;
+      f.onEnd?.(moving ? 'stop' : 'end');
+      return;
+    }
+    // 歩く速さ（走るボタン・Shift で速く、ホイールの速さも効く）
+    const run = w.keys.has('ShiftLeft') || w.keys.has('ShiftRight') || w.run;
+    f.s = Math.min(total, f.s + 1.4 * (run ? 4 : 1) * w.speedScale * dt);
+    const here = this.#routeAt(f.s), ahead = this.#routeAt(Math.min(total, f.s + 12));
+    const p = this.camera.position;
+    p.x = here.x;
+    p.z = here.z;
+    if (Math.hypot(ahead.x - here.x, ahead.z - here.z) > 0.5) {
+      const want = Math.atan2(-(ahead.x - here.x), -(ahead.z - here.z));
+      let d = want - w.yaw;
+      d = Math.atan2(Math.sin(d), Math.cos(d));
+      w.yaw += d * Math.min(1, dt * 2.5); // 曲がり角ではゆっくり向きを変える
+    }
   }
 
   // 1 コマ進める（画面が隠れて描画の合図が来ないときの確認・テスト用）
@@ -1156,6 +1217,7 @@ void main() {`)
     if (this.envDirty) this.#updateEnvironment();
     this.water.material.uniforms.time.value += dt * 0.6;
     if (this.walk.active) {
+      if (this.follow) this.#stepFollow(Math.min(dt, 0.1));
       this.walk.update(dt);
       // 丸みの中心と影の範囲は、見ている方向の少し先
       const p = this.camera.position;

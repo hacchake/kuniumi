@@ -260,6 +260,7 @@ async function openGpx(file) {
   const inside = route.filter((p) => Math.abs(p.x) <= half && Math.abs(p.z) <= half).length;
   view.setRoute(route);
   miniMap.route = route;
+  followBtn.hidden = !view.walking;
   toast(t('経路を描きました（{km} km、{n} 点。範囲の中は {pct}%）', { km: (routeLength(pts) / 1000).toFixed(2), n: pts.length, pct: Math.round((inside / route.length) * 100) }));
 }
 
@@ -608,11 +609,38 @@ soundBtn.addEventListener('click', () => {
   syncSound();
 });
 document.getElementById('stage').appendChild(soundBtn);
+// 経路（GPX）をたどって歩く（ボタンか R キー）
+const followBtn = document.createElement('button');
+followBtn.type = 'button';
+followBtn.className = 'walk-sound walk-follow';
+followBtn.hidden = true;
+followBtn.textContent = '🥾';
+followBtn.title = t('読み込んだ経路をたどって歩く（R）。移動のキーで止まる');
+const toggleFollow = () => {
+  if (view.follow) {
+    view.followRoute(false);
+    followBtn.classList.remove('active');
+    return;
+  }
+  const ok = view.followRoute(true, (why) => {
+    followBtn.classList.remove('active');
+    toast(why === 'end' ? t('経路の終わりに着きました') : t('経路をたどるのをやめました'));
+  });
+  if (ok) {
+    followBtn.classList.add('active');
+    toast(t('経路をたどって歩きます（移動のキーで止まる）'));
+  } else toast(t('先に経路（GPX）を読み込んでください'), 'error');
+};
+followBtn.addEventListener('click', toggleFollow);
+document.getElementById('stage').appendChild(followBtn);
 window.addEventListener('keydown', (e) => {
   if (view.walking && e.code === 'KeyM' && !e.repeat && !(e.target instanceof Element && e.target.closest('input, select, textarea'))) soundBtn.click();
+  if (view.walking && e.code === 'KeyR' && !e.repeat && !(e.target instanceof Element && e.target.closest('input, select, textarea'))) toggleFollow();
 });
 view.onWalk = (mode, speed) => {
   if (!mode) walkHud.show(null);
+  followBtn.hidden = !mode || !view.routePts;
+  if (!mode) followBtn.classList.remove('active');
   walkBtn.classList.toggle('active', !!mode);
   miniMap.show(!!mode);
   soundBtn.hidden = !mode;
