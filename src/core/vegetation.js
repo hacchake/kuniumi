@@ -107,18 +107,11 @@ export function placeVegetation(rules, size, sample, heightAt, view, { maxTrees 
     const reach = Math.min(size * 1.5, Math.max(1500, veg.treeHeight / pix));
     const ci = Math.floor(C[0] / cell), cj = Math.floor(C[2] / cell);
     const n = Math.ceil(reach / cell);
-    const seed = (veg.seed | 0) + 4242;
     let count = 0;
     const tryCell = (i, j) => {
-      const x = (i + hash2(i, j, seed)) * cell, z = (j + hash2(i, j, seed + 1)) * cell;
-      if (Math.abs(x) > size / 2 || Math.abs(z) > size / 2) return;
-      if (!inView(x, z, veg.treeHeight)) return;
-      const s = sample(x, z);
-      if (hash2(i, j, seed + 2) > rules.forest(s.h, s.slope, s.wv, x, z)) return;
-      const y = heightAt(x, z);
-      const h = veg.treeHeight * (0.55 + hash2(i, j, seed + 3) * 0.75);
-      const kind = hash2(i, j, seed + 4) < rules.coniferChance(y) ? 'conifer' : 'broadleaf';
-      out[kind].push(x, y - h * 0.03, z, h, hash2(i, j, seed + 5) * Math.PI * 2);
+      const t = treeAt(i, j, rules, size, sample, heightAt, (x, z) => inView(x, z, veg.treeHeight));
+      if (!t) return;
+      out[t.kind].push(t.x, t.y, t.z, t.h, t.rot);
       count++;
     };
     // 近い順（カメラを囲む四角い輪を、内側から外側へ）
@@ -164,6 +157,26 @@ export function placeVegetation(rules, size, sample, heightAt, view, { maxTrees 
     broadleaf: new Float32Array(out.broadleaf),
     grass: new Float32Array(out.grass),
   };
+}
+
+// 木の格子 1 マス（番号 i, j）に木が立つか。立つなら { x, y, z, h, rot, kind }（y は根元を少し埋めた高さ）。
+// 一枚絵とリアルタイム表示で同じ木が同じ所に立つよう、乱数は格子ごとのハッシュで決める
+export function treeCellSize(veg) {
+  return Math.max(5, veg.treeHeight * 0.55);
+}
+export function treeAt(i, j, rules, size, sample, heightAt, accept = null) {
+  const veg = rules.veg;
+  const cell = treeCellSize(veg);
+  const seed = (veg.seed | 0) + 4242;
+  const x = (i + hash2(i, j, seed)) * cell, z = (j + hash2(i, j, seed + 1)) * cell;
+  if (Math.abs(x) > size / 2 || Math.abs(z) > size / 2) return null;
+  if (accept && !accept(x, z)) return null;
+  const s = sample(x, z);
+  if (hash2(i, j, seed + 2) > rules.forest(s.h, s.slope, s.wv, x, z)) return null;
+  const y = heightAt(x, z);
+  const h = veg.treeHeight * (0.55 + hash2(i, j, seed + 3) * 0.75);
+  const kind = hash2(i, j, seed + 4) < rules.coniferChance(y) ? 'conifer' : 'broadleaf';
+  return { x, y: y - h * 0.03, z, h, rot: hash2(i, j, seed + 5) * Math.PI * 2, kind };
 }
 
 function norm(v) {

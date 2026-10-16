@@ -239,6 +239,7 @@ export class GpuTerrain {
   // 高さ場（0..1、行 0 = 北）と侵食の量を受け取る
   setField(field, res, wear) {
     this.field = field;
+    this.wear = wear ?? null;
     this.res = res;
     const tex = new THREE.DataTexture(field, res, res, THREE.RedFormat, THREE.FloatType);
     tex.minFilter = tex.magFilter = THREE.NearestFilter;
@@ -384,6 +385,21 @@ export class GpuTerrain {
     const fx = gx - i, fz = gz - j, f = this.field, k = j * res + i;
     const h = (f[k] * (1 - fx) + f[k + 1] * fx) * (1 - fz) + (f[k + res] * (1 - fx) + f[k + res + 1] * fx) * fz;
     return t.baseHeight + h * t.heightScale;
+  }
+
+  // 粗い近似：高さ・傾き・侵食（木を立てる場所の判定用。core/terrainSurface.js の coarse と同じ形）
+  sample(x, z) {
+    const t = this.terrain;
+    const e = t.size / Math.max(1, this.res - 1);
+    const gx = (this.heightAt(x + e, z) - this.heightAt(x - e, z)) / (2 * e);
+    const gz = (this.heightAt(x, z + e) - this.heightAt(x, z - e)) / (2 * e);
+    let wv = 0;
+    if (this.wear) {
+      const res = this.res;
+      const fx = Math.min(1, Math.max(0, x / t.size + 0.5)) * (res - 1), fz = Math.min(1, Math.max(0, z / t.size + 0.5)) * (res - 1);
+      wv = this.wear[Math.round(fz) * res + Math.round(fx)];
+    }
+    return { h: this.heightAt(x, z), slope: Math.hypot(gx, gz), wv };
   }
 
   // 足元の高さ：細部の起伏まで含めて、GPU が足元に描く形と同じ（歩き回るモード用）

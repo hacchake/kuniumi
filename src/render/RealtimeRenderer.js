@@ -13,6 +13,7 @@ import { createCurveUniforms, curvePoint } from './curvatureGLSL.js';
 import { createWaterDisc, curveWater } from './waterDisc.js';
 import { planetRadius } from '../core/schema.js';
 import { WalkControls } from './WalkControls.js';
+import { RealtimeTrees } from './RealtimeTrees.js';
 import { decodePng } from '../core/png16.js';
 import { createWaterNormals } from '../three/waterNormals.js';
 import { TextureService } from '../three/TextureService.js';
@@ -134,6 +135,12 @@ export class RealtimeRenderer {
     // 物体（球・立方体など）と、その模様テクスチャ
     this.textureService = new TextureService((key) => this.objects.onTexture(key));
     this.objects = new ObjectLayer(this.world, this.textureService, { patchMaterial: (m) => patchStandardMaterial(m, this.shared) });
+    // 木（一枚絵と同じ所に同じ木。カメラの周りだけ）
+    this.trees = new RealtimeTrees(this.world, (m) => patchStandardMaterial(m, this.shared));
+    this.treeTerrain = {
+      sample: (x, z) => this.#terrainAt(x, z).sample(x, z),
+      groundAt: (x, z) => this.#terrainAt(x, z).groundAt(x, z),
+    };
 
     // 霧・光の筋・厚みのある雲（画面全体で計算して重ねる）
     this.atmosphere = new RealtimeAtmosphere(renderer);
@@ -307,7 +314,11 @@ export class RealtimeRenderer {
       if (detO) detO.value = 0;
       const savedDet = det.value;
       det.value = 0;
+      // 映り込みには木を描かない（揺らぐ水面では見分けがつかず、重い）
+      const treesVis = this.trees.group.visible;
+      this.trees.group.visible = false;
       waterBefore.apply(this.water, args);
+      this.trees.group.visible = treesVis;
       det.value = savedDet;
       if (detO) detO.value = savedDetO;
       cov.value = saved;
@@ -661,6 +672,7 @@ export class RealtimeRenderer {
     // 世界座標のうちに：水面をカメラの真下へ、太陽の影をカメラの見ている辺りへ
     this.water.position.set(cam.position.x, s.water.level, cam.position.z);
     this.#placeSun(s);
+    if (this.terrain) this.trees.update(s, cam.position, this.treeTerrain);
     const shift = new THREE.Vector3(ox, 0, oz);
     const flatPos = cam.position.clone();
     const flatQuat = cam.quaternion.clone();
