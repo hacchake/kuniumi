@@ -557,4 +557,9 @@ export const EN = {
   "GPX は地球から取り込んだ地形で歩いたときだけ書き出せます": "GPX can only be exported after walking on terrain imported from the Earth",
   "まだ歩いた道すじがありません（「歩く」で歩くと記録されます）": "No track yet (walk with “Walk” to record one)",
   "歩いた道すじ（{km} km）を GPX で保存しました": "Saved the walked track ({km} km) as GPX",
+  "経路（GPX）…": "Route (GPX)…",
+  "登山道などの経路（GPX）を、地球から取り込んだ地形の上に線で描く（右上の地図にも）。ファイルを画面へ落としても読み込める": "Draw a route (GPX), such as a hiking trail, on terrain imported from the Earth (also on the map). You can also drop the file onto the view",
+  "経路（GPX）は、地球から取り込んだ地形の上にだけ描けます": "A route (GPX) can only be drawn on terrain imported from the Earth",
+  "GPX に経路の点が見つかりません": "No route points found in the GPX",
+  "経路を描きました（{km} km、{n} 点。範囲の中は {pct}%）": "Drew the route ({km} km, {n} points; {pct}% inside the area)",
 };

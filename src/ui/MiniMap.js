@@ -139,6 +139,19 @@ export class MiniMap {
     ctx.strokeStyle = 'rgba(241, 215, 154, 0.5)';
     ctx.lineWidth = 1 * dpr;
     ctx.strokeRect(px / 2 + (-tr.size / 2 - p.x) * k, px / 2 + (-tr.size / 2 - p.z) * k, tr.size * k, tr.size * k);
+    // 読み込んだ経路（GPX、水色の線）
+    if (this.route?.length > 1) {
+      ctx.beginPath();
+      this.route.forEach(({ x, z }, i) => {
+        const sx = px / 2 + (x - p.x) * k, sy = px / 2 + (z - p.z) * k;
+        if (i) ctx.lineTo(sx, sy);
+        else ctx.moveTo(sx, sy);
+      });
+      ctx.strokeStyle = 'rgba(120, 210, 255, 0.9)';
+      ctx.lineWidth = 2.5 * dpr;
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+    }
     // 歩いた道すじ（赤い線）
     if (this.track.length > 1) {
       ctx.beginPath();

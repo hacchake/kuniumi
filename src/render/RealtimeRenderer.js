@@ -21,6 +21,7 @@ import { Fireflies } from './Fireflies.js';
 import { Moon } from './Moon.js';
 import { Footprints } from './Footprints.js';
 import { Boat } from './Boat.js';
+import { Route } from './Route.js';
 import { Wake } from './Wake.js';
 import { Aurora } from './Aurora.js';
 import { ShootingStars } from './ShootingStars.js';
@@ -190,6 +191,7 @@ void main() {`)
     // 木（一枚絵と同じ所に同じ木。カメラの周りだけ）
     this.trees = new RealtimeTrees(this.world, (m) => patchStandardMaterial(m, this.shared));
     this.footprints = new Footprints(this.world, (m) => patchStandardMaterial(m, this.shared));
+    this.route = new Route(this.world, (m) => patchStandardMaterial(m, this.shared));
     this.boat = new Boat(this.world, (m) => patchStandardMaterial(m, this.shared));
     this.sandprints = new Footprints(this.world, (m) => patchStandardMaterial(m, this.shared), 0x6b5a44); // 砂浜の足跡（濡れた砂の色）
     this.treeTerrain = {
@@ -1076,6 +1078,11 @@ void main() {`)
     cam.updateMatrixWorld();
     this.world.position.set(0, 0, 0);
     this.world.updateMatrixWorld(true);
+  }
+
+  // 読み込んだ経路（GPX）を地面に描く。pts: [{ x, z }]（平らな地図の座標）。null で消す
+  setRoute(pts) {
+    this.route.set(pts, (x, z) => this.#terrainAt(x, z).groundAt(x, z));
   }
 
   // 1 コマ進める（画面が隠れて描画の合図が来ないときの確認・テスト用）

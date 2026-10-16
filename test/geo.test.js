@@ -287,3 +287,21 @@ describe('GPX', () => {
     expect(lats[3]).toBeGreaterThan(lats[2]);
   });
 });
+
+describe('GPX の読み込み', () => {
+  it('trkpt・rtept を順に取り出し、書き出した GPX を読み戻せる', async () => {
+    const { trackToGpx, parseGpx, routeLength } = await import('../src/core/gpx.js');
+    const text = `<gpx><rte><rtept lat='35.1' lon="139.2"/></rte><trk><trkseg>
+      <trkpt lat="35.2" lon="139.3"><ele>120.5</ele><time>x</time></trkpt>
+      <trkpt lon="139.4" lat="35.3"></trkpt></trkseg></trk></gpx>`;
+    const p = parseGpx(text);
+    expect(p).toEqual([
+      { lat: 35.1, lon: 139.2, ele: null },
+      { lat: 35.2, lon: 139.3, ele: 120.5 },
+      { lat: 35.3, lon: 139.4, ele: null },
+    ]);
+    const back = parseGpx(trackToGpx([{ x: 0, z: 0, y: 10 }, { x: 0, z: -1000, y: 20 }], { lat: 35, lon: 139 }));
+    expect(back.length).toBe(2);
+    expect(routeLength(back)).toBeCloseTo(1000, -1);
+  });
+});

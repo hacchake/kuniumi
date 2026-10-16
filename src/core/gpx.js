@@ -21,3 +21,31 @@ ${body}
 </gpx>
 `;
 }
+
+// GPX の文字列から経路の点を取り出す（trkpt と rtept。順番どおり）。[{ lat, lon, ele }]（ele が無ければ null）
+export function parseGpx(text) {
+  const pts = [];
+  const re = /<(trkpt|rtept)\b([^>]*?)(\/>|>([\s\S]*?)<\/\1>)/g;
+  let m;
+  while ((m = re.exec(text))) {
+    const attr = m[2];
+    const lat = parseFloat(/\blat\s*=\s*["']([^"']+)["']/.exec(attr)?.[1]);
+    const lon = parseFloat(/\blon\s*=\s*["']([^"']+)["']/.exec(attr)?.[1]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    const ele = parseFloat(/<ele>\s*([^<]+)<\/ele>/.exec(m[4] ?? '')?.[1]);
+    pts.push({ lat, lon, ele: Number.isFinite(ele) ? ele : null });
+  }
+  return pts;
+}
+
+// 経路の長さ (m)（大円距離の和）
+export function routeLength(pts) {
+  let d = 0;
+  const R = 6371008.8, D = Math.PI / 180;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i];
+    const s = Math.sin(((b.lat - a.lat) * D) / 2) ** 2 + Math.cos(a.lat * D) * Math.cos(b.lat * D) * Math.sin(((b.lon - a.lon) * D) / 2) ** 2;
+    d += 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+  }
+  return d;
+}

@@ -9,7 +9,8 @@ import { GeoDialog } from './ui/GeoDialog.js';
 import { GlobeMode } from './ui/GlobeMode.js';
 import { MiniMap } from './ui/MiniMap.js';
 import { WalkHud } from './ui/WalkHud.js';
-import { trackToGpx } from './core/gpx.js';
+import { trackToGpx, parseGpx, routeLength } from './core/gpx.js';
+import { aeqdForward } from './core/geo.js';
 import { Labels } from './ui/Labels.js';
 import { loadSkeleton, loadBigParts, saveScene } from './io/autosave.js';
 import { createStore } from './core/store.js';
@@ -244,11 +245,30 @@ async function openHeightmap(file) {
   toast(t('{file}（{w}×{h}, {bit}bit）を地形にしました', { file: file.name, w: r.heightmap.width, h: r.heightmap.height, bit: r.heightmap.bitDepth }) + (r.info ? t('・実寸も復元') : ''));
 }
 
+// 経路（GPX）を、地球から取り込んだ地形の上に描く（右上の地図にも水色の線で）
+async function openGpx(file) {
+  const s = store.get();
+  const geo = s.terrain.mode === 'heightmap' ? s.terrain.heightmap?.geo : null;
+  if (!geo) throw new Error(t('経路（GPX）は、地球から取り込んだ地形の上にだけ描けます'));
+  const pts = parseGpx(await file.text());
+  if (pts.length < 2) throw new Error(t('GPX に経路の点が見つかりません'));
+  const route = pts.map(({ lat, lon }) => {
+    const { e, n } = aeqdForward(lat, lon, geo.lat, geo.lon);
+    return { x: e, z: -n };
+  });
+  const half = s.terrain.size / 2;
+  const inside = route.filter((p) => Math.abs(p.x) <= half && Math.abs(p.z) <= half).length;
+  view.setRoute(route);
+  miniMap.route = route;
+  toast(t('経路を描きました（{km} km、{n} 点。範囲の中は {pct}%）', { km: (routeLength(pts) / 1000).toFixed(2), n: pts.length, pct: Math.round((inside / route.length) * 100) }));
+}
+
 async function openAny(file) {
   const ext = extOf(file);
   if (ext === 'json') return openJson(file);
   if (ext === 'glb' || ext === 'gltf') return openGlb(file);
   if (['png', 'jpg', 'jpeg', 'webp'].includes(ext)) return openHeightmap(file);
+  if (ext === 'gpx') return openGpx(file);
   throw new Error(t('.{ext} は読み込めません', { ext }));
 }
 
@@ -363,6 +383,10 @@ const actions = {
     location.reload();
   },
   record: async () => toggleRecord(),
+  'import-gpx': async () => {
+    const f = await pickFile('.gpx,application/gpx+xml');
+    if (f) await openGpx(f).catch((err) => toast(err.message ?? String(err), 'error'));
+  },
   'export-gpx': async () => {
     const geo = store.get().terrain.heightmap?.geo;
     if (!geo || store.get().terrain.mode !== 'heightmap') return toast(t('GPX は地球から取り込んだ地形で歩いたときだけ書き出せます'), 'error');
