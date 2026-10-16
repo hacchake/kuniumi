@@ -12,7 +12,7 @@ const VIEW = 2.2; // 下見の地図に映す広さ（範囲の何倍）
 const MAP = 360; // 下見の地図の画素数
 const SIZE_MIN_KM = 5;
 const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
-const SURROUND_RES = 1025; // 周りの地形の格子
+const SURROUND_RES = 2049; // 周りの地形の格子（近づいても粗さが目立ちにくいよう 2049）
 
 export class GeoDialog {
   // apply(result): 取り込んだ結果をシーンへ（main.js が渡す）
@@ -75,7 +75,7 @@ export class GeoDialog {
       // 周りの地形：範囲の外も実際の地形が続いて見えるよう、6 倍の広さを粗く取り寄せる（地球の半周まで）
       const outerSize = Math.min(Math.PI * EARTH_R * 0.9, Math.max(region.size * 6, region.size + 400e3));
       let o = null;
-      if (outerSize > region.size * 1.3) o = await this.#run({ ...region, size: outerSize }, SURROUND_RES, 160, (p) => this.#progress(p, true));
+      if (outerSize > region.size * 1.3) o = await this.#run({ ...region, size: outerSize }, SURROUND_RES, 320, (p) => this.#progress(p, true));
       // 沿岸の海底の深さを周りの地形で補う
       // 縁は周りの地形の高さへ寄せる（境目に段差を作らない）
       const heights = o

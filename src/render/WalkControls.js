@@ -15,7 +15,9 @@ const LOOK = 0.0022; // マウス 1 画素あたりの回転 (rad)
 
 export class WalkControls {
   // groundAt(x, z): 足元の高さ（地形と水面の高い方）
-  constructor(camera, canvas, { groundAt, onModeChange }) {
+  // collide(p): 木などに当たったら位置を押し戻す（歩くときだけ）
+  constructor(camera, canvas, { groundAt, onModeChange, collide }) {
+    this.collide = collide ?? null;
     this.camera = camera;
     this.canvas = canvas;
     this.groundAt = groundAt;
@@ -96,6 +98,7 @@ export class WalkControls {
       const v = WALK * this.speedScale * (run ? 4 : 1);
       const dir = fwdFlat.multiplyScalar(iz).addScaledVector(right, ix);
       if (dir.lengthSq() > 0) p.addScaledVector(dir.normalize(), v * dt);
+      this.collide?.(p);
       // 重力とジャンプ
       if (k.has('Space') && this.grounded) {
         this.vy = JUMP;

@@ -17,16 +17,11 @@ const K = 2.3; // 区画の大きさ × K より近ければ 4 つに分ける
 const MAX_NODES = 4000;
 export const ORIGIN_STEP = 65536;
 
-const VERTEX_GLSL = /* glsl */ `
-  attribute vec4 aNode; // 区画の北西の角（原点からの相対 x, z）、一辺、つなぎ目の距離
-  uniform sampler2D tHeightTex, tWearTex;
-  uniform float tRes, tWearRes, tSize, tBase, tGridN, tLodSpacing, tMinCell;
-  uniform float tDetailAmt, tDetailL0, tHasWear;
+// 高さ場を引く部品（頂点と画素の両方で使う）
+const FIELD_GLSL = /* glsl */ `
+  uniform sampler2D tHeightTex;
+  uniform float tRes, tSize, tBase;
   uniform vec2 tOriginUV; // 原点の位置（大地の 0..1）
-  varying float vTH, vTSlope, vTWear, vTJit, vTClump;
-  varying vec2 vTLocal;
-  ${CURVE_GLSL}
-
   float tFetch( sampler2D t, ivec2 c, float res ) { return texelFetch( t, clamp( c, ivec2( 0 ), ivec2( int( res ) - 1 ) ), 0 ).r; }
   // 手で双一次補間する（GPU の補間は細かさが 1/256 しかなく、大きな格子では段々になる）
   float tBilinear( sampler2D t, vec2 uv, float res ) {
@@ -37,6 +32,23 @@ const VERTEX_GLSL = /* glsl */ `
   }
   vec2 tUV( vec2 local ) { return tOriginUV + local / tSize; }
   float tCoarseH( vec2 local ) { return tBase + tBilinear( tHeightTex, tUV( local ), tRes ) * tHeightScale; }
+  // 高さ場の傾き（格子 1 つぶんの幅の中心差分。区画の細かさに関係なく同じ値）
+  vec2 tCoarseGrad( vec2 local ) {
+    float e = tSize / ( tRes - 1.0 );
+    return vec2( tCoarseH( local + vec2( e, 0.0 ) ) - tCoarseH( local - vec2( e, 0.0 ) ),
+                 tCoarseH( local + vec2( 0.0, e ) ) - tCoarseH( local - vec2( 0.0, e ) ) ) / ( 2.0 * e );
+  }
+`;
+
+const VERTEX_GLSL = /* glsl */ `
+  attribute vec4 aNode; // 区画の北西の角（原点からの相対 x, z）、一辺、つなぎ目の距離
+  uniform sampler2D tWearTex;
+  uniform float tWearRes, tGridN, tLodSpacing, tMinCell;
+  uniform float tDetailAmt, tDetailL0, tHasWear;
+  varying float vTH, vTSlope, vTWear, vTJit, vTClump;
+  varying vec2 vTLocal, vTDetGrad;
+  ${CURVE_GLSL}
+  ${FIELD_GLSL}
   // カメラからの距離に応じた頂点の間隔の目安（区画の境目の両側で同じ値になる）
   float tSpacing( vec2 local, float h ) { return max( tMinCell, distance( vec3( local.x, h, local.y ), kCamPos ) * tLodSpacing ); }
 
@@ -56,6 +68,7 @@ const VERTEX_GLSL = /* glsl */ `
     vec3 dd = tDetailD( local, tDetailL0, sp, tDetailAmt );
     float H = hc + dd.x;
     vec2 grad = dd.yz;
+    vTDetGrad = dd.yz;
     #ifndef KUNIUMI_NO_NORMAL
       // 高さ場の傾き（中心差分。格子 1 つぶん以上の幅でならす）
       float e = max( sp, tSize / ( tRes - 1.0 ) );
@@ -175,7 +188,15 @@ export class GpuTerrain {
           .replace('#include <beginnormal_vertex>', 'vec3 objectNormal; vec3 kTP; kTerrainVertex( kTP, objectNormal );')
           .replace('#include <begin_vertex>', 'vec3 transformed = kTP;');
         shader.fragmentShader = shader.fragmentShader
-          .replace('#include <common>', `#include <common>\n${TERRAIN_SHADING_GLSL}\nvarying float vTH, vTSlope, vTWear, vTJit, vTClump;\nvarying vec2 vTLocal;\nuniform vec2 tOriginW;\nuniform float tClipHalf;`)
+          .replace('#include <common>', `#include <common>\n${TERRAIN_SHADING_GLSL}\nvarying float vTH, vTSlope, vTWear, vTJit, vTClump;\nvarying vec2 vTLocal, vTDetGrad;\nuniform vec2 tOriginW;\nuniform float tClipHalf;\n${CURVE_GLSL}\n${FIELD_GLSL}`)
+          // 面の向きと傾きは画素ごとに高さ場から出す（頂点の補間だと、区画の細かさが変わる所で線が出る）
+          .replace(
+            '#include <normal_fragment_begin>',
+            `#include <normal_fragment_begin>
+            vec2 kG = tCoarseGrad( vTLocal ) + vTDetGrad;
+            float kSlope = length( kG );
+            normal = normalize( ( viewMatrix * vec4( kCurveN( vec3( vTLocal.x, vTH, vTLocal.y ), normalize( vec3( - kG.x, 1.0, - kG.y ) ) ), 0.0 ) ).xyz );`,
+          )
           // 細かい色むらは、画素の大きさ（距離 × 画角）より大きい段だけ
           .replace(
             '#include <map_fragment>',
@@ -184,7 +205,8 @@ export class GpuTerrain {
             // 周りの地形は、本来の地形がある内側を描かない
             'if ( tClipHalf > 0.0 ) { vec2 kw = vTLocal + tOriginW; if ( max( abs( kw.x ), abs( kw.y ) ) < tClipHalf ) discard; }\n' +
             'float kPix = length( vViewPosition ) * 0.0015;\n' +
-              'diffuseColor.rgb *= terrainColor( vTH, vTSlope, vTWear, vTJit + tJitterFine( vTLocal, kPix ), vTClump );',
+              'vec2 kG0 = tCoarseGrad( vTLocal ) + vTDetGrad;\n' +
+              'diffuseColor.rgb *= terrainColor( vTH, length( kG0 ), vTWear, vTJit + tJitterFine( vTLocal, kPix ), vTClump );',
           );
       } else {
         shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', 'vec3 kTN; vec3 transformed; kTerrainVertex( transformed, kTN );');

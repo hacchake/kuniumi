@@ -155,6 +155,7 @@ export class RealtimeRenderer {
         return s.water.enabled ? Math.max(g, s.water.level + 0.2) : g;
       },
       onModeChange: (mode) => this.onWalk?.(mode, this.walk.speedScale),
+      collide: (p) => this.trees.pushOut(p),
     });
 
     this.timer = new THREE.Timer();

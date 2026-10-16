@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createVegetationRules, treeAt, treeCellSize } from '../core/vegetation.js';
-import { coniferGeometry, broadleafGeometry, fillInstances } from '../three/vegetationMeshes.js';
+import { coniferGeometry, fillInstances } from '../three/vegetationMeshes.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // リアルタイム表示の木。一枚絵と同じ規則・同じハッシュで、同じ所に同じ木が立つ（core/vegetation.js の treeAt）。
 // カメラの周りを 256 m の区画に分けて、足りない区画を毎フレーム少しずつ生やす（数千 km の大地でも止まらない）。
@@ -9,6 +10,7 @@ import { coniferGeometry, broadleafGeometry, fillInstances } from '../three/vege
 
 const BLOCK = 256;
 const NEAR = 150;
+const THIN = 1000; // これより遠い木は間引く
 const MAX_FAR = 60000;
 const MAX_NEAR = 6000;
 const BLOCKS_PER_FRAME = 6;
@@ -17,8 +19,31 @@ const BLOCKS_PER_FRAME = 6;
 function lowConifer() {
   return new THREE.ConeGeometry(0.2, 0.85, 6, 1).translate(0, 0.575, 0);
 }
+// 少ない三角形の多面体を、面の向きを中心から放射状にして丸く見せる
+function roundBlob(r, x, y, z, detail = 0, sy = 1) {
+  const g = new THREE.IcosahedronGeometry(r, detail);
+  const p = g.attributes.position, n = g.attributes.normal;
+  for (let i = 0; i < p.count; i++) {
+    const v = new THREE.Vector3(p.getX(i), p.getY(i), p.getZ(i)).normalize();
+    n.setXYZ(i, v.x, v.y, v.z);
+  }
+  return g.scale(1, sy, 1).translate(x, y, z);
+}
+
+// 近景用の広葉樹（一枚絵の形は 1 本 2000 三角形近いので、リアルタイム用に 100 三角形ほどの形）
+function midBroadleaf() {
+  const trunk = new THREE.CylinderGeometry(0.022, 0.04, 0.5, 5, 1).translate(0, 0.25, 0);
+  const blobs = [
+    [0, 0.62, 0, 0.26],
+    [0.13, 0.55, 0.06, 0.18],
+    [-0.12, 0.57, -0.07, 0.19],
+    [0.02, 0.76, -0.05, 0.17],
+    [-0.04, 0.5, 0.14, 0.16],
+  ].map(([x, y, z, r]) => roundBlob(r, x, y, z, 1));
+  return { trunk, crown: mergeGeometries(blobs) };
+}
 function lowBroadleaf() {
-  return new THREE.IcosahedronGeometry(0.3, 0).scale(1, 0.85, 1).translate(0, 0.62, 0);
+  return roundBlob(0.3, 0, 0.62, 0, 0, 0.85);
 }
 
 export class RealtimeTrees {
@@ -34,7 +59,7 @@ export class RealtimeTrees {
       return m;
     };
     const trunk = new THREE.Color('#3a2b20');
-    const con = coniferGeometry(), brd = broadleafGeometry();
+    const con = coniferGeometry(), brd = midBroadleaf();
     const mk = (geo, material, max, near) => {
       const m = new THREE.InstancedMesh(geo, material, max);
       m.count = 0;
@@ -131,6 +156,34 @@ export class RealtimeTrees {
     if (this.dirty || moved) this.#build(cam, reach);
   }
 
+  // 歩く人（半径 body）が木の幹にめり込んでいたら外へ押し出す。押し出したら true
+  pushOut(p, body = 0.3) {
+    if (!this.group.visible) return false;
+    const bi = Math.floor(p.x / BLOCK), bj = Math.floor(p.z / BLOCK);
+    let hit = false;
+    for (let dj = -1; dj <= 1; dj++) {
+      for (let di = -1; di <= 1; di++) {
+        const b = this.blocks.get(`${bi + di},${bj + dj}`);
+        if (!b) continue;
+        for (const L of [b.conifer, b.broadleaf]) {
+          for (let k = 0; k < L.length; k += 5) {
+            const dx = p.x - L[k], dz = p.z - L[k + 2];
+            if (Math.abs(dx) > 3 || Math.abs(dz) > 3) continue;
+            const r = L[k + 3] * 0.035 + body; // 幹の太さ（木の高さのおよそ 3.5%）＋体の半径
+            const d = Math.hypot(dx, dz);
+            if (d < r && p.y < L[k + 1] + L[k + 3]) {
+              const s = d > 1e-6 ? r / d : 0;
+              p.x = L[k] + (d > 1e-6 ? dx * s : r);
+              p.z = L[k + 2] + dz * s;
+              hit = true;
+            }
+          }
+        }
+      }
+    }
+    return hit;
+  }
+
   #grow(bi, bj, size, terrain) {
     const cell = treeCellSize(this.rules.veg);
     const out = { conifer: [], broadleaf: [] };
@@ -160,8 +213,13 @@ export class RealtimeTrees {
         for (let k = 0; k < L.length; k += 5) {
           const d = Math.hypot(L[k] - cam.x, L[k + 2] - cam.z);
           if (d > reach) continue;
-          const dst = d < NEAR ? lists.near[kind] : lists.far[kind];
-          dst.push(L[k] - ox, L[k + 1], L[k + 2] - oz, L[k + 3], L[k + 4]);
+          if (d < NEAR) {
+            lists.near[kind].push(L[k] - ox, L[k + 1], L[k + 2] - oz, L[k + 3], L[k + 4]);
+            continue;
+          }
+          // 1 km より先は 2 本に 1 本へ間引き、少し大きくして森の見た目の密度を保つ
+          if (d > THIN && (k / 5) % 2 === 1) continue;
+          lists.far[kind].push(L[k] - ox, L[k + 1], L[k + 2] - oz, L[k + 3] * (d > THIN ? 1.25 : 1), L[k + 4]);
         }
       }
     }
