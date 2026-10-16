@@ -535,9 +535,28 @@ const hintEl = document.querySelector('.hint');
 const hintDefault = hintEl?.textContent ?? '';
 const miniMap = new MiniMap(document.getElementById('stage'), view, store);
 view.labels = new Labels(document.getElementById('stage'));
+// 歩いている間の音を消す／出す（地図の下のボタンか M キー）
+const soundBtn = document.createElement('button');
+soundBtn.type = 'button';
+soundBtn.className = 'walk-sound';
+soundBtn.hidden = true;
+const syncSound = () => {
+  soundBtn.textContent = view.audio.on ? '🔊' : '🔇';
+  soundBtn.title = view.audio.on ? t('音を消す（M）') : t('音を出す（M）');
+};
+syncSound();
+soundBtn.addEventListener('click', () => {
+  view.audio.setOn(!view.audio.on);
+  syncSound();
+});
+document.getElementById('stage').appendChild(soundBtn);
+window.addEventListener('keydown', (e) => {
+  if (view.walking && e.code === 'KeyM' && !e.repeat && !(e.target instanceof Element && e.target.closest('input, select, textarea'))) soundBtn.click();
+});
 view.onWalk = (mode, speed) => {
   walkBtn.classList.toggle('active', !!mode);
   miniMap.show(!!mode);
+  soundBtn.hidden = !mode;
   document.body.classList.toggle('walking', !!mode);
   walkBtn.textContent = mode ? t('✕ 歩くのをやめる') : t('🚶 歩く');
   if (!hintEl) return;

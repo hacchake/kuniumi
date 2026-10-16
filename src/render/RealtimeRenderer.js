@@ -13,6 +13,7 @@ import { createCurveUniforms, curvePoint } from './curvatureGLSL.js';
 import { createWaterDisc, curveWater } from './waterDisc.js';
 import { planetRadius } from '../core/schema.js';
 import { WalkControls } from './WalkControls.js';
+import { WalkAudio } from './WalkAudio.js';
 import { RealtimeTrees } from './RealtimeTrees.js';
 import { decodePng } from '../core/png16.js';
 import { decodePhoto } from '../io/photo.js';
@@ -155,6 +156,7 @@ export class RealtimeRenderer {
     this.shadowFor = null; // 霧の影の地図を作ったときのカメラの周り { center, radius }
     this.#setupGizmo(canvas);
     // 歩き回るモード（一人称）。足元は地形と水面の高い方
+    this.audio = new WalkAudio();
     this.walk = new WalkControls(this.camera, canvas, {
       groundAt: (x, z) => {
         const s = this.store.get();
@@ -745,8 +747,10 @@ export class RealtimeRenderer {
       this.gizmo.detach();
       this.controls.enabled = false;
       this.walk.enter(mode);
+      this.audio.start();
     } else if (this.walk.active) {
       this.walk.exit();
+      this.audio.stop();
       // 戻るときは、見ていた方向の少し先を中心に回れるようにする
       const fwd = this.walk.forward();
       const s = this.store.get();
@@ -757,6 +761,26 @@ export class RealtimeRenderer {
       this.#commitCamera();
       this.#attachGizmo();
     }
+  }
+
+  // 歩いている間の音：高さ・速さ・海の近さ・昼夜から
+  #walkSound(dt, p, above) {
+    const s = this.store.get();
+    const last = this.lastWalkPos ?? p.clone();
+    const speed = dt > 0 ? last.distanceTo(p) / dt : 0;
+    this.lastWalkPos = p.clone();
+    let nearSea = 0;
+    if (s.water.enabled && p.y - s.water.level < 60) {
+      // 周り 8 方向（80 m 先）のうち、水面より低い所の割合
+      let n = 0;
+      for (let k = 0; k < 8; k++) {
+        const a = (k / 8) * Math.PI * 2;
+        if (this.gpuTerrain.heightAt(p.x + Math.cos(a) * 80, p.z + Math.sin(a) * 80) < s.water.level) n++;
+      }
+      nearSea = Math.min(1, n / 3) * Math.max(0, 1 - (p.y - s.water.level) / 60);
+    }
+    const day = Math.min(1, Math.max(0, s.sun.elevation / 8));
+    this.audio.update(dt, { above, speed: Math.min(speed, 2000), nearSea, day, inForest: (s.vegetation?.trees ?? 0) > 0.3 });
   }
 
   capture() {
@@ -871,6 +895,7 @@ export class RealtimeRenderer {
       const p = this.camera.position;
       const above = Math.max(2, p.y - this.gpuTerrain.groundAt(p.x, p.z));
       this.controls.target.copy(p).addScaledVector(this.walk.forward(), Math.max(20, above * 2));
+      this.#walkSound(dt, p, above);
     } else {
       this.#updateFlight();
       this.controls.update();

@@ -465,3 +465,6 @@ body.walking #create { display: none; }
 .globe-fav { display: flex; align-items: center; }
 .globe-fav > button:first-child { flex: 1; }
 .globe-results .globe-fav-del { flex: none; width: 28px; text-align: center; color: var(--muted); }
+.walk-sound { position: absolute; right: 12px; top: 192px; z-index: 24; width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--line); background: rgba(11, 15, 26, 0.75); color: var(--text); font-size: 17px; cursor: pointer; padding: 0; }
+.walk-sound[hidden] { display: none; }
+@media (max-width: 720px) { .walk-sound { top: 150px; } }

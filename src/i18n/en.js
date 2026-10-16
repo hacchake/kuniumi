@@ -505,4 +505,6 @@ export const EN = {
   "お気に入りに入れました：{name}": "Added to favorites: {name}",
   "お気に入り": "Favorites",
   "お気に入りから外す": "Remove from favorites",
+  "音を消す（M）": "Mute (M)",
+  "音を出す（M）": "Sound on (M)",
 };
