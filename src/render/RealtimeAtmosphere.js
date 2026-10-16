@@ -145,6 +145,30 @@ export class RealtimeAtmosphere {
         uniform float starI;
         uniform vec3 nightSky;
         float sHash( vec3 p ) { p = fract( p * 0.3183099 + 0.1 ); p *= 17.0; return fract( p.x * p.y * p.z * ( p.x + p.y + p.z ) ); }
+        // 天の川：天球の大円（極 MW_POLE）に沿った淡い光の帯。銀河の中心（MW_CENTER）の側ほど明るく太い
+        const vec3 MW_POLE = vec3( 0.42, 0.55, -0.72 );
+        const vec3 MW_CENTER = vec3( -0.62, 0.2, -0.24 );
+        float mwNoise( vec3 p ) {
+          vec3 i = floor( p ), f = fract( p );
+          f = f * f * ( 3.0 - 2.0 * f );
+          return mix( mix( mix( sHash( i ), sHash( i + vec3( 1, 0, 0 ) ), f.x ), mix( sHash( i + vec3( 0, 1, 0 ) ), sHash( i + vec3( 1, 1, 0 ) ), f.x ), f.y ),
+                      mix( mix( sHash( i + vec3( 0, 0, 1 ) ), sHash( i + vec3( 1, 0, 1 ) ), f.x ), mix( sHash( i + vec3( 0, 1, 1 ) ), sHash( i + 1.0 ), f.x ), f.y ), f.z );
+        }
+        float milkyBand( vec3 d ) {
+          float lat = dot( d, normalize( MW_POLE ) );
+          float core = max( 0.0, dot( d, normalize( MW_CENTER ) ) );
+          float w = 0.12 + 0.1 * core; // 帯の太さ
+          return exp( - lat * lat / ( w * w ) ) * ( 0.35 + 0.65 * core * core );
+        }
+        vec3 milkyWay( vec3 d ) {
+          float b = milkyBand( d );
+          if ( b < 0.01 ) return vec3( 0.0 );
+          float n = mwNoise( d * 9.0 ) * 0.55 + mwNoise( d * 23.0 ) * 0.3 + mwNoise( d * 61.0 ) * 0.15;
+          // 暗い筋（塵の帯）：帯の中央を走る、まだらな影
+          float lat = dot( d, normalize( MW_POLE ) );
+          float rift = 1.0 - 0.7 * exp( - pow( ( lat - 0.02 ) / 0.035, 2.0 ) ) * smoothstep( 0.35, 0.65, mwNoise( d * 14.0 + 3.1 ) );
+          return vec3( 0.85, 0.82, 0.78 ) * b * ( 0.4 + 0.9 * n * n ) * rift;
+        }
         // 星：方向を細かい格子に分け、まれな格子に 1 つずつ点を置く（明るさと色は格子ごとの乱数）
         vec3 stars( vec3 d ) {
           vec3 s = vec3( 0.0 );
@@ -153,7 +177,7 @@ export class RealtimeAtmosphere {
             vec3 q = d * sc;
             vec3 c = floor( q );
             float h = sHash( c );
-            float th = l == 0 ? 0.988 : 0.975;
+            float th = l == 0 ? 0.988 : 0.975 - 0.02 * milkyBand( d ); // 天の川の中は星が多い
             if ( h > th ) {
               vec3 pos = c + vec3( sHash( c + 1.37 ), sHash( c + 2.11 ), sHash( c + 3.73 ) );
               float dd = length( q - pos );
@@ -176,7 +200,7 @@ export class RealtimeAtmosphere {
             vec4 v = invProj * vec4( vUv * 2.0 - 1.0, -1.0, 1.0 ); v /= v.w;
             vec3 d = normalize( ( camWorld * vec4( v.xyz, 0.0 ) ).xyz );
             float lum = dot( col, vec3( 0.2126, 0.7152, 0.0722 ) );
-            col += stars( d ) * starI * exp( - lum * 6.0 );
+            col += ( stars( d ) + milkyWay( d ) * 0.07 ) * starI * exp( - lum * 6.0 );
             col += nightSky * a.a * ( 0.35 + 0.65 * ( 1.0 - clamp( d.y, 0.0, 1.0 ) ) );
           }
           gl_FragColor = vec4( col, 1.0 );
