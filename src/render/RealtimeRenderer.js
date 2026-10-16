@@ -810,7 +810,7 @@ export class RealtimeRenderer {
       nearSea = Math.min(1, n / 3) * Math.max(0, 1 - (p.y - s.water.level) / 60);
     }
     const day = Math.min(1, Math.max(0, s.sun.elevation / 8));
-    this.audio.update(dt, { above, speed: Math.min(speed, 2000), nearSea, day, inForest: (s.vegetation?.trees ?? 0) > 0.3 });
+    this.audio.update(dt, { above, speed: Math.min(speed, 2000), nearSea, day, inForest: (s.vegetation?.trees ?? 0) > 0.3, rain: s.atmosphere.precip === 'rain' });
   }
 
   capture() {

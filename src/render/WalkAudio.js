@@ -47,6 +47,13 @@ export class WalkAudio {
     this.sea = ctx.createGain();
     this.sea.gain.value = 0;
     noise().connect(sf).connect(this.sea).connect(this.master);
+    // 雨：高い音の雑音（ざーっ）
+    const rf = ctx.createBiquadFilter();
+    rf.type = 'highpass';
+    rf.frequency.value = 1800;
+    this.rainG = ctx.createGain();
+    this.rainG.gain.value = 0;
+    noise().connect(rf).connect(this.rainG).connect(this.master);
     this.t = 0;
     this.nextBird = 2;
     return true;
@@ -70,7 +77,7 @@ export class WalkAudio {
   }
 
   // 毎コマ：above = 地面からの高さ (m)、speed = 動く速さ (m/s)、nearSea = 0..1、day = 0..1（昼）
-  update(dt, { above, speed, nearSea, day, inForest }) {
+  update(dt, { above, speed, nearSea, day, inForest, rain = false }) {
     if (!this.ctx || this.ctx.state !== 'running') return;
     const now = this.ctx.currentTime;
     this.t += dt;
@@ -81,11 +88,12 @@ export class WalkAudio {
     // 波：寄せては返す（約 7 秒）
     const wave = 0.5 + 0.5 * Math.sin((this.t / 7) * Math.PI * 2);
     this.sea.gain.setTargetAtTime(nearSea * (0.06 + 0.18 * wave * wave), now, 0.4);
-    // 鳥：昼の地上（森なら多く）
+    this.rainG.gain.setTargetAtTime(rain ? 0.09 * (0.85 + 0.15 * gust) : 0, now, 0.6);
+    // 鳥：昼の地上（森なら多く）。雨の日は鳴かない
     this.nextBird -= dt;
     if (this.nextBird <= 0) {
       this.nextBird = 1.5 + Math.random() * (inForest ? 3 : 9);
-      if (day > 0.5 && above < 40) this.#chirp();
+      if (day > 0.5 && above < 40 && !rain) this.#chirp();
     }
   }
 
