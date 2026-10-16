@@ -3,7 +3,7 @@ import * as THREE from 'three';
 // 雨と雪：カメラの周りの箱（60 × 40 × 60 m）の中だけに降らせ、箱の外へ出たら反対側から戻す（どこへ行っても降り続く）。
 // 雨は細い線、雪は点。風で少し流れる。カメラについて動かすので、丸みや原点のずらしとは関係しない。
 const BOX = [60, 40, 60];
-const N_RAIN = 7000, N_SNOW = 5000;
+const N_RAIN = 7000, N_SNOW = 5000, N_DROPS = 300;
 
 export class Precipitation {
   constructor(scene) {
@@ -39,6 +39,63 @@ export class Precipitation {
     this.snow.frustumCulled = false;
     this.snow.visible = false;
     this.group.add(this.rain, this.snow);
+    // 水しぶき：浅瀬を歩いたとき足元に飛ぶ粒（平らな地図の座標で持ち、重力で落ちて消える）
+    this.drops = [];
+    const dg = new THREE.BufferGeometry();
+    dg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N_DROPS * 3), 3));
+    // 丸いぼかした粒（四角い点にならないように）
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 32;
+    const cx = cv.getContext('2d');
+    const gr = cx.createRadialGradient(16, 16, 0, 16, 16, 16);
+    gr.addColorStop(0, 'rgba(255,255,255,1)');
+    gr.addColorStop(0.5, 'rgba(255,255,255,0.7)');
+    gr.addColorStop(1, 'rgba(255,255,255,0)');
+    cx.fillStyle = gr;
+    cx.fillRect(0, 0, 32, 32);
+    this.splashPts = new THREE.Points(
+      dg,
+      new THREE.PointsMaterial({ color: 0xe8f0f6, map: new THREE.CanvasTexture(cv), size: 0.08, sizeAttenuation: true, transparent: true, opacity: 0.85, depthWrite: false, fog: false }),
+    );
+    this.splashPts.frustumCulled = false;
+    this.splashPts.visible = false;
+    this.group.add(this.splashPts);
+  }
+
+  // 水しぶきの明るさ：景色は物理的な明るさで描いて後から露出をかけるので、露出の逆数ほど明るく（light = 昼夜）
+  setSplashGain(exposure, light = 1) {
+    this.splashPts.material.color.setRGB(0.9, 0.94, 0.96).multiplyScalar((0.8 / Math.max(0.02, exposure)) * light);
+  }
+
+  // 水しぶきを 1 回：at = 足元（平らな地図の座標）、dir = 進む向き（水平）、strength = 1 で 1 歩
+  splash(at, dir, strength = 1) {
+    const n = Math.round(40 * strength);
+    for (let i = 0; i < n && this.drops.length < N_DROPS; i++) {
+      const a = Math.random() * Math.PI * 2, sp = 0.6 + Math.random() * 1.4;
+      this.drops.push({
+        x: at.x + (Math.random() - 0.5) * 0.3, y: at.y + 0.03, z: at.z + (Math.random() - 0.5) * 0.3,
+        vx: Math.cos(a) * sp + dir.x * 1.2, vy: 1.5 + Math.random() * 2 * strength, vz: Math.sin(a) * sp + dir.z * 1.2,
+        life: 0.5 + Math.random() * 0.4,
+      });
+    }
+  }
+
+  #updateDrops(dt, ref) {
+    const p = this.splashPts.geometry.attributes.position.array;
+    let k = 0;
+    this.drops = this.drops.filter((d) => (d.life -= dt) > 0);
+    for (const d of this.drops) {
+      d.vy -= 9.8 * dt;
+      d.x += d.vx * dt;
+      d.y += d.vy * dt;
+      d.z += d.vz * dt;
+      p[k++] = d.x - ref.x;
+      p[k++] = d.y - ref.y;
+      p[k++] = d.z - ref.z;
+    }
+    this.splashPts.geometry.setDrawRange(0, this.drops.length);
+    this.splashPts.geometry.attributes.position.needsUpdate = true;
+    this.splashPts.visible = this.drops.length > 0;
   }
 
   set(kind) {
@@ -50,11 +107,13 @@ export class Precipitation {
   // at: いま描くカメラの位置（箱の中心）、ref: カメラの世界座標（平らな地図の上。雨粒をその場に留めるため）、
   // light: 明るさ（夜は暗く。0..1）。時間は自分で測る
   update(at, ref, light = 1) {
-    if (this.kind === 'none') return;
     const now = performance.now() / 1000;
-    this.t += Math.min(0.1, now - (this.last ?? now));
+    const dt = Math.min(0.1, now - (this.last ?? now));
     this.last = now;
     this.group.position.copy(at);
+    if (this.drops.length || this.splashPts.visible) this.#updateDrops(dt, ref);
+    if (this.kind === 'none') return;
+    this.t += dt;
     const [W, H, D] = BOX;
     // 箱の中の位置：カメラの世界座標に対して固定（カメラが動くと雨粒は後ろへ流れる）
     const ox = ref.x, oy = ref.y, oz = ref.z;

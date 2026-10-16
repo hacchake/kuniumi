@@ -546,6 +546,7 @@ void main() {`)
       this.water.material.uniforms.kRain.value = wet;
       this.baseExposure = a.exposure;
       this.precipLight = 1 - nightFactor(s.sun.elevation) * 0.8;
+      this.precip.setSplashGain(a.exposure, this.precipLight);
       this.#applyLights();
       this.atmosphere.uniforms.nightSky.value.set(...NIGHT_SKY).multiplyScalar(nightFactor(s.sun.elevation));
       this.renderer.toneMappingExposure = a.exposure;
@@ -895,6 +896,7 @@ void main() {`)
       const surface = wading ? 'water' : snowy ? 'snow' : 'ground';
       if (w.grounded && !this.wasGrounded) {
         this.audio.step(surface, 2); // 着地
+        if (wading) this.precip.splash(new THREE.Vector3(p.x, s.water.level, p.z), w.forward().setY(0).normalize(), 1.6);
         this.stepDist = 0;
       } else if (w.grounded) {
         const horiz = Math.hypot(p.x - last.x, p.z - last.z);
@@ -903,6 +905,7 @@ void main() {`)
         if (this.stepDist >= stride) {
           this.stepDist = 0;
           this.audio.step(surface, 1);
+          if (wading) this.precip.splash(new THREE.Vector3(p.x, s.water.level, p.z).addScaledVector(w.forward().setY(0).normalize(), 1.0), w.forward().setY(0).normalize(), 1);
         }
       }
       this.wasGrounded = w.grounded;
