@@ -622,10 +622,12 @@ export class GlobeRenderer {
           if ( pl.x < pl.y && pl.x > 0.0 ) t1 = min( t1, pl.x );
           if ( t1 <= t0 ) discard;
           vec3 col = vec3( 0.0 );
-          const int N = 24;
+          const int N = 40;
           float dt = ( t1 - t0 ) / float( N );
+          // 刻みの始まりを画素ごとにずらす（横縞の段差を細かいざらつきに変える）
+          float jit = fract( sin( dot( gl_FragCoord.xy, vec2( 12.9898, 78.233 ) ) ) * 43758.5453 );
           for ( int i = 0; i < N; i ++ ) {
-            vec3 p = camC + dir * ( t0 + ( float( i ) + 0.5 ) * dt );
+            vec3 p = camC + dir * ( t0 + ( float( i ) + jit ) * dt );
             float r = length( p );
             if ( r < R0 || r > R1 ) continue;
             vec3 u = p / r;
