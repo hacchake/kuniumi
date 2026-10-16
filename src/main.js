@@ -290,6 +290,14 @@ const globe = new GlobeMode(document.getElementById('stage'), {
     globeBtn.classList.remove('active');
   },
 });
+// リンク（#globe=…）で開かれたら、その場所の地球モードから始める
+{
+  const v = GlobeMode.viewFromHash();
+  if (v) {
+    globe.linkView = v;
+    setTimeout(() => openGlobe(), 0);
+  }
+}
 function openGlobe() {
   if (view.walking) view.setWalk(null);
   view.paused = true; // 景観の画面は止めて GPU を譲る

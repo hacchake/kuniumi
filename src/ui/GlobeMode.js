@@ -33,9 +33,10 @@ export class GlobeMode {
       this.renderer = new GlobeRenderer(this.el, { onInfo: (i) => this.#showInfo(i) });
       if (import.meta.env?.DEV) window.__globe = this.renderer; // 開発中の確かめ用
       try {
-        const v = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+        const v = this.linkView ?? JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
         if (v && Number.isFinite(v.lat)) Object.assign(this.renderer.view, v);
       } catch {}
+      this.linkView = null;
       this.renderer.sunMode = this.sunSel.value;
       this.renderer.setExaggeration(Number(this.exagSel.value));
       this.renderer.setImagery(this.colorSel.value === 'photo');
@@ -100,6 +101,7 @@ export class GlobeMode {
               <option value="10">×10</option>
             </select>
           </label>
+          <button type="button" data-share title="${t('いま見ている所を開くリンクをコピー')}">🔗</button>
           <button type="button" data-fav title="${t('いま見ている所をお気に入りに（検索の欄をたたくと一覧）')}">☆</button>
           <button type="button" data-home title="${t('地球全体を見渡す')}">🌏 ${t('全体')}</button>
           <button type="button" data-walk title="${t('いま見ている所を取り込んで、地上に降りて歩く')}">🚶 ${t('ここに降りて歩く')}</button>
@@ -134,6 +136,7 @@ export class GlobeMode {
     this.sunSel.onchange = () => this.renderer && (this.renderer.sunMode = this.sunSel.value);
     this.exagSel.onchange = () => this.renderer?.setExaggeration(Number(this.exagSel.value));
     el.querySelector('[data-fav]').onclick = () => this.#addFavorite();
+    el.querySelector('[data-share]').onclick = () => this.#share();
     // 検索の欄をたたいたら（空のとき）お気に入りの一覧
     for (const ev of ['focus', 'click']) this.q.addEventListener(ev, () => !this.q.value.trim() && this.#showFavorites());
     el.querySelector('[data-home]').onclick = () => this.renderer?.flyTo({ lat: this.renderer.view.lat, lon: this.renderer.view.lon, range: 2.2e7, tilt: 0 });
@@ -176,6 +179,28 @@ export class GlobeMode {
       }
     } catch (err) {
       this.results.textContent = t('地名を検索できませんでした: {msg}', { msg: err.message ?? err });
+    }
+  }
+
+  // ---- リンク（#globe=緯度,経度,距離,向き,傾き） ----
+  static viewFromHash(hash = location.hash) {
+    const m = /globe=([-\d.]+),([-\d.]+),([\d.]+),([-\d.]+),([-\d.]+)/.exec(hash);
+    if (!m) return null;
+    const [lat, lon, range, heading, tilt] = m.slice(1).map(Number);
+    if (![lat, lon, range, heading, tilt].every(Number.isFinite)) return null;
+    return { lat: Math.max(-89.5, Math.min(89.5, lat)), lon, range: Math.max(60, Math.min(6e7, range)), heading, tilt: Math.max(0, Math.min(86, tilt)) };
+  }
+
+  async #share() {
+    const v = this.renderer?.view;
+    if (!v) return;
+    const f = (x, d) => Number(x.toFixed(d));
+    const url = `${location.origin}${location.pathname}#globe=${f(v.lat, 5)},${f(((v.lon + 540) % 360) - 180, 5)},${Math.round(v.range)},${f(v.heading, 1)},${f(v.tilt, 1)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      this.toast?.(t('リンクをコピーしました'));
+    } catch {
+      this.toast?.(url);
     }
   }
 

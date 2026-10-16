@@ -507,4 +507,6 @@ export const EN = {
   "お気に入りから外す": "Remove from favorites",
   "音を消す（M）": "Mute (M)",
   "音を出す（M）": "Sound on (M)",
+  "いま見ている所を開くリンクをコピー": "Copy a link that opens this view",
+  "リンクをコピーしました": "Link copied",
 };
