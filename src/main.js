@@ -253,6 +253,7 @@ async function openGpx(file) {
   if (pts.length < 2) throw new Error(t('GPX に経路の点が見つかりません'));
   const s = store.get();
   let geo = s.terrain.mode === 'heightmap' ? s.terrain.heightmap?.geo : null;
+  let imported = false;
   const insideOf = (g, size) =>
     pts.filter(({ lat, lon }) => {
       const { e, n } = aeqdForward(lat, lon, g.lat, g.lon);
@@ -273,6 +274,7 @@ async function openGpx(file) {
     await geo_dialog_import({ ...c, size }, size > 20000 ? 2049 : 1025, name);
     geo = store.get().terrain.heightmap?.geo;
     if (!geo) throw new Error(t('経路のまわりの地形を取り込めませんでした'));
+    imported = true;
   }
   const toXZ = (lat, lon) => {
     const { e, n } = aeqdForward(lat, lon, geo.lat, geo.lon);
@@ -290,6 +292,14 @@ async function openGpx(file) {
   followBtn.hidden = !view.walking;
   routeProfile.set(route, (x, z) => view.treeTerrain.groundAt(x, z));
   routeProfile.show(view.walking);
+  // 取り込んだばかりなら、経路全体が見えるよう南東の空から見下ろす
+  if (imported) {
+    const xs = route.map((p) => p.x), zs = route.map((p) => p.z);
+    const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cz = (Math.min(...zs) + Math.max(...zs)) / 2;
+    const ext = Math.max(500, Math.max(...xs) - Math.min(...xs), Math.max(...zs) - Math.min(...zs));
+    const gy = view.treeTerrain.groundAt(cx, cz);
+    store.patch({ 'camera.position': [cx + ext * 0.7, gy + ext * 0.8, cz + ext * 0.9], 'camera.target': [cx, gy, cz] }, { source: 'io' });
+  }
   toast(t('経路を描きました（{km} km、{n} 点。範囲の中は {pct}%）', { km: (routeLength(pts) / 1000).toFixed(2), n: pts.length, pct: Math.round((inside / route.length) * 100) }));
 }
 // GPX から呼ぶ取り込み（ダイアログを開かずに）
