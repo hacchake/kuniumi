@@ -466,6 +466,40 @@ export class StillJob {
       this.disposers.push(() => sg.dispose());
     }
 
+    // 建物（リアルタイム表示で取り寄せてあるもの。一枚絵の原点と丸みに合わせて置き直す）
+    const buildingMeshes = [];
+    const bgroup = this.view.buildings?.group;
+    if (bgroup?.visible && t.buildings !== false) {
+      const P = this.place;
+      const pcx = P.cx - P.ox, pcz = P.cz - P.oz;
+      const bmat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0, side: THREE.DoubleSide });
+      this.disposers.push(() => bmat.dispose());
+      const pp = [0, 0, 0];
+      let nb = 0;
+      for (const m of bgroup.children) {
+        const src = m.geometry?.attributes?.position;
+        if (!src) continue;
+        const pos = new Float32Array(src.array.length);
+        for (let v = 0; v < src.count; v++) {
+          curvePoint(src.array[v * 3] - P.ox, src.array[v * 3 + 1], src.array[v * 3 + 2] - P.oz, pcx, pcz, P.R, pp);
+          pos[v * 3] = pp[0];
+          pos[v * 3 + 1] = pp[1];
+          pos[v * 3 + 2] = pp[2];
+        }
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        g.setAttribute('color', m.geometry.attributes.color);
+        g.computeVertexNormals();
+        const mesh = new THREE.Mesh(g, bmat);
+        mesh.name = 'Buildings';
+        scene.add(mesh);
+        buildingMeshes.push(mesh);
+        this.disposers.push(() => g.dispose());
+        nb += src.count / 3;
+      }
+      this.stats.buildingTriangles = nb;
+    }
+
     // 水：透過・屈折・吸収をもつ本物の水。さざ波は法線マップ
     let water = null;
     if (s.water.enabled) {
@@ -586,7 +620,7 @@ export class StillJob {
     scene.background = discScale > 1 ? mkEnv(bg) : scene.environment;
 
     scene.updateMatrixWorld(true);
-    return { scene, terrainMesh, surroundMesh, water, plants, textures, skyP: p };
+    return { scene, terrainMesh, surroundMesh, water, plants, buildingMeshes, textures, skyP: p };
   }
 
   #camera(s, aspect) {
@@ -641,6 +675,7 @@ export class StillJob {
     if (built.surroundMesh) meshes.push({ object: built.surroundMesh });
     if (built.water) meshes.push({ object: built.water, noShadow: true });
     for (const m of built.plants) meshes.push({ object: m });
+    for (const m of built.buildingMeshes ?? []) meshes.push({ object: m });
     for (const m of objectMeshes) meshes.push({ object: m, celestial: celestial.has(m.userData.kuniumiId) });
     const P = this.place;
     const view = { origin: [P.ox, P.oz], planetR: P.R, cam: [0, 0, 0] };
