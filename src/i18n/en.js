@@ -437,4 +437,6 @@ export const EN = {
   "水深 {d} m": "depth {d} m",
   "衛星写真": "Satellite imagery",
   "飛ぶ": "Go",
+  "夜の明かり": "Night lights",
+  "1 本指で移動・2 本指でつまんで寄る／ひねって向き／上下で傾き・2 回たたいてそこへ寄る": "One finger to move · pinch to zoom · twist to turn · two fingers up/down to tilt · double-tap to zoom in",
 };

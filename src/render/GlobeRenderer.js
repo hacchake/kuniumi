@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import {
   GLOBE_R, GLOBE_MAX_ZOOM, GRID, MERC_MAX_LAT, ecef, toLatLon, enu, tileLatLon, tileInfo, tileBounds,
-  behindHorizon, orbitCamera, subsolarPoint, gridAt, locateTile, IMAGERY_MAX_ZOOM, IMAGERY_URL, ancestorXf,
+  behindHorizon, orbitCamera, subsolarPoint, gridAt, locateTile, IMAGERY_MAX_ZOOM, LIGHTS_MAX_ZOOM, imageryUrl, lightsUrl, ancestorXf,
 } from '../core/globe.js';
 import { sunDirection } from '../core/sun.js';
 import { GLOBE_ATMO_GLSL, GLOBE_SURFACE_GLSL } from './globeGLSL.js';
@@ -52,10 +52,12 @@ export class GlobeRenderer {
       sunI: { value: 22 },
       exag: { value: 1 },
       imgOn: { value: 1 }, // 衛星写真の色を使うか
+      lightsI: { value: 2.5 }, // 夜の街の明かりの強さ
     };
 
     this.tiles = new Map(); // "z/x/y" → タイル
-    this.images = new Map(); // "z/x/y" → 衛星写真 { tex, used }
+    this.images = new Map(); // "層:z/x/y" → 衛星写真・街の明かり { tex, used }
+    this.lightsOn = true;
     this.imgLoading = 0;
     this.frameNo = 0;
     this.loading = 0;
@@ -173,9 +175,9 @@ export class GlobeRenderer {
         #include <logdepthbuf_vertex>
       }`;
     const frag = /* glsl */ `
-      uniform sampler2D tex, img;
-      uniform vec3 imgXf; // 祖先の写真の中の位置（ox, oy, 倍率）
-      uniform float exag, imgOn, imgHas;
+      uniform sampler2D tex, img, lit;
+      uniform vec3 imgXf, litXf; // 祖先の写真の中の位置（ox, oy, 倍率）
+      uniform float exag, imgOn, imgHas, litHas, lightsI;
       varying vec2 vUv;
       varying vec3 vRel;
       #ifdef CAP
@@ -197,6 +199,12 @@ export class GlobeRenderer {
         vec4 im = vec4( 0.0 );
         if ( imgOn > 0.5 && imgHas > 0.5 ) im = vec4( texture2D( img, imgXf.xy + vUv * imgXf.z ).rgb, 1.0 );
         vec3 col = gShade( wp, vd, d.b, d.rg * exag, 0.0, im );
+        // 夜の街の明かり（昼の側では消す。暗い陸の写りは除いて、明かりだけを光らせる）
+        if ( litHas > 0.5 ) {
+          vec3 L = texture2D( lit, litXf.xy + vUv * litXf.z ).rgb;
+          float night = smoothstep( 0.06, -0.14, dot( normalize( wp ), sunDir ) );
+          col += max( L - 0.06, vec3( 0.0 ) ) * vec3( 1.0, 0.82, 0.55 ) * lightsI * night;
+        }
         #endif
         vec3 ins, tr;
         gAtmosphere( camC, vd, dist, 8, ins, tr );
@@ -279,7 +287,7 @@ export class GlobeRenderer {
       // 共有すると、片付けたタイルの dispose() が共有のバッファまで消し、ほかのタイルが描かれなくなる
       g.setAttribute('uv', new THREE.BufferAttribute(this.uvArr, 2));
       g.setIndex(new THREE.BufferAttribute(this.indexArr, 1));
-      const m = new THREE.ShaderMaterial({ uniforms: { ...this.shared, tex: { value: t.tex }, img: { value: null }, imgXf: { value: new THREE.Vector3(0, 0, 1) }, imgHas: { value: 0 } }, vertexShader: this.vert, fragmentShader: this.frag });
+      const m = new THREE.ShaderMaterial({ uniforms: { ...this.shared, tex: { value: t.tex }, img: { value: null }, imgXf: { value: new THREE.Vector3(0, 0, 1) }, imgHas: { value: 0 }, lit: { value: null }, litXf: { value: new THREE.Vector3(0, 0, 1) }, litHas: { value: 0 } }, vertexShader: this.vert, fragmentShader: this.frag });
       t.mesh = new THREE.Mesh(g, m);
       t.mesh.frustumCulled = false; // 自分で間引く
       t.mesh.matrixAutoUpdate = true;
@@ -292,30 +300,39 @@ export class GlobeRenderer {
   // まだ届いていなければ、届いているいちばん細かい祖先の写真で代える
   #bindImagery(t) {
     const u = t.mesh.material.uniforms;
-    if (!this.shared.imgOn.value) return;
-    const want = Math.min(t.z, IMAGERY_MAX_ZOOM);
+    if (this.shared.imgOn.value) this.#bindLayer(t, 'c', IMAGERY_MAX_ZOOM, imageryUrl, u.img, u.imgXf, u.imgHas);
+    // 街の明かりは夜の側のタイルだけ取り寄せる
+    const c = t.center, r = Math.hypot(...c), s = this.shared.sunDir.value;
+    const night = (c[0] * s.x + c[1] * s.y + c[2] * s.z) / r < 0.25;
+    if (night && this.lightsOn) this.#bindLayer(t, 'n', LIGHTS_MAX_ZOOM, lightsUrl, u.lit, u.litXf, u.litHas);
+    else u.litHas.value = 0;
+  }
+
+  // 写真の層を 1 つ割り当てる（その層の上限より細かいタイルは、祖先の写真の一部を引き伸ばす）
+  #bindLayer(t, src, maxZ, urlOf, tex, xfU, has) {
+    const want = Math.min(t.z, maxZ);
     for (let a = want; a >= 0; a--) {
       const xf = ancestorXf(t.z, t.x, t.y, a);
-      const key = `${a}/${xf.x}/${xf.y}`;
+      const key = `${src}:${a}/${xf.x}/${xf.y}`;
       const im = this.images.get(key);
-      if (a === want && !im) this.#requestImage(a, xf.x, xf.y, key);
+      if (a === want && !im) this.#requestImage(urlOf(a, xf.x, xf.y), key);
       if (im?.tex) {
         im.used = this.frameNo;
-        u.img.value = im.tex;
-        u.imgXf.value.set(xf.ox, xf.oy, xf.scale);
-        u.imgHas.value = 1;
+        tex.value = im.tex;
+        xfU.value.set(xf.ox, xf.oy, xf.scale);
+        has.value = 1;
         return;
       }
     }
-    u.imgHas.value = 0;
+    has.value = 0;
   }
 
-  #requestImage(z, x, y, key) {
-    if (this.imgLoading >= 8) return;
+  #requestImage(url, key) {
+    if (this.imgLoading >= 10) return;
     const im = { used: this.frameNo, tex: null };
     this.images.set(key, im);
     this.imgLoading++;
-    fetch(IMAGERY_URL.replace('{z}', z).replace('{x}', x).replace('{y}', y))
+    fetch(url)
       .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(r.status))))
       .then((b) => createImageBitmap(b, { imageOrientation: 'none' }))
       .then((bmp) => {
@@ -333,10 +350,10 @@ export class GlobeRenderer {
 
   // 使われなくなった写真を片付ける（そのコマのタイルに全部割り当て終えてから。割り当て中に消すと、消した写真を描こうとしてしまう）
   #evictImages() {
-    if (this.images.size <= 400) return;
-    const list = [...this.images.entries()].filter(([k, v]) => v.tex && !k.startsWith('0/') && v.used < this.frameNo - 30);
+    if (this.images.size <= 500) return;
+    const list = [...this.images.entries()].filter(([k, v]) => v.tex && !k.includes(':0/') && v.used < this.frameNo - 30);
     list.sort((a, b) => a[1].used - b[1].used);
-    for (const [k, v] of list.slice(0, this.images.size - 300)) {
+    for (const [k, v] of list.slice(0, this.images.size - 400)) {
       v.tex.dispose();
       this.images.delete(k);
     }
@@ -476,18 +493,61 @@ export class GlobeRenderer {
   #setupControls() {
     const c = this.canvas;
     let drag = null;
+    // 画面に触れている指（タッチ）。2 本のときはつまんで寄る・ひねって向き・そろえて上下で傾き
+    const touches = new Map();
+    let pinch = null;
+    const pinchState = () => {
+      const [a, b] = [...touches.values()];
+      return { d: Math.hypot(b.x - a.x, b.y - a.y), ang: Math.atan2(b.y - a.y, b.x - a.x), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+    };
     c.addEventListener('contextmenu', (e) => e.preventDefault());
     c.addEventListener('pointerdown', (e) => {
       this.flight = null;
+      try {
+        c.setPointerCapture(e.pointerId);
+      } catch {}
+      if (e.pointerType === 'touch') {
+        touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (touches.size === 2) {
+          drag = null;
+          pinch = pinchState();
+          return;
+        }
+        if (touches.size > 2) return;
+      }
       drag = { x: e.clientX, y: e.clientY, rotate: e.button === 2 || e.button === 1 || e.shiftKey || e.ctrlKey };
-      c.setPointerCapture(e.pointerId);
     });
     c.addEventListener('pointermove', (e) => {
+      const v = this.view;
+      if (touches.has(e.pointerId)) {
+        touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (pinch && touches.size === 2) {
+          const p = pinchState();
+          // つまむ・広げる：指の間隔の比だけ寄る（指の中ほどへ少し寄せる）
+          const k = pinch.d / Math.max(1, p.d);
+          if (k < 1) {
+            const hit = this.pick(p.mx, p.my);
+            if (hit) {
+              const f = 1 - k;
+              v.lat += (hit.lat - v.lat) * f;
+              v.lon += wrapLon(hit.lon - v.lon) * f;
+            }
+          }
+          v.range = THREE.MathUtils.clamp(v.range * k, 60, 6e7);
+          // ひねる：向き。2 本そろえて上下：傾き
+          let da = p.ang - pinch.ang;
+          if (da > Math.PI) da -= 2 * Math.PI;
+          if (da < -Math.PI) da += 2 * Math.PI;
+          v.heading = (v.heading - (da * 180) / Math.PI + 360) % 360;
+          v.tilt = THREE.MathUtils.clamp(v.tilt + (p.my - pinch.my) * 0.25, 0, this.#maxTilt());
+          pinch = p;
+          return;
+        }
+      }
       if (!drag) return;
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
       drag.x = e.clientX;
       drag.y = e.clientY;
-      const v = this.view;
       if (drag.rotate) {
         v.heading = (v.heading + dx * 0.3 + 360) % 360;
         v.tilt = THREE.MathUtils.clamp(v.tilt + dy * 0.25, 0, this.#maxTilt());
@@ -495,7 +555,15 @@ export class GlobeRenderer {
         this.#pan(-dx, dy);
       }
     });
-    const up = () => (drag = null);
+    const up = (e) => {
+      touches.delete(e.pointerId);
+      if (touches.size < 2) pinch = null;
+      // 2 本から 1 本に戻ったら、残った指でそのまま動かせるように
+      if (touches.size === 1) {
+        const [p] = touches.values();
+        drag = { x: p.x, y: p.y, rotate: false };
+      } else drag = null;
+    };
     c.addEventListener('pointerup', up);
     c.addEventListener('pointercancel', up);
     c.addEventListener(

@@ -9,10 +9,22 @@ import { EARTH_R } from './geo.js';
 export const GLOBE_R = EARTH_R;
 export const MERC_MAX_LAT = 85.05112878;
 export const GLOBE_MAX_ZOOM = 15; // 標高タイルのいちばん細かいズーム（約 5 m / 画素）
-export const IMAGERY_MAX_ZOOM = 8; // 衛星写真のいちばん細かいズーム（約 600 m / 画素）
-// 地表の色：NASA Blue Marble Next Generation（GIBS で公開。パブリックドメイン）。雲の無い月ごとの合成写真
-export const IMAGERY_URL = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/BlueMarble_NextGeneration/default/GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpeg';
-export const IMAGERY_ATTRIBUTION = 'NASA Blue Marble Next Generation（NASA GIBS）';
+// 地表の色（衛星写真）。遠く（ズーム 7 まで）は NASA Blue Marble、近く（ズーム 8〜14）は Sentinel-2 cloudless。
+//   Blue Marble Next Generation：GIBS で公開、パブリックドメイン。雲の無い合成写真、約 600 m / 画素
+//   Sentinel-2 cloudless 2016：EOX が公開（CC BY 4.0）。雲の無い合成写真、約 10 m / 画素
+export const IMAGERY_MAX_ZOOM = 14;
+export const IMAGERY_FAR_MAX_ZOOM = 7;
+export const IMAGERY_FAR_URL = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/BlueMarble_NextGeneration/default/GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpeg';
+export const IMAGERY_NEAR_URL = 'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless_3857/default/g/{z}/{y}/{x}.jpg';
+export const IMAGERY_ATTRIBUTION =
+  'NASA Blue Marble Next Generation（NASA GIBS）、Sentinel-2 cloudless – https://s2maps.eu by EOX IT Services GmbH（Contains modified Copernicus Sentinel data 2016）';
+// 夜の街の明かり：NASA Black Marble（VIIRS、2016 年。GIBS で公開、パブリックドメイン）
+export const LIGHTS_MAX_ZOOM = 8;
+export const LIGHTS_URL = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/{z}/{y}/{x}.png';
+export const LIGHTS_ATTRIBUTION = 'NASA Black Marble（VIIRS、NASA GIBS）';
+// ズーム a の写真の URL
+export const imageryUrl = (a, x, y) => (a <= IMAGERY_FAR_MAX_ZOOM ? IMAGERY_FAR_URL : IMAGERY_NEAR_URL).replace('{z}', a).replace('{x}', x).replace('{y}', y);
+export const lightsUrl = (a, x, y) => LIGHTS_URL.replace('{z}', a).replace('{x}', x).replace('{y}', y);
 export const GRID = 32; // 区画 1 つの格子の分割数（頂点は 33 × 33）
 const D2R = Math.PI / 180;
 
