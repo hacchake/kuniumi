@@ -167,10 +167,10 @@ export class MiniMap {
       ctx.stroke();
     }
     // 地名（取り込んだ地形の山・市・町・村）。広く見ているときは大きな所だけ
-    const labels = tr.mode === 'heightmap' && tr.labels !== false ? tr.heightmap?.labels ?? [] : [];
+    const labels = [...(tr.mode === 'heightmap' && tr.labels !== false ? tr.heightmap?.labels ?? [] : []), ...(this.wpts ?? []).map((w) => ({ ...w, kind: 'waypoint' }))];
     if (labels.length) {
       const minRank = half > 6000 ? 1 : half > 1500 ? 2 : 4; // 0 市, 1 山, 2 町, 3 地区, 4 村
-      const rank = { city: 0, peak: 1, town: 2, suburb: 3, village: 4 };
+      const rank = { city: 0, waypoint: 0, peak: 1, town: 2, suburb: 3, village: 4 }; // waypoint = 読み込んだ経路（GPX）の地点
       ctx.font = `${10.5 * dpr}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.lineWidth = 3 * dpr;
@@ -181,12 +181,12 @@ export class MiniMap {
       for (const l of order) {
         const x = px / 2 + (l.x - p.x) * k, y = px / 2 + (l.z - p.z) * k;
         if (x < 0 || y < 0 || x > px || y > px) continue;
-        const text = l.kind === 'peak' ? `▲${l.name}` : l.name;
+        const text = l.kind === 'peak' ? `▲${l.name}` : l.kind === 'waypoint' ? `◆${l.name}` : l.name;
         const w = ctx.measureText(text).width, h = 12 * dpr;
         const r = { l: x - w / 2 - 2, r: x + w / 2 + 2, t: y - h, b: y + 2 };
         if (placed.some((q) => r.l < q.r && r.r > q.l && r.t < q.b && r.b > q.t)) continue;
         placed.push(r);
-        ctx.fillStyle = l.kind === 'peak' ? '#ffe8b0' : '#ffffff';
+        ctx.fillStyle = l.kind === 'peak' ? '#ffe8b0' : l.kind === 'waypoint' ? '#ffb48a' : '#ffffff';
         ctx.strokeText(text, x, y);
         ctx.fillText(text, x, y);
       }

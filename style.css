@@ -458,6 +458,7 @@ body.walking #create { display: none; }
 .label-city { font-size: 15px; font-weight: 700; }
 .label-town { font-size: 13.5px; font-weight: 500; }
 .label-peak { color: #ffe8b0; font-size: 12px; }
+.label-waypoint { color: #ffb48a; font-size: 12px; font-weight: 600; }
 .label-suburb, .label-village { font-size: 11.5px; color: #e9e4d8; }
 .row-sunTime input[type='datetime-local'] { min-width: 0; background: var(--ink); color: var(--text); border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: 12px; padding: 3px 4px; color-scheme: dark; }
 .sun-go { background: rgba(217, 181, 108, 0.14); color: var(--gold-2); border: 1px solid var(--gold); border-radius: 6px; font: inherit; font-size: 12px; padding: 3px 8px; cursor: pointer; }

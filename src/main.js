@@ -10,7 +10,7 @@ import { GlobeMode } from './ui/GlobeMode.js';
 import { MiniMap } from './ui/MiniMap.js';
 import { WalkHud } from './ui/WalkHud.js';
 import { RouteProfile } from './ui/RouteProfile.js';
-import { trackToGpx, parseGpx, routeLength } from './core/gpx.js';
+import { trackToGpx, parseGpx, parseGpxWaypoints, routeLength } from './core/gpx.js';
 import { aeqdForward } from './core/geo.js';
 import { Labels } from './ui/Labels.js';
 import { loadSkeleton, loadBigParts, saveScene } from './io/autosave.js';
@@ -251,7 +251,8 @@ async function openGpx(file) {
   const s = store.get();
   const geo = s.terrain.mode === 'heightmap' ? s.terrain.heightmap?.geo : null;
   if (!geo) throw new Error(t('経路（GPX）は、地球から取り込んだ地形の上にだけ描けます'));
-  const pts = parseGpx(await file.text());
+  const text = await file.text();
+  const pts = parseGpx(text);
   if (pts.length < 2) throw new Error(t('GPX に経路の点が見つかりません'));
   const route = pts.map(({ lat, lon }) => {
     const { e, n } = aeqdForward(lat, lon, geo.lat, geo.lon);
@@ -260,6 +261,13 @@ async function openGpx(file) {
   const half = s.terrain.size / 2;
   const inside = route.filter((p) => Math.abs(p.x) <= half && Math.abs(p.z) <= half).length;
   view.setRoute(route);
+  // 地点（山頂・分岐など）は名前つきで景観と地図に
+  const wpts = parseGpxWaypoints(text).map((w) => {
+    const { e, n } = aeqdForward(w.lat, w.lon, geo.lat, geo.lon);
+    return { name: w.name, x: e, z: -n, ele: w.ele };
+  });
+  view.setWaypoints(wpts);
+  miniMap.wpts = wpts;
   miniMap.route = route;
   followBtn.hidden = !view.walking;
   routeProfile.set(route, (x, z) => view.treeTerrain.groundAt(x, z));

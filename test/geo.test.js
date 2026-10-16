@@ -305,3 +305,15 @@ describe('GPX の読み込み', () => {
     expect(routeLength(back)).toBeCloseTo(1000, -1);
   });
 });
+
+describe('GPX の地点', () => {
+  it('名前つきの wpt を取り出す（CDATA・実体参照も）', async () => {
+    const { parseGpxWaypoints } = await import('../src/core/gpx.js');
+    const w = parseGpxWaypoints(`<gpx><wpt lat="35.6253" lon="139.2435"><ele>599</ele><name>高尾山 &amp; 山頂</name></wpt>
+      <wpt lat="35.63" lon="139.26"><name><![CDATA[薬王院]]></name></wpt><wpt lat="1" lon="2"/></gpx>`);
+    expect(w).toEqual([
+      { lat: 35.6253, lon: 139.2435, name: '高尾山 & 山頂', ele: 599 },
+      { lat: 35.63, lon: 139.26, name: '薬王院', ele: null },
+    ]);
+  });
+});

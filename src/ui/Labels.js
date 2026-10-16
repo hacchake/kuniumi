@@ -1,8 +1,8 @@
 // 景観の上に地名（山・市・町・村）を出す。取り込んだ地形の OpenStreetMap の地名（heightmap.labels）を、
 // 描くたびに画面の位置へ置き直す（RealtimeRenderer の #draw から呼ばれる）。
 // 小さい所ほど近づかないと出さない。重なる所は、大事なもの（市・高い山）を優先して後のものは出さない。
-const REACH = { city: 80000, peak: 60000, town: 30000, suburb: 8000, village: 10000 }; // 見える距離 (m)
-const RANK = { city: 0, peak: 1, town: 2, suburb: 3, village: 4 };
+const REACH = { city: 80000, peak: 60000, town: 30000, suburb: 8000, village: 10000, waypoint: 15000 }; // 見える距離 (m)
+const RANK = { city: 0, waypoint: 0.5, peak: 1, town: 2, suburb: 3, village: 4 }; // waypoint = 読み込んだ経路（GPX）の地点
 
 export class Labels {
   constructor(stage) {
@@ -26,7 +26,7 @@ export class Labels {
       .map((l) => {
         const d = document.createElement('div');
         d.className = `label label-${l.kind}`;
-        d.textContent = l.kind === 'peak' ? `▲ ${l.name}${l.ele ? ` ${Math.round(l.ele)} m` : ''}` : l.name;
+        d.textContent = l.kind === 'peak' ? `▲ ${l.name}${l.ele ? ` ${Math.round(l.ele)} m` : ''}` : l.kind === 'waypoint' ? `◆ ${l.name}` : l.name;
         d.hidden = true;
         this.el.appendChild(d);
         return { ...l, d, w: 0 };

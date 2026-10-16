@@ -1038,7 +1038,13 @@ void main() {`)
         return { x: (v.x * 0.5 + 0.5) * W, y: (0.5 - v.y * 0.5) * Hh, front: v.z < 1 && v.z > -1, dist };
       };
       const hm = t.mode === 'heightmap' ? t.heightmap : null;
-      this.labels.set(hm?.labels ?? null);
+      // 取り込んだ地形の地名に、読み込んだ経路の地点（GPX のウェイポイント）を足す
+      if (this.lblSrc !== hm?.labels || this.lblWpt !== this.routeWpts) {
+        this.lblSrc = hm?.labels;
+        this.lblWpt = this.routeWpts;
+        this.lblMerged = [...(hm?.labels ?? []), ...(this.routeWpts ?? [])];
+      }
+      this.labels.set(this.lblMerged.length ? this.lblMerged : null);
       // 手前の山に隠れていないか：カメラから地名までの間の地面を 16 か所見る（丸みの沈みも足す）
       const blocked = (x, y, z) => {
         const dx = x - flatPos.x, dz = z - flatPos.z, len = Math.hypot(dx, dz);
@@ -1081,6 +1087,11 @@ void main() {`)
   }
 
   // 読み込んだ経路（GPX）を地面に描く。pts: [{ x, z }]（平らな地図の座標）。null で消す
+  // 経路の地点（GPX のウェイポイント）：[{ name, x, z, ele? }]。地名と同じように景観の上に出す
+  setWaypoints(wpts) {
+    this.routeWpts = wpts?.length ? wpts.map((w) => ({ ...w, kind: 'waypoint' })) : null;
+  }
+
   setRoute(pts) {
     this.route.set(pts, (x, z) => this.#terrainAt(x, z).groundAt(x, z));
     this.routePts = pts?.length > 1 ? pts : null;

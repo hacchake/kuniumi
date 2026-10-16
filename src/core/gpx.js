@@ -38,6 +38,23 @@ export function parseGpx(text) {
   return pts;
 }
 
+// GPX の地点（wpt）：[{ lat, lon, name, ele }]（名前の無いものは除く）
+export function parseGpxWaypoints(text) {
+  const out = [];
+  const re = /<wpt\b([^>]*?)(\/>|>([\s\S]*?)<\/wpt>)/g;
+  const un = (s) => s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&').trim();
+  let m;
+  while ((m = re.exec(text))) {
+    const lat = parseFloat(/\blat\s*=\s*["']([^"']+)["']/.exec(m[1])?.[1]);
+    const lon = parseFloat(/\blon\s*=\s*["']([^"']+)["']/.exec(m[1])?.[1]);
+    const name = un(/<name>([\s\S]*?)<\/name>/.exec(m[3] ?? '')?.[1] ?? '');
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || !name) continue;
+    const ele = parseFloat(/<ele>\s*([^<]+)<\/ele>/.exec(m[3] ?? '')?.[1]);
+    out.push({ lat, lon, name, ele: Number.isFinite(ele) ? ele : null });
+  }
+  return out;
+}
+
 // 経路の長さ (m)（大円距離の和）
 export function routeLength(pts) {
   let d = 0;
