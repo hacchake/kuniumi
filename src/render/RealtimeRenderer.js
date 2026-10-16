@@ -81,7 +81,7 @@ export class RealtimeRenderer {
     // 太陽光
     this.sun = new THREE.DirectionalLight(0xffffff, 3);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(4096, 4096);
+    this.sun.shadow.mapSize.set(2048, 2048); // 影の範囲はカメラの見ている辺りだけなので 2048 で足りる
     this.sun.shadow.bias = -0.0002;
     this.world.add(this.sun, this.sun.target);
     // 夜の光（月明かり・星明かり）。太陽が沈むと強くなる
@@ -90,8 +90,8 @@ export class RealtimeRenderer {
 
     // 水
     this.water = new Water(createWaterDisc(2e7), {
-      textureWidth: 1024,
-      textureHeight: 1024,
+      textureWidth: 512, // 映り込みは波で揺らぐので半分の細かさで十分（軽くする）
+      textureHeight: 512,
       waterNormals: createWaterNormals(),
       sunDirection: new THREE.Vector3(0, 1, 0),
       sunColor: 0xffffff,
@@ -558,10 +558,10 @@ export class RealtimeRenderer {
       cam.near = 1;
       cam.far = reach * 2;
       cam.updateProjectionMatrix();
-      this.sun.shadow.normalBias = ((half * 2) / 4096) * 1.5;
+      this.sun.shadow.normalBias = ((half * 2) / 2048) * 1.5;
     }
     // 影の地図の格子に合わせて動かす（動かしたときに影の縁がちらつかない）
-    const step = (half * 2) / 4096;
+    const step = (half * 2) / 2048;
     const cx = Math.round(target.x / step) * step, cz = Math.round(target.z / step) * step;
     this.sun.target.position.set(cx, target.y, cz);
     this.sun.position.set(cx, target.y, cz).addScaledVector(dir, reach);
@@ -673,7 +673,7 @@ export class RealtimeRenderer {
     // 世界座標のうちに：水面をカメラの真下へ、太陽の影をカメラの見ている辺りへ
     this.water.position.set(cam.position.x, s.water.level, cam.position.z);
     this.#placeSun(s);
-    if (this.terrain) this.trees.update(s, cam.position, this.treeTerrain);
+    if (this.terrain) this.trees.update(s, cam.position, this.treeTerrain, this.controls.target.clone().sub(cam.position));
     const shift = new THREE.Vector3(ox, 0, oz);
     const flatPos = cam.position.clone();
     const flatQuat = cam.quaternion.clone();

@@ -93,7 +93,12 @@ export class RealtimeTrees {
   }
 
   // s: シーン、cam: カメラ（世界座標）、terrain: { sample(x,z), groundAt(x,z) }
-  update(s, cam, terrain) {
+  // fwd: 見ている向き（視野の外の遠い木は描かない）
+  update(s, cam, terrain, fwd = null) {
+    this.fwd = fwd ? new THREE.Vector3(fwd.x, 0, fwd.z) : null;
+    const lookDown = !fwd || Math.abs(fwd.y) / Math.max(1e-6, fwd.length()) > 0.75;
+    if (lookDown || this.fwd.lengthSq() < 1e-9) this.fwd = null;
+    else this.fwd.normalize();
     const veg = s.vegetation;
     const t = s.terrain;
     const enabled = veg && veg.trees > 0 && terrain;
@@ -122,7 +127,8 @@ export class RealtimeTrees {
       return;
     }
     // カメラがほとんど動かず、生やし終えていれば何もしない
-    if (!this.dirty && !this.pending && this.lastScan && Math.hypot(cam.x - this.lastScan.x, cam.z - this.lastScan.z) < 24 && Math.abs(reach - this.lastScan.reach) < 50) return;
+    const turned = this.#turned();
+    if (!this.dirty && !this.pending && !turned && this.lastScan && Math.hypot(cam.x - this.lastScan.x, cam.z - this.lastScan.z) < 24 && Math.abs(reach - this.lastScan.reach) < 50) return;
     this.lastScan = { x: cam.x, z: cam.z, reach };
     // 要る区画を近い順に生やす（1 フレームにいくつかずつ）
     const bi0 = Math.floor(cam.x / BLOCK), bj0 = Math.floor(cam.z / BLOCK);
@@ -153,7 +159,7 @@ export class RealtimeTrees {
     }
     // 近い・遠いの振り分けは、カメラが少し動いたら
     const moved = !this.lastBuild || Math.hypot(cam.x - this.lastBuild.x, cam.z - this.lastBuild.z) > NEAR * 0.25;
-    if (this.dirty || moved) this.#build(cam, reach);
+    if (this.dirty || moved || turned) this.#build(cam, reach);
   }
 
   // 歩く人（半径 body）が木の幹にめり込んでいたら外へ押し出す。押し出したら true
@@ -203,6 +209,9 @@ export class RealtimeTrees {
   #build(cam, reach) {
     this.dirty = false;
     this.lastBuild = { x: cam.x, z: cam.z };
+    this.builtFwd = this.fwd ? this.fwd.clone() : null;
+    const F = this.fwd;
+    const COS = 0.26; // 視野（左右およそ 75° まで）の外の遠い木は省く
     // 原点は 4096 m ごと（木の座標を小さな数で持つ）
     const ox = Math.round(cam.x / 4096) * 4096, oz = Math.round(cam.z / 4096) * 4096;
     this.group.position.set(ox, 0, oz);
@@ -217,6 +226,7 @@ export class RealtimeTrees {
             lists.near[kind].push(L[k] - ox, L[k + 1], L[k + 2] - oz, L[k + 3], L[k + 4]);
             continue;
           }
+          if (F && ((L[k] - cam.x) * F.x + (L[k + 2] - cam.z) * F.z) / d < COS) continue;
           // 1 km より先は 2 本に 1 本へ間引き、少し大きくして森の見た目の密度を保つ
           if (d > THIN && (k / 5) % 2 === 1) continue;
           lists.far[kind].push(L[k] - ox, L[k + 1], L[k + 2] - oz, L[k + 3] * (d > THIN ? 1.25 : 1), L[k + 4]);
@@ -230,6 +240,14 @@ export class RealtimeTrees {
       fillInstances(crown, near, 0.35, kind === 'conifer' ? 3 : 5);
       fillInstances(this.far[kind][0], far, 0.35, kind === 'conifer' ? 3 : 5);
     }
+  }
+
+  // 向きが 20° 以上変わったか（描く木を選び直す）
+  #turned() {
+    const a = this.builtFwd, b = this.fwd;
+    if (!a && !b) return false;
+    if (!a || !b) return true;
+    return a.dot(b) < Math.cos((20 * Math.PI) / 180);
   }
 
   #setCounts(n) {
