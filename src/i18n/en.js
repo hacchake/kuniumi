@@ -472,4 +472,12 @@ export const EN = {
   "このブラウザでは録画できません": "Recording is not supported in this browser",
   "録画中": "REC",
   "動画を保存しました": "Video saved",
+  "天気": "Weather",
+  "快晴": "Clear",
+  "晴れ": "Fine",
+  "薄曇り": "Thin clouds",
+  "曇り": "Overcast",
+  "霧": "Fog",
+  "かすみ（春）": "Spring haze",
+  "天気のひな形を選ぶと、雲・かすみ・霧・光の筋がまとめて変わる（その後も一つずつ調整できる）": "Choose a weather preset to change clouds, haze, fog and light rays together (fine-tune afterwards)",
 };

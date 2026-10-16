@@ -127,7 +127,7 @@ button, select, input { font: inherit; color: inherit; }
   display: grid; grid-template-columns: 92px 1fr 58px 18px; align-items: center; gap: 8px; font-size: 12.5px;
 }
 .row-label { color: #cfc9b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.row-select, .row-seed, .row-color, .row-toggle { grid-template-columns: 92px 1fr auto; }
+.row-select, .row-seed, .row-color, .row-toggle, .row-weather { grid-template-columns: 92px 1fr auto; }
 .row-sunTime { grid-template-columns: 76px 1fr auto auto; }
 .unit { font-size: 10.5px; color: var(--muted); }
 .row input[type='number'] {

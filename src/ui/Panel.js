@@ -2,6 +2,16 @@ import { getIn, RESOLUTIONS, SIZE_MIN, SIZE_MAX, createDefaultScene } from '../c
 import { solarPosition } from '../core/sun.js';
 import { t } from '../i18n/index.js';
 
+// 天気のひな形（大気の項目をまとめて変える）
+const WEATHER = {
+  clear: { label: '快晴', set: { clouds: 0, cloudDensity: 0.4, turbidity: 2, haze: 0.12, mieCoefficient: 0.003, fogHeight: 400, rays: 0.4 } },
+  fine: { label: '晴れ', set: { clouds: 0.3, cloudDensity: 0.5, turbidity: 3.5, haze: 0.22, mieCoefficient: 0.006, fogHeight: 900, rays: 0.65 } },
+  thin: { label: '薄曇り', set: { clouds: 0.6, cloudDensity: 0.35, turbidity: 5, haze: 0.35, mieCoefficient: 0.008, fogHeight: 1200, rays: 0.5 } },
+  cloudy: { label: '曇り', set: { clouds: 0.92, cloudDensity: 0.8, cloudThickness: 1500, turbidity: 7, haze: 0.5, mieCoefficient: 0.01, fogHeight: 1500, rays: 0.3 } },
+  fog: { label: '霧', set: { clouds: 0.5, cloudDensity: 0.6, turbidity: 9, haze: 1.0, mieCoefficient: 0.02, fogHeight: 2500, rays: 0.8 } },
+  hazy: { label: 'かすみ（春）', set: { clouds: 0.15, cloudDensity: 0.4, turbidity: 10, haze: 0.7, mieCoefficient: 0.015, fogHeight: 1500, rays: 0.6 } },
+};
+
 // 項目の説明（マウスを乗せると出る）
 const HINTS = {
   'terrain.noise.seed': '地形の元になる乱数。数字を変えると別の大地になる（⟳ で無作為に）',
@@ -9,6 +19,7 @@ const HINTS = {
   'terrain.detail': '高さ場の格子より細かい所に足す小さな起伏。近づいたときの平らな面を和らげる',
   'terrain.labels': '地球から取り込んだ地形に、山（標高つき）・市・町・村の名前を出す（OpenStreetMap）',
   'sun.when': '日時を選んで「合わせる」と、その場所（地球から取り込んだ地形ならその中心、ほかは東京）の実際の太陽の高さと方位にする',
+  'atmosphere.weather': '天気のひな形を選ぶと、雲・かすみ・霧・光の筋がまとめて変わる（その後も一つずつ調整できる）',
   'terrain.photo': '地球から取り込んだ地形の色を、衛星写真（Sentinel-2 cloudless・NASA Blue Marble）にする。切ると標高と傾きから塗る',
   'planet.curvature': '星の丸みを描く。遠くの地面や海が地平線の向こうへ沈み、高く昇ると丸い星が見える',
   'planet.radius': '星の半径。地球は 6371 km。小さいほど地平線が近く、丸みが強い',
@@ -145,6 +156,7 @@ const SECTIONS = [
     title: '大気',
     sub: 'Atmosphere',
     fields: [
+      { path: 'atmosphere.weather', label: '天気', type: 'weather' },
       { path: 'atmosphere.rayleigh', label: '空の青さ', min: 0, max: 8, step: 0.01 },
       { path: 'atmosphere.turbidity', label: '大気の濁り', min: 0.5, max: 20, step: 0.1 },
       { path: 'atmosphere.mieCoefficient', label: '光の散乱', min: 0, max: 0.05, step: 0.0005 },
@@ -244,7 +256,7 @@ export class Panel {
     const changes = {};
     for (const f of sec.fields) {
       // 種と生成方法は作品の中身そのものなので戻さない
-      if (f.type === 'seed' || f.type === 'sizePreset' || f.type === 'sunTime' || f.path === 'terrain.mode') continue;
+      if (f.type === 'seed' || f.type === 'sizePreset' || f.type === 'sunTime' || f.type === 'weather' || f.path === 'terrain.mode') continue;
       changes[f.path] = getIn(def, f.path);
     }
     this.store.patch(changes, { source: 'ui-reset' });
@@ -261,6 +273,22 @@ export class Panel {
     row.appendChild(name);
     const set = (v) => this.store.set(f.path, v, { source: 'ui' });
 
+    if (f.type === 'weather') {
+      // 天気のひな形：雲・かすみ・霧・光の筋をまとめて変える（選んだ後も一つずつ調整できる）
+      const sel = document.createElement('select');
+      sel.add(new Option(t('— 選ぶ —'), ''));
+      for (const [k, w] of Object.entries(WEATHER)) sel.add(new Option(t(w.label), k));
+      sel.onchange = () => {
+        const w = WEATHER[sel.value];
+        sel.value = '';
+        if (!w) return;
+        const changes = {};
+        for (const [k, v] of Object.entries(w.set)) changes[`atmosphere.${k}`] = v;
+        this.store.patch(changes, { source: 'ui' });
+      };
+      row.appendChild(sel);
+      return row;
+    }
     if (f.type === 'sunTime') {
       // その場所（地球から取り込んだ地形ならその中心、ほかは東京）の、選んだ日時の実際の太陽にする
       const when = document.createElement('input');
