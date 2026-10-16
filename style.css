@@ -461,3 +461,7 @@ body.walking #create { display: none; }
 /* 録画中の止めるボタン（地球モードの上にも出す） */
 .rec-stop { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); z-index: 40; background: rgba(160, 30, 30, 0.85); color: #fff; border: 1px solid rgba(255, 255, 255, 0.5); border-radius: 999px; padding: 6px 14px; font: inherit; font-size: 13px; cursor: pointer; font-variant-numeric: tabular-nums; }
 .rec-stop[hidden] { display: none; }
+.globe-fav-head { font-size: 11px; color: var(--muted); padding: 4px 8px 2px; }
+.globe-fav { display: flex; align-items: center; }
+.globe-fav > button:first-child { flex: 1; }
+.globe-results .globe-fav-del { flex: none; width: 28px; text-align: center; color: var(--muted); }

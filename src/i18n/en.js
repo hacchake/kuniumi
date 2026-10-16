@@ -501,4 +501,8 @@ export const EN = {
   "その場所のその日時の実際の太陽にする。▶ で時刻を進めて一日の光を眺める": "Use the real sun for that place and time. ▶ advances time to watch a whole day",
   "録画": "Recording",
   "ファイル → 画面を録画（動画）。■ で止めて保存": "File → Record screen (video). Press ■ to stop and save",
+  "いま見ている所をお気に入りに（検索の欄をたたくと一覧）": "Add the spot in view to favorites (tap the search box for the list)",
+  "お気に入りに入れました：{name}": "Added to favorites: {name}",
+  "お気に入り": "Favorites",
+  "お気に入りから外す": "Remove from favorites",
 };

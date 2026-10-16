@@ -100,6 +100,7 @@ export class GlobeMode {
               <option value="10">×10</option>
             </select>
           </label>
+          <button type="button" data-fav title="${t('いま見ている所をお気に入りに（検索の欄をたたくと一覧）')}">☆</button>
           <button type="button" data-home title="${t('地球全体を見渡す')}">🌏 ${t('全体')}</button>
           <button type="button" data-walk title="${t('いま見ている所を取り込んで、地上に降りて歩く')}">🚶 ${t('ここに降りて歩く')}</button>
           <button type="button" class="primary" data-import title="${t('いま見ている辺りを、細かい景観として取り込む（歩く・一枚絵ができる）')}">⤓ ${t('ここを景観に取り込む')}</button>
@@ -132,6 +133,9 @@ export class GlobeMode {
     });
     this.sunSel.onchange = () => this.renderer && (this.renderer.sunMode = this.sunSel.value);
     this.exagSel.onchange = () => this.renderer?.setExaggeration(Number(this.exagSel.value));
+    el.querySelector('[data-fav]').onclick = () => this.#addFavorite();
+    // 検索の欄をたたいたら（空のとき）お気に入りの一覧
+    for (const ev of ['focus', 'click']) this.q.addEventListener(ev, () => !this.q.value.trim() && this.#showFavorites());
     el.querySelector('[data-home]').onclick = () => this.renderer?.flyTo({ lat: this.renderer.view.lat, lon: this.renderer.view.lon, range: 2.2e7, tilt: 0 });
     el.querySelector('[data-close]').onclick = () => this.close();
     el.querySelector('[data-import]').onclick = () => this.#import();
@@ -172,6 +176,64 @@ export class GlobeMode {
       }
     } catch (err) {
       this.results.textContent = t('地名を検索できませんでした: {msg}', { msg: err.message ?? err });
+    }
+  }
+
+  // ---- お気に入り（このブラウザに残す） ----
+  #favorites() {
+    try {
+      return JSON.parse(localStorage.getItem('kuniumi.globe.favorites') || '[]');
+    } catch {
+      return [];
+    }
+  }
+
+  #saveFavorites(list) {
+    try {
+      localStorage.setItem('kuniumi.globe.favorites', JSON.stringify(list.slice(0, 50)));
+    } catch {}
+  }
+
+  async #addFavorite() {
+    const v = this.renderer?.view;
+    if (!v) return;
+    const name = this.place && this.placeFor && Math.abs(this.placeFor.lat - v.lat) < 1e-6 ? this.place.split('、')[0] : await this.#placeName(v.lat, v.lon, v.range);
+    const list = this.#favorites().filter((f) => f.name !== name);
+    list.unshift({ name, lat: v.lat, lon: v.lon, range: v.range, heading: v.heading, tilt: v.tilt });
+    this.#saveFavorites(list);
+    this.toast?.(t('お気に入りに入れました：{name}', { name }));
+  }
+
+  #showFavorites() {
+    const list = this.#favorites();
+    if (!list.length) return;
+    this.results.hidden = false;
+    this.results.textContent = '';
+    const head = document.createElement('div');
+    head.className = 'globe-fav-head';
+    head.textContent = t('お気に入り');
+    this.results.appendChild(head);
+    for (const f of list) {
+      const row = document.createElement('div');
+      row.className = 'globe-fav';
+      const go = document.createElement('button');
+      go.type = 'button';
+      go.textContent = `☆ ${f.name}`;
+      go.onclick = () => {
+        this.results.hidden = true;
+        this.renderer?.flyTo({ lat: f.lat, lon: f.lon, range: f.range, heading: f.heading, tilt: f.tilt });
+      };
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'globe-fav-del';
+      del.textContent = '×';
+      del.title = t('お気に入りから外す');
+      del.onclick = () => {
+        this.#saveFavorites(this.#favorites().filter((x) => !(x.name === f.name && x.lat === f.lat)));
+        row.remove();
+      };
+      row.append(go, del);
+      this.results.appendChild(row);
     }
   }
 
