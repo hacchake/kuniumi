@@ -1,7 +1,7 @@
 // 地球モードの標高タイルを取り寄せて、描くための形にする（メインスレッドを止めない）。
 //   grid: 区画の頂点の標高（33 × 33、m）
 //   tex : 256 × 256 の RGBA 半精度（R, G = 東・北への傾き、B = 標高 m、A = 1）
-import { TERRARIUM_URL, TILE } from '../core/geo.js';
+import { TERRARIUM_URL, TILE, repairElevation } from '../core/geo.js';
 import { decodePng } from '../core/png16.js';
 import { GLOBE_R, mercYToLat, sampleGrid } from '../core/globe.js';
 
@@ -82,7 +82,7 @@ async function fetchTile(z, x, y) {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const buf = await r.arrayBuffer();
       const img = await decodePng(buf, { terrarium: true });
-      if (img && img.width === TILE) return img.data;
+      if (img && img.width === TILE) return repairElevation(img.data, TILE);
       throw new Error('PNG');
     } catch (err) {
       if (attempt >= 2) throw err;

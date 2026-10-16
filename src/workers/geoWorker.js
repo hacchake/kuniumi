@@ -1,6 +1,6 @@
 // 公開されている標高タイルを取り寄せて、大地の高さ場（標高 m、res × res、行 0 = 北）を作る。
 // 取り寄せと解釈と標本化はここ（メインスレッドを止めない）。
-import { TERRARIUM_URL, TILE, lonLatToTile, gridLonLat, chooseZoom, tilesFor, decodeTerrarium } from '../core/geo.js';
+import { TERRARIUM_URL, TILE, lonLatToTile, gridLonLat, chooseZoom, tilesFor, decodeTerrarium, repairElevation } from '../core/geo.js';
 import { decodePng } from '../core/png16.js';
 import { imageryUrl, IMAGERY_MAX_ZOOM } from '../core/globe.js';
 
@@ -77,8 +77,8 @@ async function fetchTile(t) {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const buf = await r.arrayBuffer();
       const img = await decodePng(buf, { terrarium: true });
-      if (img && img.width === TILE) return img.data;
-      return await decodeWithBitmap(buf);
+      if (img && img.width === TILE) return repairElevation(img.data, TILE);
+      return repairElevation(await decodeWithBitmap(buf), TILE);
     } catch (err) {
       if (attempt === 2) throw new Error(`標高タイルを取り寄せられません（${url}）: ${err.message ?? err}`);
       await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));

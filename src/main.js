@@ -7,6 +7,7 @@ import '@fontsource/zen-kaku-gothic-new/700.css';
 import { createDefaultScene, normalizeScene, deepMerge, EARTH_RADIUS } from './core/schema.js';
 import { GeoDialog } from './ui/GeoDialog.js';
 import { GlobeMode } from './ui/GlobeMode.js';
+import { MiniMap } from './ui/MiniMap.js';
 import { loadSkeleton, loadBigParts, saveScene } from './io/autosave.js';
 import { createStore } from './core/store.js';
 import { PRESETS } from './core/presets.js';
@@ -493,8 +494,10 @@ stillActions.addEventListener('click', async (e) => {
 const walkBtn = document.getElementById('walk-btn');
 const hintEl = document.querySelector('.hint');
 const hintDefault = hintEl?.textContent ?? '';
+const miniMap = new MiniMap(document.getElementById('stage'), view, store);
 view.onWalk = (mode, speed) => {
   walkBtn.classList.toggle('active', !!mode);
+  miniMap.show(!!mode);
   document.body.classList.toggle('walking', !!mode);
   walkBtn.textContent = mode ? t('✕ 歩くのをやめる') : t('🚶 歩く');
   if (!hintEl) return;

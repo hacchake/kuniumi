@@ -433,3 +433,11 @@ body.walking #create { display: none; }
 .globe-side button:hover { border-color: var(--gold); }
 .globe-compass span { font-size: 13px; font-weight: 700; color: var(--danger); display: block; position: relative; }
 .globe-compass span::after { content: ''; position: absolute; left: 50%; top: 100%; margin-left: -1px; width: 2px; height: 9px; background: var(--muted); }
+
+/* 歩いている間の地図 */
+.minimap { position: absolute; right: 12px; top: 12px; width: 170px; height: 170px; border-radius: 12px; overflow: hidden; border: 1.5px solid rgba(233, 228, 216, 0.4); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45); z-index: 24; cursor: pointer; background: #0b0f1a; }
+.minimap[hidden] { display: none; }
+.minimap canvas { width: 100%; height: 100%; display: block; }
+.minimap-scale { position: absolute; left: 8px; bottom: 6px; font-size: 10.5px; color: #fff; text-shadow: 0 1px 2px #000; padding-top: 3px; }
+.minimap-scale::before { content: ''; position: absolute; left: 0; top: 0; width: var(--w, 40px); height: 3px; border: 1px solid #fff; border-top: 0; box-shadow: 0 1px 2px #000; }
+@media (max-width: 720px) { .minimap { width: 130px; height: 130px; } }

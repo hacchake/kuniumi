@@ -182,3 +182,38 @@ describe('海か陸か（衛星写真も使う）', () => {
     expect(one([0.275, 0.275, 0.227].map(enc))).toBeLessThan(0.05); // 街
   });
 });
+
+describe('標高タイルのデータ無しを埋める', () => {
+  it('−32768 m の画素は周りの値に、正しい値はそのまま', async () => {
+    const { repairElevation } = await import('../src/core/geo.js');
+    const a = new Float32Array(16).fill(5);
+    a[5] = -32768;
+    a[6] = -32768;
+    repairElevation(a, 4);
+    expect(a[5]).toBeGreaterThan(0);
+    expect(a[6]).toBeGreaterThan(-3000);
+    expect(a[0]).toBe(5);
+  });
+});
+
+describe('標高タイルの偽の穴を埋める', () => {
+  it('平野の小さな深い穴（縁の中途半端な値も）は埋め、山の起伏や深い海はそのまま', async () => {
+    const { repairElevation } = await import('../src/core/geo.js');
+    const N = 64;
+    const a = new Float32Array(N * N).fill(2);
+    // 平野の穴（中心 −22000、縁 −3000）
+    a[20 * N + 20] = -22000;
+    a[20 * N + 21] = -3000;
+    a[21 * N + 20] = -1300;
+    // 右下の区画は急な山（0〜1500 m の斜面）
+    for (let j = 48; j < 64; j++) for (let i = 48; i < 64; i++) a[j * N + i] = (i - 48) * 100;
+    // 左下の区画は深い海
+    for (let j = 48; j < 64; j++) for (let i = 0; i < 16; i++) a[j * N + i] = -4000;
+    repairElevation(a, N);
+    expect(a[20 * N + 20]).toBeGreaterThan(-10);
+    expect(a[20 * N + 21]).toBeGreaterThan(-10);
+    expect(a[21 * N + 20]).toBeGreaterThan(-10);
+    expect(a[50 * N + 48]).toBe(0); // 斜面の下端はそのまま
+    expect(a[50 * N + 5]).toBe(-4000);
+  });
+});

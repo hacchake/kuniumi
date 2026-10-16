@@ -458,4 +458,5 @@ export const EN = {
   "いまいる場所へ": "Go to my location",
   "この端末では位置情報を使えません": "Location is not available on this device",
   "位置情報を取得できませんでした: {msg}": "Could not get your location: {msg}",
+  "たたくと地図の広さが変わる": "Tap to change the map scale",
 };

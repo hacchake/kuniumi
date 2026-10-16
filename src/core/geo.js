@@ -218,3 +218,70 @@ export function featherToSurround(inner, res, size, outer, ores, osize, frac = 0
   }
   return out;
 }
+
+// 標高タイルの「データ無し」の画素（terrarium では約 −32768 m）を、周りの正しい値で埋める。
+// そのままだと補間で周りに広がり、平野に −2 万 m の穴があく。いちばん深い海溝（約 −11000 m）より深い値は無いものとみなす
+export const MIN_VALID_ELEVATION = -11500;
+export function repairElevation(a, size) {
+  const bad = new Uint8Array(a.length);
+  let nBad = 0;
+  for (let k = 0; k < a.length; k++) {
+    if (!(a[k] >= MIN_VALID_ELEVATION) || a[k] > 9000) {
+      bad[k] = 1;
+      nBad++;
+    }
+  }
+  // 偽の穴：元データには、平野に −2 万 m などの小さな穴の塊があり、その縁も補間で中途半端に深くなっている。
+  // 16 × 16 画素の区画ごとに中央値とばらつき（四分位の幅）を求め、そこから飛び抜けて低い所を穴とみなす
+  const B = 16;
+  const nb = Math.ceil(size / B);
+  const med = new Float32Array(nb * nb), thr = new Float32Array(nb * nb);
+  const buf = [];
+  for (let bj = 0; bj < nb; bj++) {
+    for (let bi = 0; bi < nb; bi++) {
+      buf.length = 0;
+      for (let j = bj * B; j < Math.min(size, bj * B + B); j++) for (let i = bi * B; i < Math.min(size, bi * B + B); i++) if (!bad[j * size + i]) buf.push(a[j * size + i]);
+      if (buf.length < 8) {
+        med[bj * nb + bi] = NaN;
+        continue;
+      }
+      buf.sort((x, y) => x - y);
+      const q = (f) => buf[Math.min(buf.length - 1, Math.floor(f * buf.length))];
+      med[bj * nb + bi] = q(0.5);
+      thr[bj * nb + bi] = Math.max(150, 4 * (q(0.75) - q(0.25)));
+    }
+  }
+  for (let j = 0; j < size; j++) {
+    for (let i = 0; i < size; i++) {
+      const k = j * size + i;
+      if (bad[k]) continue;
+      const b = Math.floor(j / B) * nb + Math.floor(i / B);
+      if (a[k] < med[b] - thr[b]) {
+        bad[k] = 1;
+        nBad++;
+      }
+    }
+  }
+  if (!nBad) return a;
+  if (nBad === a.length) return a.fill(0);
+  // 正しい隣の平均で、外側から少しずつ埋める
+  for (let pass = 0; nBad > 0 && pass < size * 2; pass++) {
+    const fill = [];
+    for (let k = 0; k < a.length; k++) {
+      if (!bad[k]) continue;
+      const i = k % size, j = (k - i) / size;
+      let s = 0, c = 0;
+      if (i > 0 && !bad[k - 1]) (s += a[k - 1]), c++;
+      if (i < size - 1 && !bad[k + 1]) (s += a[k + 1]), c++;
+      if (j > 0 && !bad[k - size]) (s += a[k - size]), c++;
+      if (j < size - 1 && !bad[k + size]) (s += a[k + size]), c++;
+      if (c) fill.push(k, s / c);
+    }
+    for (let q = 0; q < fill.length; q += 2) {
+      a[fill[q]] = fill[q + 1];
+      bad[fill[q]] = 0;
+      nBad--;
+    }
+  }
+  return a;
+}
