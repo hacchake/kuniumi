@@ -122,7 +122,35 @@ export class RealtimeRenderer {
     this.water.material.uniforms.kWaterGain = { value: 1 };
     this.water.material.fragmentShader = this.water.material.fragmentShader
       .replace('uniform vec3 waterColor;', 'uniform vec3 waterColor;\nuniform float kWaterGain;')
-      .replace(/vec3 albedo = mix\([^;]*\);/, (m) => `${m}\nalbedo *= kWaterGain;`);
+      .replace(/vec3 albedo = mix\([^;]*\);/, (m) => `${m}\nalbedo *= kWaterGain;`)
+      // 雨の波紋：0.7 m と 1.1 m の升目ごとに 1 つ、広がって消える輪。近く（約 60 m まで）だけ
+      .replace('void main() {', `uniform float kRain;
+vec2 kRipple( vec2 p, float cell, float t ) {
+  vec2 c = floor( p / cell ), f = fract( p / cell ) - 0.5;
+  float h = fract( sin( dot( c, vec2( 12.9898, 78.233 ) ) ) * 43758.5453 );
+  float h2 = fract( h * 91.73 );
+  float ph = fract( t * 0.9 + h );
+  vec2 d = f - ( vec2( h, h2 ) - 0.5 ) * 0.5;
+  float r = length( d ), R = ph * 0.42;
+  float ring = sin( ( r - R ) * 60.0 ) * smoothstep( 0.07, 0.0, abs( r - R ) ) * ( 1.0 - ph ) * ( 1.0 - ph );
+  return d / max( r, 1e-3 ) * ring;
+}
+void main() {`)
+      .replace(
+        // 丸みの処理（curveWater）で書き換えた後の法線に足す。位置は原点をずらしても動かない平らな地図の座標
+        'surfaceNormal = kCurveN( vKFlat, surfaceNormal );',
+        `if ( kRain > 0.0 ) {
+          float rf = kRain * ( 1.0 - smoothstep( 15.0, 60.0, length( eye - worldPosition.xyz ) ) );
+          if ( rf > 0.0 ) {
+            float tt = time / 0.6;
+            vec2 wp = vKFlat.xz + kWaterOrigin;
+            vec2 rp = kRipple( wp, 0.7, tt ) + kRipple( wp + 17.3, 1.1, tt * 0.8 + 0.37 );
+            surfaceNormal = normalize( surfaceNormal + vec3( rp.x, 0.0, rp.y ) * 0.6 * rf );
+          }
+        }
+        surfaceNormal = kCurveN( vKFlat, surfaceNormal );`,
+      );
+    this.water.material.uniforms.kRain = { value: 0 };
     // Water シェーダは霧をトーンマップの「後」に混ぜる。霧の色は物理的な明るさ（1 を超える）なので、
     // そのままでは遠くの水面が白く飛ぶ。霧を先に混ぜてから、ほかの物体と同じようにトーンマップする
     const wfs = this.water.material.fragmentShader;
@@ -515,6 +543,7 @@ export class RealtimeRenderer {
       this.gpuTerrain.uniforms.tWet.value = wet;
       if (this.surround) this.surround.terrain.uniforms.tWet.value = wet;
       this.storm = a.precip === 'storm';
+      this.water.material.uniforms.kRain.value = wet;
       this.baseExposure = a.exposure;
       this.precipLight = 1 - nightFactor(s.sun.elevation) * 0.8;
       this.#applyLights();
