@@ -237,7 +237,7 @@ export class GlobeRenderer {
     ring([...Array(n).keys()].map((i) => GRID * n + i)); // 南の縁
     ring([...Array(n).keys()].map((j) => j * n)); // 西の縁
     ring([...Array(n).keys()].map((j) => j * n + GRID)); // 東の縁
-    this.uvAttr = new THREE.Float32BufferAttribute(uv, 2);
+    this.uvArr = new Float32Array(uv);
     this.indexArr = new Uint16Array(idx);
   }
 
@@ -275,7 +275,9 @@ export class GlobeRenderer {
     } else {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      g.setAttribute('uv', this.uvAttr);
+      // 並びの配列は共有してよいが、属性（GPU のバッファ）はタイルごとに作る。
+      // 共有すると、片付けたタイルの dispose() が共有のバッファまで消し、ほかのタイルが描かれなくなる
+      g.setAttribute('uv', new THREE.BufferAttribute(this.uvArr, 2));
       g.setIndex(new THREE.BufferAttribute(this.indexArr, 1));
       const m = new THREE.ShaderMaterial({ uniforms: { ...this.shared, tex: { value: t.tex }, img: { value: null }, imgXf: { value: new THREE.Vector3(0, 0, 1) }, imgHas: { value: 0 } }, vertexShader: this.vert, fragmentShader: this.frag });
       t.mesh = new THREE.Mesh(g, m);
@@ -327,15 +329,16 @@ export class GlobeRenderer {
       })
       .catch(() => setTimeout(() => this.images.delete(key), 20000)) // しばらくしてからまた試す
       .finally(() => this.imgLoading--);
-    // 使われなくなった写真を片付ける
-    if (this.images.size > 400) {
-      const list = [...this.images.entries()].filter(([k, v]) => v.tex && !k.startsWith('0/') && v.used < this.frameNo - 2);
-      list.sort((a, b) => a[1].used - b[1].used);
-      for (const [k, v] of list.slice(0, this.images.size - 300)) {
-        v.tex.dispose();
-        v.tex.image?.close?.();
-        this.images.delete(k);
-      }
+  }
+
+  // 使われなくなった写真を片付ける（そのコマのタイルに全部割り当て終えてから。割り当て中に消すと、消した写真を描こうとしてしまう）
+  #evictImages() {
+    if (this.images.size <= 400) return;
+    const list = [...this.images.entries()].filter(([k, v]) => v.tex && !k.startsWith('0/') && v.used < this.frameNo - 30);
+    list.sort((a, b) => a[1].used - b[1].used);
+    for (const [k, v] of list.slice(0, this.images.size - 300)) {
+      v.tex.dispose();
+      this.images.delete(k);
     }
   }
 
@@ -755,6 +758,7 @@ export class GlobeRenderer {
     // 見えなくなった所の注文は取り消す
     if (this.frameNo % 30 === 0) this.worker.postMessage({ cancel: true, keep: need.map((x) => x.t.key) });
     this.#evict();
+    this.#evictImages();
   }
 
   #evict() {
