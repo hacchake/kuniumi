@@ -19,6 +19,7 @@ import { Precipitation } from './Precipitation.js';
 import { Rainbow } from './Rainbow.js';
 import { Fireflies } from './Fireflies.js';
 import { Moon } from './Moon.js';
+import { Footprints } from './Footprints.js';
 import { Aurora } from './Aurora.js';
 import { ShootingStars } from './ShootingStars.js';
 import { RealtimeTrees } from './RealtimeTrees.js';
@@ -186,6 +187,7 @@ void main() {`)
     this.objects = new ObjectLayer(this.world, this.textureService, { patchMaterial: (m) => patchStandardMaterial(m, this.shared) });
     // 木（一枚絵と同じ所に同じ木。カメラの周りだけ）
     this.trees = new RealtimeTrees(this.world, (m) => patchStandardMaterial(m, this.shared));
+    this.footprints = new Footprints(this.world, (m) => patchStandardMaterial(m, this.shared));
     this.treeTerrain = {
       sample: (x, z) => this.#terrainAt(x, z).sample(x, z),
       groundAt: (x, z) => this.#terrainAt(x, z).groundAt(x, z),
@@ -918,6 +920,7 @@ void main() {`)
         if (this.stepDist >= stride) {
           this.stepDist = 0;
           this.audio.step(surface, 1);
+          if (surface === 'snow') this.footprints.step(p.x, p.z, w.yaw, (x, z) => this.gpuTerrain.groundAt(x, z));
           if (wading) this.precip.splash(new THREE.Vector3(p.x, s.water.level, p.z).addScaledVector(w.forward().setY(0).normalize(), 1.0), w.forward().setY(0).normalize(), 1);
         }
       }
@@ -1109,6 +1112,8 @@ void main() {`)
       t.uniforms.tSnowFloor.value = floor;
     }
     this.trees?.setSnow(c * 0.85);
+    // 足跡：降り積もった雪か、冬の雪の残る季節なら見える
+    this.footprints?.setSnow(Math.max(c, s.terrain.season === 'winter' ? 1 : 0));
   }
 
   #frame() {
