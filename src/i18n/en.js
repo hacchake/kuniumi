@@ -466,4 +466,5 @@ export const EN = {
   "日時から": "From date & time",
   "合わせる": "Set",
   "日時を選んで「合わせる」と、その場所（地球から取り込んだ地形ならその中心、ほかは東京）の実際の太陽の高さと方位にする": "Pick a date and time and press Set to use the real sun position there (center of terrain imported from Earth, otherwise Tokyo)",
+  "時刻を進める（もう一度押すと止まる）": "Advance time (press again to stop)",
 };

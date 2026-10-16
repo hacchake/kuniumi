@@ -279,7 +279,30 @@ export class Panel {
         const p = solarPosition(lat, lon, d);
         this.store.patch({ 'sun.elevation': Math.round(Math.max(-12, p.elevation) * 10) / 10, 'sun.azimuth': Math.round(p.azimuth * 2) / 2 }, { source: 'ui' });
       };
-      row.append(when, go);
+      // ▶：時刻を進め続ける（0.1 秒ごとに 5 分。一日の光の移り変わりを眺める）
+      const play = document.createElement('button');
+      play.type = 'button';
+      play.className = 'sun-go sun-play';
+      play.textContent = '▶';
+      play.title = t('時刻を進める（もう一度押すと止まる）');
+      let timer = 0;
+      play.onclick = (e) => {
+        e.preventDefault();
+        if (timer) {
+          clearInterval(timer);
+          timer = 0;
+          play.textContent = '▶';
+          return;
+        }
+        play.textContent = '■';
+        timer = setInterval(() => {
+          const d = when.value ? new Date(when.value) : new Date();
+          d.setMinutes(d.getMinutes() + 5);
+          when.value = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+          go.onclick(new Event('click'));
+        }, 100);
+      };
+      row.append(when, go, play);
       return row;
     }
     if (f.type === 'sizePreset') {
