@@ -1,4 +1,5 @@
 import { valueNoise } from './terrainColor.js';
+import { photoForest } from '../io/photo.js';
 import { mulberry32, hash2 } from './noise.js';
 
 // 植生（森と草地）の規則。Three.js 非依存。
@@ -49,8 +50,13 @@ export function createVegetationRules(ctx) {
       (1 - smooth(0.006, 0.03, wv))
     );
   };
-  // 森の広がり：大きな群落と、その中の林間のすき間
-  const clump = (x, z) => smooth(0.4, 0.62, valueNoise(x / 256, z / 256, seed) * 0.7 + valueNoise(x / 64, z / 64, seed + 1) * 0.3);
+  // 森の広がり：大きな群落と、その中の林間のすき間。
+  // 衛星写真（ctx.photo、範囲の一辺 ctx.size）があれば、写真で森に見える所に木を立てる（街や畑には立てない）
+  const photo = ctx.photo ?? null;
+  const psize = ctx.size ?? 1;
+  const clump = photo
+    ? (x, z) => photoForest(photo, x / psize + 0.5, z / psize + 0.5) * (0.75 + 0.25 * valueNoise(x / 64, z / 64, seed + 1))
+    : (x, z) => smooth(0.4, 0.62, valueNoise(x / 256, z / 256, seed) * 0.7 + valueNoise(x / 64, z / 64, seed + 1) * 0.3);
 
   return {
     veg,

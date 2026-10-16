@@ -54,7 +54,8 @@ export function createDefaultScene() {
         falloff: 0.55, // 外周を沈める度合い（島・大陸づくり）
         erosion: 0.5, // 雨による侵食（谷筋と扇状地）
       },
-      heightmap: null, // { id, name, png(dataURL 16bit推奨), width, height, geo?: { 範囲・出典 } }
+      heightmap: null, // { id, name, png(dataURL 16bit推奨), width, height, geo?: { 範囲・出典 }, photo?: 衛星写真(JPEG dataURL), surround?: { …, photo? } }
+      photo: true, // 地球から取り込んだ地形で、衛星写真の色を使う（写真が無ければ手続きの色）
       palette: {
         shore: '#c9b48a',
         low: '#4d6b2f',

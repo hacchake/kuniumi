@@ -1,11 +1,13 @@
 import { createTerrainShader } from './terrainColor.js';
 import { curvePoint, curveNormal, belowWater, landLift } from './curvature.js';
+import { photoAt, PHOTO_ALBEDO } from '../io/photo.js';
 
 // 一枚絵用の「周りの地形」（地球から取り込んだ範囲の外側）のメッシュ。Three.js 非依存。
 // meters: 標高 (m) の格子（res × res、行 0 = 北）、size: 一辺 (m)。
 // 本来の地形が受け持つ内側（一辺 innerSize）にすっぽり入るマスは作らない。
 // place: { ox, oz, cx, cz, R } 原点のずらしと星の丸み（terrainLod.js と同じ）
-export function buildSurroundMesh(meters, res, size, { innerSize, terrain, water, place, maxRes = 513 }) {
+// photo: 周りの地形の衛星写真の画素（あれば陸の色に）
+export function buildSurroundMesh(meters, res, size, { innerSize, terrain, water, place, maxRes = 513, photo = null }) {
   // 粗くてよいので間引く
   const step = Math.max(1, Math.ceil((res - 1) / (maxRes - 1)));
   const n = Math.floor((res - 1) / step) + 1;
@@ -41,6 +43,12 @@ export function buildSurroundMesh(meters, res, size, { innerSize, terrain, water
       positions.set(pp, k);
       normals.set(pn, k);
       shade(y, Math.hypot(gx, gz), 0, 0, col);
+      if (photo && !(water.enabled && y < water.level)) {
+        photoAt(photo, i / (n - 1), j / (n - 1), col);
+        col[0] *= PHOTO_ALBEDO;
+        col[1] *= PHOTO_ALBEDO;
+        col[2] *= PHOTO_ALBEDO;
+      }
       colors.set(col, k);
     }
   }

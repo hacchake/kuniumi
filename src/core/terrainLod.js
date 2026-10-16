@@ -1,4 +1,5 @@
 import { createTerrainSurface } from './terrainSurface.js';
+import { photoAt, PHOTO_ALBEDO } from '../io/photo.js';
 import { createTerrainShader, valueNoise } from './terrainColor.js';
 import { createVegetationRules, placeVegetation } from './vegetation.js';
 import { curvePoint, curveNormal, belowWater, landLift } from './curvature.js';
@@ -18,7 +19,8 @@ const N = 64; // 区画 1 枚あたりの分割数
 // heightmapImage: ハイトマップ地形のときの解釈済み画像 { data, width, height }
 // place: { ox, oz, cx, cz, R } 書き出す座標の原点 (ox, oz) と、星の丸みの中心 (cx, cz)・半径 R（どれも世界座標）。
 //   数千 km の大地でも Float32 の精度を落とさないよう、原点を注視点へずらしてから丸みで曲げる
-export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000, onProgress, vegetation, heightmapImage = null, place = null } = {}) {
+// photo: 地表の衛星写真の画素 { data, width, height }（あれば色と木の広がりに使う）
+export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000, onProgress, vegetation, heightmapImage = null, place = null, photo = null } = {}) {
   const P = place ?? { ox: 0, oz: 0, cx: 0, cz: 0, R: 0 };
   const pcx = P.cx - P.ox, pcz = P.cz - P.oz;
   const pp = [0, 0, 0], pn = [0, 0, 0];
@@ -186,6 +188,14 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
           (valueNoise(x / 2, z / 2, 25) - 0.5) * 0.12 +
           (valueNoise(x / 0.5, z / 0.5, 32) - 0.5) * 0.06;
         shade(y, Math.hypot(gx, gz), wearAt(x, z), jitter, col, x, z);
+        // 衛星写真があれば陸の色は写真から（水の下は手続きの色のまま）
+        if (photo && !(water.enabled && y < water.level)) {
+          photoAt(photo, x / size + 0.5, z / size + 0.5, col);
+          const k = PHOTO_ALBEDO * (1 + jitter * 0.35);
+          col[0] *= k;
+          col[1] *= k;
+          col[2] *= k;
+        }
         colors.set(col, vo * 3);
         vo++;
       }
@@ -203,7 +213,7 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
   // ---- 木と草 ----
   let plants = null;
   if (vegetation) {
-    const rules = createVegetationRules({ heightScale, baseHeight, waterLevel: water.level, waterEnabled: water.enabled, palette: terrain.palette, vegetation, realWorld: terrain.mode === 'heightmap' && !!terrain.heightmap?.geo });
+    const rules = createVegetationRules({ heightScale, baseHeight, waterLevel: water.level, waterEnabled: water.enabled, palette: terrain.palette, vegetation, realWorld: terrain.mode === 'heightmap' && !!terrain.heightmap?.geo, photo, size });
     plants = placeVegetation(rules, size, surface.coarse, (x, z) => heightAt(x, z, 0.5), view);
     // 木と草の根元の位置も同じように移して曲げる（幹の傾きは近くでは無視できる）
     for (const list of [plants.conifer, plants.broadleaf, plants.grass]) {

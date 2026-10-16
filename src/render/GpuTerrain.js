@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { TERRAIN_SHADING_GLSL, createTerrainShadingUniforms, updateTerrainShadingUniforms } from './terrainShadingGLSL.js';
 import { CURVE_GLSL, curvePoint } from './curvatureGLSL.js';
 import { detailBaseWavelength, detailHeight, shoreFade, SHORE_FADE } from '../core/terrainDetail.js';
+import { PHOTO_ALBEDO } from '../io/photo.js';
 
 // リアルタイム表示の地形：近くは細かく、遠くは粗く（CDLOD）。数 km の島から数千 km の大陸まで同じ仕組みで描く。
 //
@@ -149,6 +150,8 @@ export class GpuTerrain {
       tDetailAmt: { value: 1 },
       tDetailL0: { value: 64 },
       tHasWear: { value: 0 },
+      tPhoto: { value: null }, // 地表の衛星写真（範囲と同じ正方形、行 0 = 北）
+      tHasPhoto: { value: 0 },
       tOriginUV: { value: new THREE.Vector2() },
       tOriginW: { value: new THREE.Vector2() }, // 原点（世界座標）
       tClipHalf: { value: 0 },
@@ -190,7 +193,7 @@ export class GpuTerrain {
           .replace('#include <beginnormal_vertex>', 'vec3 objectNormal; vec3 kTP; kTerrainVertex( kTP, objectNormal );')
           .replace('#include <begin_vertex>', 'vec3 transformed = kTP;');
         shader.fragmentShader = shader.fragmentShader
-          .replace('#include <common>', `#include <common>\n${TERRAIN_SHADING_GLSL}\nvarying float vTH, vTSlope, vTWear, vTJit, vTClump;\nvarying vec2 vTLocal, vTDetGrad;\nuniform vec2 tOriginW;\nuniform float tClipHalf;\n${CURVE_GLSL}\n${FIELD_GLSL}`)
+          .replace('#include <common>', `#include <common>\n${TERRAIN_SHADING_GLSL}\nvarying float vTH, vTSlope, vTWear, vTJit, vTClump;\nvarying vec2 vTLocal, vTDetGrad;\nuniform vec2 tOriginW;\nuniform float tClipHalf, tHasPhoto;\nuniform sampler2D tPhoto;\n${CURVE_GLSL}\n${FIELD_GLSL}`)
           // 面の向きと傾きは画素ごとに高さ場から出す（頂点の補間だと、区画の細かさが変わる所で線が出る）
           .replace(
             '#include <normal_fragment_begin>',
@@ -208,7 +211,11 @@ export class GpuTerrain {
             'if ( tClipHalf > 0.0 ) { vec2 kw = vTLocal + tOriginW; if ( max( abs( kw.x ), abs( kw.y ) ) < tClipHalf ) discard; }\n' +
             'float kPix = length( vViewPosition ) * 0.0015;\n' +
               'vec2 kG0 = tCoarseGrad( vTLocal ) + vTDetGrad;\n' +
-              'diffuseColor.rgb *= terrainColor( vTH, length( kG0 ), vTWear, vTJit + tJitterFine( vTLocal, kPix ), vTClump );',
+              'float kJ = vTJit + tJitterFine( vTLocal, kPix );\n' +
+              'vec3 kTC = terrainColor( vTH, length( kG0 ), vTWear, kJ, vTClump );\n' +
+              // 衛星写真があれば、その色を地表の色にする（細かい色むらだけ手続きの色から少し残す）
+              `if ( tHasPhoto > 0.5 ) kTC = texture2D( tPhoto, clamp( tUV( vTLocal ), 0.0, 1.0 ) ).rgb * ${PHOTO_ALBEDO.toFixed(3)} * ( 1.0 + kJ * 0.35 );\n` +
+              'diffuseColor.rgb *= kTC;',
           );
       } else {
         shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', 'vec3 kTN; vec3 transformed; kTerrainVertex( transformed, kTN );');
@@ -289,6 +296,12 @@ export class GpuTerrain {
 
   // 大きさ・起伏・色などシーンの値
   // over.size: 大地の大きさを差し替える（周りの地形用）。over.clipHalf: この半径の正方形の内側は描かない（内側は本来の地形が描く）
+  // 地表の衛星写真（THREE.Texture、無ければ null）
+  setPhoto(tex) {
+    this.uniforms.tPhoto.value = tex;
+    this.uniforms.tHasPhoto.value = tex ? 1 : 0;
+  }
+
   setScene(s, over = {}) {
     const t = over.size ? { ...s.terrain, size: over.size } : s.terrain;
     this.terrain = t;

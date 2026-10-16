@@ -15,6 +15,7 @@ import { coniferGeometry, broadleafGeometry, grassGeometry, fillInstances } from
 import { planetRadius } from '../core/schema.js';
 import { curvePoint, DISC_RATIO, DISC_SEG } from '../core/curvature.js';
 import { buildSurroundMesh } from '../core/surroundMesh.js';
+import { decodePhoto } from '../io/photo.js';
 import { decodePng } from '../core/png16.js';
 
 // 高画質の一枚絵モード。リアルタイム表示と同じシーン JSON を、別の描画器（パストレーサ）で解釈する。
@@ -84,7 +85,8 @@ export class StillJob {
       if (img) {
         const meters = new Float32Array(img.data.length);
         for (let k = 0; k < meters.length; k++) meters[k] = sur.min + img.data[k] * (sur.max - sur.min);
-        terrain.surround = buildSurroundMesh(meters, img.width, sur.size, { innerSize: s.terrain.size, terrain: s.terrain, water: s.water, place: this.place });
+        const photo = s.terrain.photo !== false && sur.photo ? await decodePhoto(sur.photo).catch(() => null) : null;
+        terrain.surround = buildSurroundMesh(meters, img.width, sur.size, { innerSize: s.terrain.size, terrain: s.terrain, water: s.water, place: this.place, photo });
       }
     }
     mark('terrain');

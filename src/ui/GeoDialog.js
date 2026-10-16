@@ -2,6 +2,7 @@ import { t } from '../i18n/index.js';
 import { GEO_PRESETS, ELEVATION_ATTRIBUTION, EARTH_R, aeqdInverse, sizeFromBBox, chooseZoom, tilesFor, fillSeaFloor, featherToSurround } from '../core/geo.js';
 import { fieldToHeightmap } from '../io/heightmap.js';
 import { SIZE_MAX } from '../core/schema.js';
+import { IMAGERY_ATTRIBUTION } from '../core/globe.js';
 
 // 「地球の地形を取り込む」ダイアログ。
 // 地名検索（OpenStreetMap の Nominatim）か、ひな形・緯度経度で範囲を決め、
@@ -54,10 +55,20 @@ export class GeoDialog {
   }
 
   // ---- 計算はワーカーで ----
+  // 衛星写真（JPEG の data URL）を作る。写真の一辺 px
+  // 写真は別のワーカーで（標高の取り寄せ・組み立てと同時に進める）
+  #runPhoto(region, px, maxTiles, onProgress) {
+    return this.#post({ photo: true, region, px, maxTiles }, onProgress, 'photoWorker');
+  }
+
   #run(region, res, maxTiles, onProgress) {
-    if (!this.worker) {
-      this.worker = new Worker(new URL('../workers/geoWorker.js', import.meta.url), { type: 'module' });
-      this.worker.onmessage = (e) => {
+    return this.#post({ region, res, maxTiles }, onProgress);
+  }
+
+  #post(msg, onProgress, slot = 'worker') {
+    if (!this[slot]) {
+      this[slot] = new Worker(new URL('../workers/geoWorker.js', import.meta.url), { type: 'module' });
+      this[slot].onmessage = (e) => {
         const m = e.data;
         const p = this.pending.get(m.id);
         if (!p) return;
@@ -70,7 +81,7 @@ export class GeoDialog {
     const id = ++this.seq;
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject, onProgress });
-      this.worker.postMessage({ id, region, res, maxTiles });
+      this[slot].postMessage({ id, ...msg });
     });
   }
 
@@ -79,9 +90,18 @@ export class GeoDialog {
     this.busy = true;
     this.#setBusy(true);
     try {
-      const r = await this.#run(region, res, res >= 4097 ? 600 : 400, (p) => this.#progress(p));
       // 周りの地形：範囲の外も実際の地形が続いて見えるよう、6 倍の広さを粗く取り寄せる（地球の半周まで）
       const outerSize = Math.min(Math.PI * EARTH_R * 0.9, Math.max(region.size * 6, region.size + 400e3));
+      // 地表の色の衛星写真は、標高と同時に別のワーカーで取り寄せ始める（取り寄せられなくても地形はそのまま使う）
+      const photos = (async () => {
+        const inner = await this.#runPhoto(region, photoSizeFor(region.size), 360, null);
+        const outer = outerSize > region.size * 1.3 ? await this.#runPhoto({ ...region, size: outerSize }, 2048, 200, null) : null;
+        return { inner: inner.url, outer: outer?.url ?? null };
+      })().catch((err) => {
+        console.warn('衛星写真を取り寄せられませんでした', err);
+        return null;
+      });
+      const r = await this.#run(region, res, res >= 4097 ? 600 : 400, (p) => this.#progress(p));
       let o = null;
       if (outerSize > region.size * 1.3) o = await this.#run({ ...region, size: outerSize }, SURROUND_RES, 320, (p) => this.#progress(p, true));
       // 沿岸の海底の深さを周りの地形で補う
@@ -106,6 +126,14 @@ export class GeoDialog {
         for (let k = 0; k < of.length; k++) of[k] = (o.heights[k] - o.min) / ospan;
         const shm = await fieldToHeightmap(of, SURROUND_RES, `${name}_surround.png`);
         hm.surround = { png: shm.png, res: SURROUND_RES, size: outerSize, min: o.min, max: o.max };
+      }
+      // 地表の色：衛星写真（範囲と周りの地形）
+      this.#progressText(t('衛星写真を仕上げています…'));
+      const ph = await photos;
+      if (ph) {
+        hm.photo = ph.inner;
+        if (hm.surround && ph.outer) hm.surround.photo = ph.outer;
+        hm.geo.photo = IMAGERY_ATTRIBUTION;
       }
       this.apply({ heightmap: hm, region, res, min, max, name }, { restore });
       if (!quiet) this.toast(t('{name} の地形を取り込みました（{km} km 四方・{res}×{res}・タイル {n} 枚）', { name, km: Math.round(region.size / 1000), res, n: r.tiles }));
@@ -411,5 +439,13 @@ function shadeMap(h, res) {
 
 const mix3 = (a, b, t) => a.map((x, i) => x + (b[i] - x) * t);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+// 範囲の写真の一辺（画素）：写真の細かさ（約 10 m）に合わせ、512〜4096
+export function photoSizeFor(size) {
+  const want = size / 10;
+  let px = 512;
+  while (px < want && px < 4096) px *= 2;
+  return px;
+}
 const wrapLon = (l) => ((((l + 180) % 360) + 360) % 360) - 180;
 const fmtLen = (m) => (m >= 1000 ? `${(m / 1000).toFixed(m >= 10000 ? 0 : 1)} km` : `${Math.round(m)} m`);

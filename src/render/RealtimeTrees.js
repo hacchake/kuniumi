@@ -94,6 +94,13 @@ export class RealtimeTrees {
 
   // s: シーン、cam: カメラ（世界座標）、terrain: { sample(x,z), groundAt(x,z) }
   // fwd: 見ている向き（視野の外の遠い木は描かない）
+  // 衛星写真の画素（森の広がりに使う）。変わったら作り直す
+  setPhoto(photo) {
+    if (photo === this.photo) return;
+    this.photo = photo;
+    this.lastT = null;
+  }
+
   update(s, cam, terrain, fwd = null) {
     this.fwd = fwd ? new THREE.Vector3(fwd.x, 0, fwd.z) : null;
     const lookDown = !fwd || Math.abs(fwd.y) / Math.max(1e-6, fwd.length()) > 0.75;
@@ -110,11 +117,11 @@ export class RealtimeTrees {
       this.lastT = t;
       this.lastV = veg;
       this.lastW = s.water;
-      const key = JSON.stringify([t.mode, t.heightmap?.id, t.noise, t.size, t.heightScale, t.baseHeight, t.palette, t.detail, veg, s.water.level, s.water.enabled, t.resolution]);
+      const key = JSON.stringify([t.mode, t.heightmap?.id, !!this.photo, t.noise, t.size, t.heightScale, t.baseHeight, t.palette, t.detail, veg, s.water.level, s.water.enabled, t.resolution]);
       if (key !== this.key) {
         this.key = key;
         this.blocks.clear();
-        this.rules = createVegetationRules({ heightScale: t.heightScale, baseHeight: t.baseHeight, waterLevel: s.water.level, waterEnabled: s.water.enabled, palette: t.palette, vegetation: veg, realWorld: t.mode === 'heightmap' && !!t.heightmap?.geo });
+        this.rules = createVegetationRules({ heightScale: t.heightScale, baseHeight: t.baseHeight, waterLevel: s.water.level, waterEnabled: s.water.enabled, palette: t.palette, vegetation: veg, realWorld: t.mode === 'heightmap' && !!t.heightmap?.geo, photo: this.photo, size: t.size });
         this.dirty = true;
       }
     }

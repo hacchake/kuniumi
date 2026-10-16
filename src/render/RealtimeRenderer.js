@@ -15,6 +15,7 @@ import { planetRadius } from '../core/schema.js';
 import { WalkControls } from './WalkControls.js';
 import { RealtimeTrees } from './RealtimeTrees.js';
 import { decodePng } from '../core/png16.js';
+import { decodePhoto } from '../io/photo.js';
 import { createWaterNormals } from '../three/waterNormals.js';
 import { TextureService } from '../three/TextureService.js';
 import { ObjectLayer } from '../three/objectLayer.js';
@@ -185,10 +186,31 @@ export class RealtimeRenderer {
       await this.terrainService.idle();
     }
     await this.objects.ready();
+    // 衛星写真の色を使う地形なら、書き出す地表の色も写真にする（行 0 = 北。焼いた色と同じ向き）
+    let colorTexture = this.colorTexture;
+    const photo = s.terrain.mode === 'heightmap' && s.terrain.photo !== false ? s.terrain.heightmap?.photo : null;
+    if (photo) {
+      if (this.exportPhoto?.url !== photo) {
+        const bmp = await createImageBitmap(await (await fetch(photo)).blob());
+        const canvas = document.createElement('canvas');
+        canvas.width = bmp.width;
+        canvas.height = bmp.height;
+        canvas.getContext('2d').drawImage(bmp, 0, 0);
+        bmp.close?.();
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.anisotropy = 8;
+        tex.name = 'TerrainPhoto';
+        tex.userData.mimeType = 'image/jpeg'; // 写真は JPEG のまま書き出す（PNG にすると glb が何倍にもなる）
+        this.exportPhoto?.tex.dispose();
+        this.exportPhoto = { url: photo, tex };
+      }
+      colorTexture = this.exportPhoto.tex;
+    }
     return {
       field: this.terrainData.field,
       res: this.terrainData.res,
-      colorTexture: this.colorTexture,
+      colorTexture,
       objectMeshes: this.objects.exportMeshes(),
     };
   }
@@ -392,6 +414,7 @@ export class RealtimeRenderer {
     }
     if (has('terrain') || has('water') || has('vegetation')) {
       this.gpuTerrain.setScene(s);
+      this.#updatePhotos(s);
       this.#updateSurround(s);
       this.shadowDirty = true;
     }
@@ -508,6 +531,45 @@ export class RealtimeRenderer {
   }
 
   // 地球から取り込んだ地形の「周りの地形」（範囲の外も実際の地形が続いて見えるように、粗い高さ場で外側を描く）
+  // 地表の衛星写真（範囲と周りの地形）。シーンの「写真の色を使う」が切られていれば外す
+  async #updatePhotos(s) {
+    const t = s.terrain;
+    const hm = t.mode === 'heightmap' ? t.heightmap : null;
+    const use = t.photo !== false;
+    const inner = use ? hm?.photo ?? null : null;
+    const outer = use ? hm?.surround?.photo ?? null : null;
+    const load = async (url, slot) => {
+      if (this.photoUrls?.[slot] === url) return;
+      this.photoUrls = { ...this.photoUrls, [slot]: url };
+      this.photoTex?.[slot]?.dispose();
+      let tex = null;
+      if (url) {
+        try {
+          const bmp = await createImageBitmap(await (await fetch(url)).blob(), { imageOrientation: 'none' });
+          if (this.photoUrls[slot] !== url) return bmp.close?.();
+          tex = new THREE.Texture(bmp);
+          tex.colorSpace = THREE.SRGBColorSpace;
+          tex.flipY = false; // 行 0 = 北（高さ場と同じ向き）
+          tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+          tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+          tex.needsUpdate = true;
+        } catch (err) {
+          console.warn('衛星写真を読めませんでした', err);
+        }
+      }
+      this.photoTex = { ...this.photoTex, [slot]: tex };
+      if (slot === 'inner') {
+        this.gpuTerrain.setPhoto(tex);
+        // 木の配置用に、縮めた画素も持つ
+        let px = null;
+        if (url) px = await decodePhoto(url, 2048).catch(() => null);
+        if (this.photoUrls.inner === url) this.trees.setPhoto(px);
+      }
+      else this.surround?.terrain.setPhoto(tex);
+    };
+    await Promise.all([load(inner, 'inner'), load(outer, 'outer')]);
+  }
+
   async #updateSurround(s) {
     const t = s.terrain;
     const sur = t.mode === 'heightmap' ? t.heightmap?.surround : null;
@@ -527,6 +589,7 @@ export class RealtimeRenderer {
         terrain.mesh.name = 'Surround';
         this.world.add(terrain.mesh);
         this.surround = { terrain };
+        terrain.setPhoto(this.photoTex?.outer ?? null);
       }
       // 標高 (m) で持ち、本来の地形と同じ「基準の標高・起伏の高さ」で 0..1 に直して使う（色の規則が内外でそろう）
       const m = new Float32Array(img.data.length);

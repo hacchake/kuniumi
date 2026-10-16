@@ -125,3 +125,34 @@ describe('範囲の縁を周りの地形へ寄せる', () => {
     expect(r[32 * res + 3]).toBeLessThan(1000);
   });
 });
+
+describe('衛星写真（地表の色）', () => {
+  const photoOf = (w, h, f) => {
+    const data = new Uint8ClampedArray(w * h * 4);
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) data.set([...f(i, j), 255], (j * w + i) * 4);
+    return { data, width: w, height: h };
+  };
+  it('写真の (u, v) は v = 0 が北の行、色は線形に直す', async () => {
+    const { photoAt } = await import('../src/io/photo.js');
+    const ph = photoOf(4, 4, (i, j) => (j < 2 ? [255, 255, 255] : [0, 0, 0]));
+    expect(photoAt(ph, 0.5, 0.05, [0, 0, 0])[0]).toBeCloseTo(1, 5);
+    expect(photoAt(ph, 0.5, 0.95, [0, 0, 0])[0]).toBeCloseTo(0, 5);
+    const mid = photoOf(2, 2, () => [128, 128, 128]);
+    expect(photoAt(mid, 0.5, 0.5, [0, 0, 0])[1]).toBeCloseTo(0.2158, 3); // sRGB 128 → 線形 0.216
+  });
+  it('森らしさ：暗い緑は高く、街の灰色・明るい畑・水は低い', async () => {
+    const { photoForest } = await import('../src/io/photo.js');
+    const one = (rgb) => photoForest(photoOf(2, 2, () => rgb), 0.5, 0.5);
+    expect(one([35, 70, 45])).toBeGreaterThan(0.8); // 森
+    expect(one([120, 118, 115])).toBeLessThan(0.05); // 街
+    expect(one([150, 190, 90])).toBeLessThan(0.1); // 明るい畑
+    expect(one([30, 60, 80])).toBeLessThan(0.1); // 水
+  });
+  it('写真の一辺は細かさ 10 m を目安に 512〜4096', async () => {
+    const { photoSizeFor } = await import('../src/ui/GeoDialog.js').catch(() => ({}));
+    if (!photoSizeFor) return; // DOM の無い環境では UI を読めない
+    expect(photoSizeFor(2000)).toBe(512);
+    expect(photoSizeFor(20000)).toBe(2048);
+    expect(photoSizeFor(3e6)).toBe(4096);
+  });
+});
