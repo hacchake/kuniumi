@@ -490,6 +490,7 @@ const hintEl = document.querySelector('.hint');
 const hintDefault = hintEl?.textContent ?? '';
 view.onWalk = (mode, speed) => {
   walkBtn.classList.toggle('active', !!mode);
+  document.body.classList.toggle('walking', !!mode);
   walkBtn.textContent = mode ? t('✕ 歩くのをやめる') : t('🚶 歩く');
   if (!hintEl) return;
   const sp = speed && Math.abs(speed - 1) > 0.01 ? t('（速さ ×{k}）', { k: speed.toFixed(2) }) : '';

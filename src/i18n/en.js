@@ -442,4 +442,11 @@ export const EN = {
   "衛星写真の色": "Satellite colors",
   "地球から取り込んだ地形の色を、衛星写真（Sentinel-2 cloudless・NASA Blue Marble）にする。切ると標高と傾きから塗る": "Color terrain imported from Earth with satellite imagery (Sentinel-2 cloudless, NASA Blue Marble). Off: color from elevation and slope",
   "衛星写真を仕上げています…": "Finishing satellite imagery…",
+  "ジャンプ": "Jump",
+  "上昇": "Up",
+  "下降": "Down",
+  "走る": "Run",
+  "飛行モード": "Fly",
+  "歩行モード": "Walk",
+  "移動": "Move",
 };
