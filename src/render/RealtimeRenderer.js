@@ -21,6 +21,7 @@ import { Fireflies } from './Fireflies.js';
 import { Moon } from './Moon.js';
 import { Footprints } from './Footprints.js';
 import { Boat } from './Boat.js';
+import { Wake } from './Wake.js';
 import { Aurora } from './Aurora.js';
 import { ShootingStars } from './ShootingStars.js';
 import { RealtimeTrees } from './RealtimeTrees.js';
@@ -206,6 +207,7 @@ void main() {`)
     // 雨・雪（カメラの周りだけ）
     this.precip = new Precipitation(this.scene);
     this.rainbow = new Rainbow(this.scene);
+    this.wake = new Wake(this.scene);
     this.fireflies = new Fireflies(this.scene);
     this.moon = new Moon(this.scene);
     this.aurora = new Aurora(this.scene);
@@ -988,6 +990,7 @@ void main() {`)
     cam.updateMatrixWorld();
     this.sky.position.copy(cam.position);
     this.precip.update(cam.position, flatPos, this.precipLight ?? 1);
+    this.wake.update(cam.position, flatPos, this.baseExposure ?? 1, this.precipLight ?? 1);
     {
       const pr = this.store.get().atmosphere.precip; // 雨のときの虹
       this.rainbow.update(cam.position, this.sky.material.uniforms.sunPosition.value, pr === 'rain' || pr === 'storm', this.baseExposure ?? 1, this.store.get().atmosphere.clouds ?? 0);
@@ -1154,6 +1157,17 @@ void main() {`)
         // 進んでいると、舳先の両脇から水しぶき（速いほど多く）
         const sp = this.lastBoatPos ? Math.hypot(p.x - this.lastBoatPos.x, p.z - this.lastBoatPos.z) / Math.max(dt, 1e-3) : 0;
         this.lastBoatPos = { x: p.x, z: p.z };
+        // 航跡：舟の両舷から後ろの水面に泡を残す（外へゆっくり広がり、数秒で消える）
+        if (sp > 0.4) {
+          const rt = new THREE.Vector3(-f.z, 0, f.x);
+          const n = Math.min(6, Math.ceil(sp * dt * 6));
+          for (let k = 0; k < n; k++) {
+            const side = k % 2 ? 1 : -1;
+            const back = -0.2 - Math.random() * 0.4, off = 0.55 + Math.random() * 0.15;
+            const spread = (0.25 + Math.random() * 0.35) * Math.min(1.5, sp / 3);
+            this.wake.add(p.x + f.x * back + rt.x * side * off, lvl + 0.03, p.z + f.z * back + rt.z * side * off, rt.x * side * spread, rt.z * side * spread);
+          }
+        }
         this.wakeT = (this.wakeT ?? 0) - dt;
         if (sp > 0.6 && this.wakeT <= 0) {
           this.wakeT = 0.18;
