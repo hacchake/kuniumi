@@ -407,9 +407,9 @@ html[lang='en'] .create-title { letter-spacing: 0.08em; }
 .globe-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-left: auto; }
 .globe-tools label { display: flex; gap: 6px; align-items: center; font-size: 12.5px; color: var(--text); background: rgba(11, 15, 26, 0.75); padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line); }
 .globe-tools select { background: var(--ink-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; font: inherit; }
-.globe-info { position: absolute; left: 12px; bottom: 34px; font-size: 13px; color: var(--text); background: rgba(11, 15, 26, 0.7); padding: 4px 10px; border-radius: 8px; font-variant-numeric: tabular-nums; pointer-events: none; }
-.globe-hint { position: absolute; left: 12px; bottom: 10px; font-size: 11.5px; color: var(--muted); pointer-events: none; text-shadow: 0 1px 2px #000; }
-.globe-credit { position: absolute; right: 10px; bottom: 10px; font-size: 10.5px; color: rgba(233, 228, 216, 0.6); text-shadow: 0 1px 2px #000; max-width: 50%; text-align: right; }
+.globe-info { position: absolute; left: 12px; bottom: 74px; font-size: 13px; color: var(--text); background: rgba(11, 15, 26, 0.7); padding: 4px 10px; border-radius: 8px; font-variant-numeric: tabular-nums; pointer-events: none; }
+.globe-hint { position: absolute; left: 12px; bottom: 10px; max-width: calc(50% - 24px); font-size: 11.5px; color: var(--muted); pointer-events: none; text-shadow: 0 1px 2px #000; }
+.globe-credit { position: absolute; right: 10px; bottom: 10px; font-size: 10.5px; color: rgba(233, 228, 216, 0.6); text-shadow: 0 1px 2px #000; max-width: calc(50% - 10px); text-align: right; }
 @media (max-width: 720px) {
   .globe-hint { display: none; }
   .globe-credit { max-width: 100%; left: 10px; }
