@@ -52,10 +52,29 @@ export class RealtimeTrees {
     this.group = new THREE.Group();
     this.group.name = 'Trees';
     parent.add(this.group);
-    const mat = (color, opts = {}) => {
-      const m = new THREE.MeshStandardMaterial({ color, roughness: 0.85, metalness: 0, ...opts });
+    this.snowU = { value: 0 }; // 葉に乗る雪（0..1）
+    const mat = (color, snow = false) => {
+      const m = new THREE.MeshStandardMaterial({ color, roughness: 0.85, metalness: 0 });
       m.defines = { KUNIUMI_VERTEX_CLOUD: '' }; // 雲の影は頂点ごと（葉が重なっても軽く）
       patchMaterial?.(m);
+      if (snow) {
+        // 上を向いた面ほど白く（降り積もった雪）
+        const prev = m.onBeforeCompile;
+        m.onBeforeCompile = (sh, r) => {
+          prev?.call(m, sh, r);
+          sh.uniforms.kTreeSnow = this.snowU;
+          sh.fragmentShader = sh.fragmentShader
+            .replace('void main() {', `uniform float kTreeSnow;
+void main() {`)
+            .replace(
+              '#include <normal_fragment_maps>',
+              `#include <normal_fragment_maps>
+if ( kTreeSnow > 0.0 ) diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.8, 0.83, 0.88 ), kTreeSnow * smoothstep( 0.15, 0.65, dot( normal, normalize( ( viewMatrix * vec4( 0.0, 1.0, 0.0, 0.0 ) ).xyz ) ) ) );`,
+            );
+        };
+        const prevKey = m.customProgramCacheKey?.bind(m);
+        m.customProgramCacheKey = () => (prevKey?.() ?? '') + '|treeSnow';
+      }
       return m;
     };
     const trunk = new THREE.Color('#3a2b20');
@@ -70,8 +89,8 @@ export class RealtimeTrees {
       this.group.add(m);
       return m;
     };
-    const conCrown = mat(new THREE.Color('#1b3317'));
-    const brdCrown = mat(new THREE.Color('#2e4d1f'));
+    const conCrown = mat(new THREE.Color('#1b3317'), true);
+    const brdCrown = mat(new THREE.Color('#2e4d1f'), true);
     this.crowns = { conCrown, brdCrown };
     const wood = mat(trunk);
     this.near = {
@@ -94,6 +113,11 @@ export class RealtimeTrees {
     const { conCrown, brdCrown } = this.crowns;
     brdCrown.color.set({ spring: '#4c7a26', autumn: '#9a4614', winter: '#4d4136' }[season] ?? '#2e4d1f');
     conCrown.color.set(season === 'winter' ? '#3b4a42' : '#1b3317');
+  }
+
+  // 降り積もった雪（0..1）を葉の上に
+  setSnow(c) {
+    this.snowU.value = c;
   }
 
   dispose() {

@@ -1074,6 +1074,7 @@ void main() {`)
       t.uniforms.tSnowCover.value = c;
       t.uniforms.tSnowFloor.value = floor;
     }
+    this.trees?.setSnow(c * 0.85);
   }
 
   #frame() {
