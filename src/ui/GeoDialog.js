@@ -4,6 +4,7 @@ import { fieldToHeightmap } from '../io/heightmap.js';
 import { SIZE_MAX } from '../core/schema.js';
 import { IMAGERY_ATTRIBUTION } from '../core/globe.js';
 import { decodePhoto, photoWater } from '../io/photo.js';
+import { fetchOsmWater, rasterizeOsmWater, maskToDataUrl, OSM_MAX_SIZE, OSM_ATTRIBUTION } from '../core/osmWater.js';
 
 // 「地球の地形を取り込む」ダイアログ。
 // 地名検索（OpenStreetMap の Nominatim）か、ひな形・緯度経度で範囲を決め、
@@ -103,6 +104,13 @@ export class GeoDialog {
         console.warn('衛星写真を取り寄せられませんでした', err);
         return null;
       });
+      // 川・湖・海岸線（OpenStreetMap）も同時に取り寄せる（広すぎる範囲では取り寄せない。取れなくても地形はそのまま）
+      const osm = region.size <= OSM_MAX_SIZE
+        ? fetchOsmWater(region).catch((err) => {
+            console.warn('OpenStreetMap の水域を取り寄せられませんでした', err);
+            return null;
+          })
+        : Promise.resolve(null);
       const r = await this.#run(region, res, res >= 4097 ? 600 : 400, (p) => this.#progress(p));
       let o = null;
       if (outerSize > region.size * 1.3) o = await this.#run({ ...region, size: outerSize }, SURROUND_RES, 320, (p) => this.#progress(p, true));
@@ -114,11 +122,43 @@ export class GeoDialog {
         const px = await decodePhoto(ph.inner, 2048).catch(() => null);
         if (px) isWater = (i, j) => photoWater(px, i / (res - 1), j / (res - 1)) > 0.5;
       }
+      // 川・湖・海岸線を格子に焼き込む。海岸線があれば、海か陸かは海岸線で決める（濁った湾も、海抜 0 m 以下の干拓地も正しく）
+      this.#progressText(t('川と海岸線を描いています…'));
+      const els = await osm;
+      let water = null;
+      if (els?.length) {
+        water = rasterizeOsmWater(els, region, res, (i, j) => r.heights[j * res + i]);
+        const { sea, inland } = water;
+        if (sea) {
+          for (let k = 0; k < sea.length; k++) if (sea[k] && r.heights[k] > -1.5) r.heights[k] = -1.5;
+          // 海から続く低い川（河口の近く）も海の水面に
+          isWater = (i, j) => sea[j * res + i] === 1 || inland[j * res + i] > 0;
+        } else if (isWater) {
+          const photoW = isWater;
+          isWater = (i, j) => photoW(i, j) || inland[j * res + i] > 0;
+        }
+      }
       // 沿岸の海底の深さを周りの地形で補う
       // 縁は周りの地形の高さへ寄せる（境目に段差を作らない）
       const heights = o
         ? featherToSurround(fillSeaFloor(r.heights, res, region.size, o.heights, SURROUND_RES, outerSize, isWater), res, region.size, o.heights, SURROUND_RES, outerSize)
         : r.heights;
+      // 海より高い川・湖・ため池は、地形を少し掘り下げて、水面として描く印を残す
+      let waterMask = null;
+      if (water) {
+        const m = water.inland;
+        let any = false;
+        for (let k = 0; k < m.length; k++) {
+          if (!m[k]) continue;
+          if (heights[k] < 0) {
+            m[k] = 0; // 海の水面の下になった所は、海として描く
+            continue;
+          }
+          heights[k] -= 1.0;
+          any = true;
+        }
+        if (any) waterMask = await maskToDataUrl(m, res, 2048);
+      }
       let min = Infinity, max = -Infinity;
       for (const h of heights) {
         if (h < min) min = h;
@@ -131,6 +171,8 @@ export class GeoDialog {
       const hm = await fieldToHeightmap(field, res, `${name}.png`);
       // min / max：高さ場（0..1）を取り込んだときの標高 (m)。周りの地形を同じ変換で動かすのに使う
       hm.geo = { lat: region.lat, lon: region.lon, size: region.size, res, zoom: r.zoom, name, source: ELEVATION_ATTRIBUTION, min, max };
+      if (water) hm.geo.water = OSM_ATTRIBUTION;
+      if (waterMask) hm.water = waterMask; // 川・湖の印（PNG、行 0 = 北）
       if (o) {
         const ospan = Math.max(1, o.max - o.min);
         const of = new Float32Array(o.heights.length);

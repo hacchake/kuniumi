@@ -151,6 +151,8 @@ export class GpuTerrain {
       tDetailL0: { value: 64 },
       tHasWear: { value: 0 },
       tPhoto: { value: null }, // 地表の衛星写真（範囲と同じ正方形、行 0 = 北）
+      tWaterMask: { value: null }, // 川・湖の印（OpenStreetMap。白 = 水）
+      tHasWaterMask: { value: 0 },
       tHasPhoto: { value: 0 },
       tOriginUV: { value: new THREE.Vector2() },
       tOriginW: { value: new THREE.Vector2() }, // 原点（世界座標）
@@ -193,14 +195,16 @@ export class GpuTerrain {
           .replace('#include <beginnormal_vertex>', 'vec3 objectNormal; vec3 kTP; kTerrainVertex( kTP, objectNormal );')
           .replace('#include <begin_vertex>', 'vec3 transformed = kTP;');
         shader.fragmentShader = shader.fragmentShader
-          .replace('#include <common>', `#include <common>\n${TERRAIN_SHADING_GLSL}\nvarying float vTH, vTSlope, vTWear, vTJit, vTClump;\nvarying vec2 vTLocal, vTDetGrad;\nuniform vec2 tOriginW;\nuniform float tClipHalf, tHasPhoto;\nuniform sampler2D tPhoto;\n${CURVE_GLSL}\n${FIELD_GLSL}`)
+          .replace('#include <common>', `#include <common>\n${TERRAIN_SHADING_GLSL}\nvarying float vTH, vTSlope, vTWear, vTJit, vTClump;\nvarying vec2 vTLocal, vTDetGrad;\nuniform vec2 tOriginW;\nuniform float tClipHalf, tHasPhoto, tHasWaterMask;\nuniform sampler2D tPhoto, tWaterMask;\n${CURVE_GLSL}\n${FIELD_GLSL}`)
           // 面の向きと傾きは画素ごとに高さ場から出す（頂点の補間だと、区画の細かさが変わる所で線が出る）
           .replace(
             '#include <normal_fragment_begin>',
             `#include <normal_fragment_begin>
             vec2 kG = tCoarseGrad( vTLocal ) + vTDetGrad;
             float kSlope = length( kG );
-            normal = normalize( ( viewMatrix * vec4( kCurveN( vec3( vTLocal.x, vTH, vTLocal.y ), normalize( vec3( - kG.x, 1.0, - kG.y ) ) ), 0.0 ) ).xyz );`,
+            normal = normalize( ( viewMatrix * vec4( kCurveN( vec3( vTLocal.x, vTH, vTLocal.y ), normalize( vec3( - kG.x, 1.0, - kG.y ) ) ), 0.0 ) ).xyz );
+            // 川・湖の水面は平らに（空を映す）
+            normal = normalize( mix( normal, normalize( ( viewMatrix * vec4( kCurveN( vec3( vTLocal.x, vTH, vTLocal.y ), vec3( 0.0, 1.0, 0.0 ) ), 0.0 ) ).xyz ), kWm ) );`,
           )
           // 細かい色むらは、画素の大きさ（距離 × 画角）より大きい段だけ
           .replace(
@@ -215,7 +219,14 @@ export class GpuTerrain {
               'vec3 kTC = terrainColor( vTH, length( kG0 ), vTWear, kJ, vTClump );\n' +
               // 衛星写真があれば、その色を地表の色にする（細かい色むらだけ手続きの色から少し残す）
               `if ( tHasPhoto > 0.5 ) kTC = texture2D( tPhoto, clamp( tUV( vTLocal ), 0.0, 1.0 ) ).rgb * ${PHOTO_ALBEDO.toFixed(3)} * ( 1.0 + kJ * 0.35 );\n` +
+              // 川・湖：暗い水の色（写真の色を少し残す）。なめらかさは roughnessmap の後で
+              'float kWm = tHasWaterMask > 0.5 ? smoothstep( 0.35, 0.65, texture2D( tWaterMask, clamp( tUV( vTLocal ), 0.0, 1.0 ) ).r ) : 0.0;\n' +
+              'kTC = mix( kTC, kTC * 0.35 + vec3( 0.012, 0.03, 0.04 ), kWm );\n' +
               'diffuseColor.rgb *= kTC;',
+          )
+          .replace(
+            '#include <roughnessmap_fragment>',
+            '#include <roughnessmap_fragment>\nroughnessFactor = mix( roughnessFactor, 0.07, kWm );',
           );
       } else {
         shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', 'vec3 kTN; vec3 transformed; kTerrainVertex( transformed, kTN );');
@@ -297,6 +308,12 @@ export class GpuTerrain {
   // 大きさ・起伏・色などシーンの値
   // over.size: 大地の大きさを差し替える（周りの地形用）。over.clipHalf: この半径の正方形の内側は描かない（内側は本来の地形が描く）
   // 地表の衛星写真（THREE.Texture、無ければ null）
+  // 川・湖の印（THREE.Texture、無ければ null）
+  setWaterMask(tex) {
+    this.uniforms.tWaterMask.value = tex;
+    this.uniforms.tHasWaterMask.value = tex ? 1 : 0;
+  }
+
   setPhoto(tex) {
     this.uniforms.tPhoto.value = tex;
     this.uniforms.tHasPhoto.value = tex ? 1 : 0;

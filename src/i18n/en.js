@@ -459,4 +459,5 @@ export const EN = {
   "この端末では位置情報を使えません": "Location is not available on this device",
   "位置情報を取得できませんでした: {msg}": "Could not get your location: {msg}",
   "たたくと地図の広さが変わる": "Tap to change the map scale",
+  "川と海岸線を描いています…": "Drawing rivers and coastline…",
 };

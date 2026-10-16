@@ -540,6 +540,7 @@ export class RealtimeRenderer {
     const use = t.photo !== false;
     const inner = use ? hm?.photo ?? null : null;
     const outer = use ? hm?.surround?.photo ?? null : null;
+    const waterUrl = hm?.water ?? null;
     const load = async (url, slot) => {
       if (this.photoUrls?.[slot] === url) return;
       this.photoUrls = { ...this.photoUrls, [slot]: url };
@@ -560,6 +561,11 @@ export class RealtimeRenderer {
         }
       }
       this.photoTex = { ...this.photoTex, [slot]: tex };
+      if (slot === 'water') {
+        // 印は色ではないので線形のまま
+        if (tex) (tex.colorSpace = THREE.NoColorSpace), (tex.needsUpdate = true);
+        return this.gpuTerrain.setWaterMask(tex);
+      }
       if (slot === 'inner') {
         this.gpuTerrain.setPhoto(tex);
         // 木の配置用に、縮めた画素も持つ
@@ -569,7 +575,7 @@ export class RealtimeRenderer {
       }
       else this.surround?.terrain.setPhoto(tex);
     };
-    await Promise.all([load(inner, 'inner'), load(outer, 'outer')]);
+    await Promise.all([load(inner, 'inner'), load(outer, 'outer'), load(waterUrl, 'water')]);
   }
 
   async #updateSurround(s) {
