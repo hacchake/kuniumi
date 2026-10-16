@@ -462,4 +462,5 @@ export const EN = {
   "川と海岸線を描いています…": "Drawing rivers and coastline…",
   "地名を表示": "Place names",
   "地球から取り込んだ地形に、山（標高つき）・市・町・村の名前を出す（OpenStreetMap）": "Show names of peaks (with elevation), cities, towns and villages on terrain imported from Earth (OpenStreetMap)",
+  "川・海岸線・地名（OpenStreetMap）を取り寄せられませんでした（混み合っています）。地形はそのまま取り込みます": "Could not fetch rivers, coastline and place names from OpenStreetMap (busy). Importing the terrain without them",
 };

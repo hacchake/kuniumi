@@ -24,7 +24,7 @@ export function bboxOf(region) {
   return { s, w, n, e };
 }
 
-export async function fetchOsmWater(region, { timeoutMs = 90000 } = {}) {
+export async function fetchOsmWater(region, { timeoutMs = 60000 } = {}) {
   const b = bboxOf(region);
   const bb = `${b.s.toFixed(5)},${b.w.toFixed(5)},${b.n.toFixed(5)},${b.e.toFixed(5)}`;
   const q =
@@ -36,7 +36,12 @@ export async function fetchOsmWater(region, { timeoutMs = 90000 } = {}) {
     `node["natural"="peak"]["name"](${bb});node["place"~"^(city|town|village|suburb)$"]["name"](${bb});` +
     `);out tags geom;`;
   let lastErr = null;
-  for (const ep of ENDPOINTS) {
+  // 混み合っていることがあるので、全部だめなら少し待ってもう一度
+  for (const ep of [...ENDPOINTS, 'wait', ...ENDPOINTS]) {
+    if (ep === 'wait') {
+      await new Promise((r) => setTimeout(r, 8000));
+      continue;
+    }
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), timeoutMs);
     try {

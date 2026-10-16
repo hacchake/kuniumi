@@ -108,6 +108,7 @@ export class GeoDialog {
       const osm = region.size <= OSM_MAX_SIZE
         ? fetchOsmWater(region).catch((err) => {
             console.warn('OpenStreetMap の水域を取り寄せられませんでした', err);
+            if (!quiet) this.toast(t('川・海岸線・地名（OpenStreetMap）を取り寄せられませんでした（混み合っています）。地形はそのまま取り込みます'));
             return null;
           })
         : Promise.resolve(null);
@@ -124,7 +125,8 @@ export class GeoDialog {
       }
       // 川・湖・海岸線を格子に焼き込む。海岸線があれば、海か陸かは海岸線で決める（濁った湾も、海抜 0 m 以下の干拓地も正しく）
       this.#progressText(t('川と海岸線を描いています…'));
-      const els = await osm;
+      // 標高がそろってからは、最大 30 秒だけ待つ（混んでいて遅いときは、川・地名なしで先へ進む）
+      const els = await Promise.race([osm, new Promise((r) => setTimeout(() => r(null), 30000))]);
       let water = null;
       if (els?.length) {
         water = rasterizeOsmWater(els, region, res, (i, j) => r.heights[j * res + i]);
