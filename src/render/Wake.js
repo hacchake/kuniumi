@@ -17,6 +17,7 @@ export class Wake {
         uniforms: this.uniforms,
         transparent: true,
         depthWrite: false,
+        blending: THREE.AdditiveBlending, // 明るさを足す（照り返しで白い水面の上でも、泡が灰色に沈まない）
         vertexShader: `
           attribute float alpha;
           varying float vA;
@@ -38,7 +39,7 @@ export class Wake {
             float r = length( gl_PointCoord - 0.5 ) * 2.0;
             float a = ( 1.0 - smoothstep( 0.4, 1.0, r ) ) * vA;
             if ( a < 0.01 ) discard;
-            gl_FragColor = vec4( vec3( 0.92, 0.95, 0.97 ) * gain, a * 0.55 );
+            gl_FragColor = vec4( vec3( 0.92, 0.95, 0.97 ) * gain, a * 0.18 );
           }`,
       }),
     );
