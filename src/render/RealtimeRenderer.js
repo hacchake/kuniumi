@@ -16,6 +16,7 @@ import { WalkControls } from './WalkControls.js';
 import { WalkAudio } from './WalkAudio.js';
 import { Buildings } from './Buildings.js';
 import { Precipitation } from './Precipitation.js';
+import { Rainbow } from './Rainbow.js';
 import { RealtimeTrees } from './RealtimeTrees.js';
 import { decodePng } from '../core/png16.js';
 import { decodePhoto } from '../io/photo.js';
@@ -195,6 +196,7 @@ void main() {`)
     this.audio = new WalkAudio();
     // 雨・雪（カメラの周りだけ）
     this.precip = new Precipitation(this.scene);
+    this.rainbow = new Rainbow(this.scene);
     // 建物（地球から取り込んだ景観で、地面に近いとき）
     this.buildings = new Buildings(this.world, (m) => patchStandardMaterial(m, this.shared));
     this.walk = new WalkControls(this.camera, canvas, {
@@ -960,6 +962,10 @@ void main() {`)
     cam.updateMatrixWorld();
     this.sky.position.copy(cam.position);
     this.precip.update(cam.position, flatPos, this.precipLight ?? 1);
+    {
+      const pr = this.store.get().atmosphere.precip; // 雨のときの虹
+      this.rainbow.update(cam.position, this.sky.material.uniforms.sunPosition.value, pr === 'rain' || pr === 'storm', this.baseExposure ?? 1, this.store.get().atmosphere.clouds ?? 0);
+    }
     this.cloudUniforms.cloudOrigin.value.copy(this.origin);
     this.cloudUniforms.cloudCam.value.set(tgt.x, 0, tgt.z);
     this.atmosphere.setView(this.origin, R, this.curveUniforms.kCenter.value);
