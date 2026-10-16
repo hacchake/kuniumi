@@ -68,13 +68,14 @@ export class Precipitation {
   }
 
   // 水しぶきを 1 回：at = 足元（平らな地図の座標）、dir = 進む向き（水平）、strength = 1 で 1 歩
-  splash(at, dir, strength = 1) {
+  // carry：粒にそのまま足す速さ（動いている舟から飛ぶときなど。{ x, z }）
+  splash(at, dir, strength = 1, carry = null) {
     const n = Math.round(40 * strength);
     for (let i = 0; i < n && this.drops.length < N_DROPS; i++) {
       const a = Math.random() * Math.PI * 2, sp = 0.6 + Math.random() * 1.4;
       this.drops.push({
         x: at.x + (Math.random() - 0.5) * 0.3, y: at.y + 0.03, z: at.z + (Math.random() - 0.5) * 0.3,
-        vx: Math.cos(a) * sp + dir.x * 1.2, vy: 1.5 + Math.random() * 2 * strength, vz: Math.sin(a) * sp + dir.z * 1.2,
+        vx: Math.cos(a) * sp + dir.x * 1.2 + (carry?.x ?? 0), vy: 1.5 + Math.random() * 2 * strength, vz: Math.sin(a) * sp + dir.z * 1.2 + (carry?.z ?? 0),
         life: 0.5 + Math.random() * 0.4,
       });
     }

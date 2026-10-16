@@ -1151,7 +1151,24 @@ void main() {`)
         const lvl = this.store.get().water.level;
         const f = w.forward().setY(0).normalize();
         this.boat.place(new THREE.Vector3(p.x + f.x * 0.9, lvl - 0.12 + (w.bobY + 0.55) * 0.9, p.z + f.z * 0.9), w.yaw, w.boatRoll, w.boatPitch); // 目と舟は一緒に傾く
-      } else this.boat.hide();
+        // 進んでいると、舳先の両脇から水しぶき（速いほど多く）
+        const sp = this.lastBoatPos ? Math.hypot(p.x - this.lastBoatPos.x, p.z - this.lastBoatPos.z) / Math.max(dt, 1e-3) : 0;
+        this.lastBoatPos = { x: p.x, z: p.z };
+        this.wakeT = (this.wakeT ?? 0) - dt;
+        if (sp > 0.6 && this.wakeT <= 0) {
+          this.wakeT = 0.18;
+          // 舳先の両脇の外側から、外向きに（粒は舟と同じ速さも持つので、舟の中へは落ちない）
+          const right = new THREE.Vector3(-f.z, 0, f.x);
+          const carry = { x: f.x * sp, z: f.z * sp };
+          for (const side of [-1, 1]) {
+            const at = new THREE.Vector3(p.x + f.x * 2.3 + right.x * side * 0.75, lvl, p.z + f.z * 2.3 + right.z * side * 0.75);
+            this.precip.splash(at, right.clone().multiplyScalar(side * 1.5), Math.min(1, sp / 6) * 0.3, carry);
+          }
+        }
+      } else {
+        this.boat.hide();
+        this.lastBoatPos = null;
+      }
     } else {
       this.boat?.hide();
       this.#updateFlight();
