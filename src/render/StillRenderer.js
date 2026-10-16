@@ -7,6 +7,7 @@ import { initUNetFromURL } from 'oidn-web';
 import OIDN_WEIGHTS from 'oidn-weights/rt_hdr_alb_nrm.tza?url';
 import { sunDirection, nightFactor, NIGHT_SKY, moonDirection, moonIllumination } from '../core/sun.js';
 import { skyParams, renderSkyEquirect } from '../core/skyModel.js';
+import { addAurora, addRainbow } from '../core/skyExtras.js';
 import { toneMapToRGBA8 } from '../core/tonemap.js';
 import { sunIrradiance, discScaleFor } from '../core/skyModel.js';
 import { computeAtmosphere } from './atmospherePass.js';
@@ -605,6 +606,7 @@ export class StillJob {
     const addNight = (data) => {
       if (night <= 0) {
         addMoon(data);
+        addExtras(data);
         return data;
       }
       for (let r = 0; r < eh; r++) {
@@ -615,8 +617,39 @@ export class StillJob {
         }
       }
       addMoon(data);
+      addExtras(data);
       return data;
     };
+    // オーロラと虹：リアルタイム表示と同じ式・同じ強さで空に描き込む（core/skyExtras.js）
+    function addExtras(data) {
+      const a = s.atmosphere;
+      const exposure = Math.max(0.02, a.exposure);
+      const geo = s.terrain.mode === 'heightmap' ? s.terrain.heightmap?.geo : null;
+      const aur = (a.aurora ?? 0) * (1 - 0.85 * (a.clouds ?? 0)) * night * (0.35 / exposure);
+      const rainy = a.precip === 'rain' || a.precip === 'storm';
+      const el = s.sun.elevation;
+      const bow = rainy ? THREE.MathUtils.smoothstep(el, 1, 5) * (1 - THREE.MathUtils.smoothstep(el, 34, 42)) * (1 - 0.6 * (a.clouds ?? 0)) * (0.15 / exposure) : 0;
+      if (aur <= 0.001 && bow <= 0.001) return;
+      const S = sunDirection(el, s.sun.azimuth);
+      const anti = [-S[0], -S[1], -S[2]];
+      const north = (geo?.lat ?? 1) < 0 ? -1 : 1;
+      const add = [0, 0, 0];
+      for (let r = eh >> 1; r < eh; r++) {
+        const lat = ((r + 0.5) / eh - 0.5) * Math.PI;
+        const y = Math.sin(lat), cl = Math.cos(lat);
+        for (let c = 0; c < ew; c++) {
+          const phi = ((c + 0.5) / ew - 0.5) * 2 * Math.PI;
+          const d = [Math.cos(phi) * cl, y, Math.sin(phi) * cl];
+          add[0] = add[1] = add[2] = 0;
+          if (aur > 0.001) addAurora(d, north, 0, add, aur);
+          if (bow > 0.001) addRainbow(d, anti, add, bow);
+          const o = (r * ew + c) * 4;
+          data[o] += add[0];
+          data[o + 1] += add[1];
+          data[o + 2] += add[2];
+        }
+      }
+    }
     // 月：リアルタイム表示と同じ位置・満ち欠け・大きさ（1.5°）の円盤を空に描き込む（背景に映り、わずかに照らす）
     function addMoon(data) {
       const age = s.sun.moonAge ?? 12;

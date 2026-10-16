@@ -191,3 +191,32 @@ describe('月', () => {
     expect(Math.abs(q.azimuth - 180)).toBeLessThan(30);
   });
 });
+
+describe('空の飾り（一枚絵用）', () => {
+  it('オーロラは北の空に出て、南の空・地平線の下には出ない', async () => {
+    const { addAurora } = await import('../src/core/skyExtras.js');
+    const sum = (d, north = 1) => {
+      const o = [0, 0, 0];
+      for (let t = 0; t < 20; t++) addAurora(d, north, t * 7, o);
+      return o[0] + o[1] + o[2];
+    };
+    const el = (25 * Math.PI) / 180;
+    const N = [0, Math.sin(el), -Math.cos(el)], S = [0, Math.sin(el), Math.cos(el)];
+    expect(sum(N)).toBeGreaterThan(0.5);
+    expect(sum(S)).toBeLessThan(sum(N) * 0.05);
+    expect(sum(S, -1)).toBeGreaterThan(0.5); // 南半球では南の空
+    expect(sum([0, -0.3, -0.95])).toBe(0);
+  });
+  it('虹は太陽と反対の点から約 41° の輪で、外側が赤・内側が青', async () => {
+    const { addRainbow } = await import('../src/core/skyExtras.js');
+    const at = (deg) => {
+      const r = (deg * Math.PI) / 180;
+      const o = [0, 0, 0];
+      addRainbow([Math.sin(r), Math.cos(r), 0], [0, 1, 0], o);
+      return o;
+    };
+    expect(at(42.2)[0]).toBeGreaterThan(at(42.2)[2]);
+    expect(at(40.7)[2]).toBeGreaterThan(at(40.7)[0]);
+    expect(at(46)[0] + at(46)[1] + at(46)[2]).toBeLessThan(0.05); // 暗い帯
+  });
+});

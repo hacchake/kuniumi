@@ -1,0 +1,73 @@
+// 空の飾り（オーロラ・虹）の明るさを向きごとに求める（一枚絵の全天画像に描き込む用）。
+// リアルタイム表示のシェーダ（render/Aurora.js・render/Rainbow.js）と同じ式を JavaScript にしたもの。
+// 返す値は「露出をかける前の明るさ」ではなく 0..数 の相対値。呼ぶ側で露出に合わせて倍率をかける。
+
+const fract = (x) => x - Math.floor(x);
+const hash = (n) => fract(Math.sin(n) * 43758.5453);
+const smooth = (a, b, x) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+function noise1(x) {
+  const i = Math.floor(x), f = x - i;
+  return hash(i) + (hash(i + 1) - hash(i)) * f * f * (3 - 2 * f);
+}
+function noise2(x, y) {
+  const ix = Math.floor(x), iy = Math.floor(y);
+  let fx = x - ix, fy = y - iy;
+  fx = fx * fx * (3 - 2 * fx);
+  fy = fy * fy * (3 - 2 * fy);
+  const n = ix + iy * 57;
+  const a = hash(n) + (hash(n + 1) - hash(n)) * fx;
+  const b = hash(n + 57) + (hash(n + 58) - hash(n + 57)) * fx;
+  return a + (b - a) * fy;
+}
+
+// オーロラ：d = 向き（y = 上、-z = 北）、north = 1（北の空）/ -1（南の空）、time = 秒。out に RGB を足す
+export function addAurora(d, north, time, out, k = 1) {
+  const el = Math.asin(Math.max(-1, Math.min(1, d[1])));
+  if (el < -0.02) return;
+  let hx = d[0], hy = -d[2] * north;
+  const hl = Math.hypot(hx, hy) || 1;
+  hx /= hl;
+  hy /= hl;
+  const az = Math.atan2(hx, hy);
+  const wave = noise1(az * 2 + time * 0.03) * 0.25 + noise1(az * 5 - time * 0.05) * 0.08;
+  const above = el - (0.16 + wave);
+  let band = smooth(-0.03, 0, above) * Math.exp(-Math.max(above, 0) * 4);
+  band *= smooth(1.9, 0.6, Math.abs(az));
+  if (band < 1e-4) return;
+  let rays = noise2(az * 40 + time * 0.25, above * 2) * 0.6 + noise2(az * 110 - time * 0.4, 0) * 0.4;
+  rays = 0.35 + 0.9 * rays * rays;
+  const pulse = 0.6 + 0.4 * noise1(az * 3 + time * 0.2);
+  const a = band * rays * pulse * smooth(-0.02, 0.05, el) * k;
+  const t = smooth(0.05, 0.35, above), w = smooth(0.02, -0.02, above) * 0.5;
+  for (let i = 0; i < 3; i++) {
+    let c = [0.15, 1.0, 0.45][i] + ([0.75, 0.25, 0.6][i] - [0.15, 1.0, 0.45][i]) * t;
+    c += ([0.6, 1.0, 0.75][i] - c) * w;
+    out[i] += c * a;
+  }
+}
+
+function spectrum(t, out) {
+  out[0] = Math.min(1, Math.max(0, 1 - smooth(0.25, 0.5, t) + smooth(0.85, 1, t) * 0.5));
+  out[1] = Math.min(1, Math.max(0, smooth(0.1, 0.35, t) * (1 - smooth(0.55, 0.8, t))));
+  out[2] = Math.min(1, Math.max(0, smooth(0.5, 0.75, t)));
+  return out;
+}
+
+// 虹：d = 向き、antiSun = 太陽と反対の向き。out に RGB を足す
+export function addRainbow(d, antiSun, out, k = 1) {
+  const c = Math.max(-1, Math.min(1, d[0] * antiSun[0] + d[1] * antiSun[1] + d[2] * antiSun[2]));
+  const ang = (Math.acos(c) * 180) / Math.PI;
+  if (ang < 14 || ang > 56) return;
+  const t1 = (42.4 - ang) / 2;
+  const b1 = smooth(-0.15, 0.1, t1) * (1 - smooth(0.9, 1.15, t1));
+  const t2 = (ang - 50) / 3.3;
+  const b2 = smooth(-0.15, 0.1, t2) * (1 - smooth(0.9, 1.15, t2)) * 0.35;
+  const inner = (1 - smooth(30, 40.5, ang)) * smooth(15, 30, ang) * 0.06;
+  const s1 = spectrum(Math.min(1, Math.max(0, t1)), [0, 0, 0]);
+  const s2 = spectrum(Math.min(1, Math.max(0, t2)), [0, 0, 0]);
+  const hz = smooth(-0.01, 0.03, d[1]);
+  for (let i = 0; i < 3; i++) out[i] += (s1[i] * b1 + s2[i] * b2 + inner) * hz * k;
+}
