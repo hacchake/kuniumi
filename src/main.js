@@ -164,6 +164,9 @@ recBtn.className = 'rec-stop';
 recBtn.hidden = true;
 document.getElementById('stage').appendChild(recBtn);
 recBtn.addEventListener('click', () => toggleRecord());
+// 操作盤などからの知らせ
+window.addEventListener('kuniumi:toast', (e) => toast(e.detail));
+
 // カメラの道すじ：再生（と録画）
 window.addEventListener('kuniumi:path', (e) => {
   const rec = e.detail === 'record';

@@ -532,4 +532,7 @@ export const EN = {
   "道すじを全部消す": "Clear the path",
   "{n} か所": "{n} views",
   "道すじには 2 か所以上の視点を足してください": "Add at least two views to the path",
+  "いまの実際の天気と時刻（その場所）": "Live weather & time (that place)",
+  "いまの天気：{kind}（雲 {c}%）": "Current weather: {kind} (clouds {c}%)",
+  "天気を取り寄せられませんでした: {msg}": "Could not fetch the weather: {msg}",
 };

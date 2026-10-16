@@ -287,6 +287,39 @@ export class Panel {
     this.store.patch(changes, { source: 'ui-reset' });
   }
 
+  // その場所（地球から取り込んだ地形の中心、ほかは東京）のいまの天気（Open-Meteo）と太陽にする
+  async #liveWeather() {
+    const g = this.store.get().terrain.heightmap?.geo;
+    const lat = g?.lat ?? 35.68, lon = g?.lon ?? 139.77;
+    try {
+      const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=cloud_cover,precipitation,rain,snowfall,weather_code,visibility&timezone=auto`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const c = (await r.json()).current;
+      const code = c.weather_code;
+      const snow = (code >= 71 && code <= 77) || code === 85 || code === 86 || c.snowfall > 0;
+      const rain = !snow && ((code >= 51 && code <= 67) || (code >= 80 && code <= 82) || code >= 95 || c.rain > 0);
+      const fog = code === 45 || code === 48;
+      const cover = Math.min(1, Math.max(0, c.cloud_cover / 100));
+      const vis = Math.max(200, c.visibility ?? 20000);
+      const changes = {
+        'atmosphere.clouds': Math.round(cover * 100) / 100,
+        'atmosphere.cloudDensity': rain || snow ? 0.85 : 0.4 + cover * 0.4,
+        'atmosphere.haze': Math.round(Math.min(1.2, Math.max(0.12, 6000 / vis)) * 100) / 100,
+        'atmosphere.fogHeight': fog ? 2500 : rain || snow ? 1600 : 900,
+        'atmosphere.rays': fog ? 0.8 : 0.5,
+        'atmosphere.precip': snow ? 'snow' : rain ? 'rain' : 'none',
+      };
+      const sun = solarPosition(lat, lon, new Date());
+      changes['sun.elevation'] = Math.round(Math.max(-12, sun.elevation) * 10) / 10;
+      changes['sun.azimuth'] = Math.round(sun.azimuth * 2) / 2;
+      this.store.patch(changes, { source: 'ui' });
+      const kind = snow ? t('雪') : rain ? t('雨') : fog ? t('霧') : cover > 0.8 ? t('曇り') : cover > 0.3 ? t('晴れ') : t('快晴');
+      window.dispatchEvent(new CustomEvent('kuniumi:toast', { detail: t('いまの天気：{kind}（雲 {c}%）', { kind, c: Math.round(cover * 100) }) }));
+    } catch (err) {
+      window.dispatchEvent(new CustomEvent('kuniumi:toast', { detail: t('天気を取り寄せられませんでした: {msg}', { msg: err.message ?? err }) }));
+    }
+  }
+
   #buildField(f) {
     const row = document.createElement('label');
     row.className = `row row-${f.type ?? 'range'}`;
@@ -333,7 +366,12 @@ export class Panel {
       const sel = document.createElement('select');
       sel.add(new Option(t('— 選ぶ —'), ''));
       for (const [k, w] of Object.entries(WEATHER)) sel.add(new Option(t(w.label), k));
+      sel.add(new Option(t('いまの実際の天気と時刻（その場所）'), 'live'));
       sel.onchange = () => {
+        if (sel.value === 'live') {
+          sel.value = '';
+          return this.#liveWeather();
+        }
         const w = WEATHER[sel.value];
         sel.value = '';
         if (!w) return;
