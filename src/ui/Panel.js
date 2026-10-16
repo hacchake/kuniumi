@@ -203,6 +203,15 @@ const SECTIONS = [
     ],
   },
   {
+    id: 'path',
+    title: 'カメラの道すじ',
+    sub: 'Camera path',
+    fields: [
+      { path: 'camera.path', label: '視点', type: 'cameraPath' },
+      { path: 'camera.pathSeconds', label: '1 区間の秒数', min: 1, max: 30, step: 0.5, unit: 's' },
+    ],
+  },
+  {
     id: 'still',
     title: '一枚絵',
     sub: 'Still',
@@ -272,7 +281,7 @@ export class Panel {
     const changes = {};
     for (const f of sec.fields) {
       // 種と生成方法は作品の中身そのものなので戻さない
-      if (f.type === 'seed' || f.type === 'sizePreset' || f.type === 'sunTime' || f.type === 'weather' || f.path === 'terrain.mode') continue;
+      if (f.type === 'seed' || f.type === 'sizePreset' || f.type === 'sunTime' || f.type === 'weather' || f.type === 'cameraPath' || f.path === 'terrain.mode') continue;
       changes[f.path] = getIn(def, f.path);
     }
     this.store.patch(changes, { source: 'ui-reset' });
@@ -289,6 +298,36 @@ export class Panel {
     row.appendChild(name);
     const set = (v) => this.store.set(f.path, v, { source: 'ui' });
 
+    if (f.type === 'cameraPath') {
+      // いまの視点を足す・再生・再生して録画・全部消す（再生と録画は main.js が受け持つ）
+      const box = document.createElement('div');
+      box.className = 'path-btns';
+      const count = document.createElement('span');
+      count.className = 'path-count';
+      const btn = (label, title, fn) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = label;
+        b.title = title;
+        b.onclick = (e) => {
+          e.preventDefault();
+          fn();
+        };
+        box.appendChild(b);
+        return b;
+      };
+      btn(t('＋ 視点'), t('いまの視点を道すじの最後に足す'), () => {
+        const c = this.store.get().camera;
+        this.store.set('camera.path', [...(c.path ?? []), { position: [...c.position], target: [...c.target] }], { source: 'ui' });
+      });
+      btn('▶', t('道すじを再生する（画面を触ると止まる）'), () => window.dispatchEvent(new CustomEvent('kuniumi:path', { detail: 'play' })));
+      btn('●', t('道すじを再生しながら録画して、終わったら動画を保存する'), () => window.dispatchEvent(new CustomEvent('kuniumi:path', { detail: 'record' })));
+      btn('✕', t('道すじを全部消す'), () => this.store.set('camera.path', [], { source: 'ui' }));
+      box.appendChild(count);
+      row.appendChild(box);
+      this.bindings.push({ f, read: (v) => (count.textContent = t('{n} か所', { n: v?.length ?? 0 })), el: box });
+      return row;
+    }
     if (f.type === 'weather') {
       // 天気のひな形：雲・かすみ・霧・光の筋をまとめて変える（選んだ後も一つずつ調整できる）
       const sel = document.createElement('select');

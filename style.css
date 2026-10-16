@@ -468,3 +468,8 @@ body.walking #create { display: none; }
 .walk-sound { position: absolute; right: 12px; top: 192px; z-index: 24; width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--line); background: rgba(11, 15, 26, 0.75); color: var(--text); font-size: 17px; cursor: pointer; padding: 0; }
 .walk-sound[hidden] { display: none; }
 @media (max-width: 720px) { .walk-sound { top: 150px; } }
+.row-cameraPath { grid-template-columns: 76px 1fr; }
+.path-btns { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.path-btns button { background: rgba(217, 181, 108, 0.12); color: var(--gold-2); border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: 12px; padding: 3px 8px; cursor: pointer; }
+.path-btns button:hover { border-color: var(--gold); }
+.path-count { font-size: 11.5px; color: var(--muted); }

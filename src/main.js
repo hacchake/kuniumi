@@ -164,6 +164,16 @@ recBtn.className = 'rec-stop';
 recBtn.hidden = true;
 document.getElementById('stage').appendChild(recBtn);
 recBtn.addEventListener('click', () => toggleRecord());
+// カメラの道すじ：再生（と録画）
+window.addEventListener('kuniumi:path', (e) => {
+  const rec = e.detail === 'record';
+  if (rec && recorder) return;
+  const ok = view.playPath(() => {
+    if (rec && recorder) recorder.stop();
+  });
+  if (!ok) return toast(t('道すじには 2 か所以上の視点を足してください'));
+  if (rec) toggleRecord();
+});
 function toggleRecord() {
   if (recorder) return recorder.stop();
   const canvas = globe.isOpen && globe.renderer ? globe.renderer.canvas : view.renderer.domElement;

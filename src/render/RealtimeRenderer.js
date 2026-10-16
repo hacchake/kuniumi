@@ -71,7 +71,10 @@ export class RealtimeRenderer {
     // 視点を動かし終えたらシーンへ書き戻す（自分由来の変更なので再構築はしない）
     this.controls.addEventListener('end', () => this.#commitCamera());
     // 自分で視点を動かし始めたら、進行中の移動（F / Home）はやめる
-    this.controls.addEventListener('start', () => (this.flight = null));
+    this.controls.addEventListener('start', () => {
+      this.flight?.onEnd?.();
+      this.flight = null;
+    });
 
     // 空
     this.sky = new Sky();
@@ -312,9 +315,45 @@ export class RealtimeRenderer {
     };
   }
 
+  // カメラの道すじを再生する（Catmull-Rom でなめらかに）。onEnd: 終わったとき・途中で止めたとき
+  playPath(onEnd) {
+    const s = this.store.get();
+    const path = s.camera.path ?? [];
+    if (path.length < 2) return false;
+    if (this.walk.active) this.setWalk(null);
+    const P = path.map((k) => new THREE.Vector3(...k.position));
+    const T = path.map((k) => new THREE.Vector3(...k.target));
+    this.flight = { kind: 'path', P, T, start: performance.now(), dur: (path.length - 1) * Math.max(0.5, s.camera.pathSeconds ?? 5) * 1000, onEnd };
+    return true;
+  }
+
   #updateFlight() {
     const f = this.flight;
     if (!f) return;
+    if (f.kind === 'path') {
+      const k = Math.min(1, (performance.now() - f.start) / f.dur);
+      const n = f.P.length - 1;
+      // 全体を始めと終わりでゆっくりに
+      const e = k * k * (3 - 2 * k) * n;
+      const i = Math.min(n - 1, Math.floor(e)), u = e - i;
+      const cr = (A, out) => {
+        const p0 = A[Math.max(0, i - 1)], p1 = A[i], p2 = A[i + 1], p3 = A[Math.min(n, i + 2)];
+        const u2 = u * u, u3 = u2 * u;
+        return out.set(0, 0, 0)
+          .addScaledVector(p0, -0.5 * u3 + u2 - 0.5 * u)
+          .addScaledVector(p1, 1.5 * u3 - 2.5 * u2 + 1)
+          .addScaledVector(p2, -1.5 * u3 + 2 * u2 + 0.5 * u)
+          .addScaledVector(p3, 0.5 * u3 - 0.5 * u2);
+      };
+      cr(f.P, this.camera.position);
+      cr(f.T, this.controls.target);
+      if (k >= 1) {
+        this.flight = null;
+        this.#commitCamera();
+        f.onEnd?.();
+      }
+      return;
+    }
     const k = Math.min(1, (performance.now() - f.start) / f.dur);
     const e = k * k * (3 - 2 * k);
     this.camera.position.lerpVectors(f.p0, f.p1, e);

@@ -110,6 +110,8 @@ export function createDefaultScene() {
       position: [-5600, 2100, 6400],
       target: [0, 150, 0],
       fov: 50,
+      path: [], // カメラの道すじ：[{ position, target }]。再生すると順になめらかに飛ぶ（動画づくり用）
+      pathSeconds: 5, // 道すじの 1 区間にかける秒数
     },
     // 森と草（core/vegetation.js）。一枚絵では木と草を実際に置き、リアルタイム表示では森の色になる
     vegetation: defaultVegetation(),
