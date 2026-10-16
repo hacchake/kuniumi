@@ -87,6 +87,7 @@ export function createDefaultScene() {
       elevation: 16, // 地平線からの高度 (度)
       azimuth: 118, // 北(-Z) から東(+X) 回りの方位 (度)
       intensity: 1.0,
+      moonAge: 12, // 月齢（日）：0 = 新月、約 7 = 上弦、約 15 = 満月、約 22 = 下弦。月の形と位置・月明かりの強さ
     },
     atmosphere: {
       turbidity: 3.5, // 大気の濁り

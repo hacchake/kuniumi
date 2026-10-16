@@ -5,7 +5,7 @@ import { Sky } from 'three/addons/objects/Sky.js';
 import { Water } from 'three/addons/objects/Water.js';
 import { touches } from '../core/schema.js';
 import { t } from '../i18n/index.js';
-import { sunDirection, sunLight, hazeColor, nightFactor, NIGHT_SKY } from '../core/sun.js';
+import { sunDirection, sunLight, hazeColor, nightFactor, NIGHT_SKY, moonDirection, moonIllumination } from '../core/sun.js';
 import { TerrainService, fieldKeyOf } from '../three/TerrainService.js';
 import { createColorTexture } from '../three/terrainMesh.js';
 import { GpuTerrain, ORIGIN_STEP } from './GpuTerrain.js';
@@ -18,6 +18,7 @@ import { Buildings } from './Buildings.js';
 import { Precipitation } from './Precipitation.js';
 import { Rainbow } from './Rainbow.js';
 import { Fireflies } from './Fireflies.js';
+import { Moon } from './Moon.js';
 import { RealtimeTrees } from './RealtimeTrees.js';
 import { decodePng } from '../core/png16.js';
 import { decodePhoto } from '../io/photo.js';
@@ -199,6 +200,7 @@ void main() {`)
     this.precip = new Precipitation(this.scene);
     this.rainbow = new Rainbow(this.scene);
     this.fireflies = new Fireflies(this.scene);
+    this.moon = new Moon(this.scene);
     // 建物（地球から取り込んだ景観で、地面に近いとき）
     this.buildings = new Buildings(this.world, (m) => patchStandardMaterial(m, this.shared));
     this.walk = new WalkControls(this.camera, canvas, {
@@ -541,7 +543,10 @@ void main() {`)
       // 水面の明るさを景色の尺度へ（昼は露出の逆数ほど、夜は暗く）
       this.water.material.uniforms.kWaterGain.value = (0.75 / Math.max(0.02, a.exposure)) * Math.max(0.03, Math.min(1, strength / 25));
 
-      this.nightLight.intensity = nightFactor(s.sun.elevation) * Math.PI * 0.15;
+      // 月明かり：満月で月が高いほど明るく、新月や月の出ていない夜は星明かりだけ（半分）
+      const md = moonDirection(sunDirection(s.sun.elevation, s.sun.azimuth), s.sun.moonAge ?? 12);
+      const moonLit = moonIllumination(s.sun.moonAge ?? 12) * THREE.MathUtils.smoothstep(md[1], -0.02, 0.3);
+      this.nightLight.intensity = nightFactor(s.sun.elevation) * Math.PI * 0.15 * (0.5 + 0.5 * moonLit);
       this.precip.set(a.precip);
       const wet = a.precip === 'rain' || a.precip === 'storm' ? 1 : 0;
       this.gpuTerrain.uniforms.tWet.value = wet;
@@ -967,6 +972,7 @@ void main() {`)
     {
       const pr = this.store.get().atmosphere.precip; // 雨のときの虹
       this.rainbow.update(cam.position, this.sky.material.uniforms.sunPosition.value, pr === 'rain' || pr === 'storm', this.baseExposure ?? 1, this.store.get().atmosphere.clouds ?? 0);
+      this.moon.update(cam.position, this.sky.material.uniforms.sunPosition.value, this.store.get().sun.moonAge ?? 12, this.baseExposure ?? 1, 1 - nightFactor(this.store.get().sun.elevation));
       // 蛍：春・夏の夜、雨や雪でないとき、地面から 200 m より低い所で
       const st = this.store.get();
       const above = flatPos.y - this.gpuTerrain.groundAt(flatPos.x, flatPos.z);

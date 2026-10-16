@@ -6,7 +6,7 @@ import { encodeGray16, decodePng } from '../src/core/png16.js';
 import { generateNoiseField } from '../src/core/heightfield.js';
 import { applyErosion } from '../src/core/erosion.js';
 import { skyParams, renderSkyEquirect, sunIrradiance, discScaleFor } from '../src/core/skyModel.js';
-import { sunDirection, anglesFromDirection } from '../src/core/sun.js';
+import { sunDirection, anglesFromDirection, moonAge, moonDirection, moonIllumination } from '../src/core/sun.js';
 import { buildLodTerrain } from '../src/core/terrainLod.js';
 import { toneMapToRGBA8 } from '../src/core/tonemap.js';
 import { createObject, normalizeObject } from '../src/core/objects.js';
@@ -169,5 +169,25 @@ describe('実際の太陽の位置', () => {
     expect(Math.abs(rise.elevation)).toBeLessThan(3);
     expect(Math.abs(rise.azimuth - 90)).toBeLessThan(5);
     expect(solarPosition(35.68, 139.77, new Date(Date.UTC(2026, 5, 21, 15, 0))).elevation).toBeLessThan(-20); // 真夜中
+  });
+});
+
+describe('月', () => {
+  it('月齢：既知の満月・新月の日に合う', () => {
+    // 2024-04-08 18:21 UTC は新月（皆既日食）、2024-04-24 00:49 UTC は満月
+    const n = moonAge(new Date(Date.UTC(2024, 3, 8, 18, 21)));
+    expect(Math.min(n, 29.53 - n)).toBeLessThan(0.7);
+    expect(Math.abs(moonAge(new Date(Date.UTC(2024, 3, 24, 0, 49))) - 14.77)).toBeLessThan(0.8);
+    expect(moonIllumination(0)).toBeCloseTo(0, 5);
+    expect(moonIllumination(14.765)).toBeCloseTo(1, 3);
+  });
+  it('日没直後：満月は東の地平線、上弦は南の高い空', () => {
+    const sun = sunDirection(-3, 270);
+    const full = anglesFromDirection(moonDirection(sun, 14.77));
+    expect(Math.abs(full.elevation)).toBeLessThan(6);
+    expect(Math.abs(full.azimuth - 90)).toBeLessThan(10);
+    const q = anglesFromDirection(moonDirection(sun, 7.38));
+    expect(q.elevation).toBeGreaterThan(35);
+    expect(Math.abs(q.azimuth - 180)).toBeLessThan(30);
   });
 });

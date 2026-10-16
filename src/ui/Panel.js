@@ -1,5 +1,5 @@
 import { getIn, RESOLUTIONS, SIZE_MIN, SIZE_MAX, createDefaultScene } from '../core/schema.js';
-import { solarPosition } from '../core/sun.js';
+import { solarPosition, moonAge } from '../core/sun.js';
 import { t } from '../i18n/index.js';
 
 // 天気のひな形（大気の項目をまとめて変える）
@@ -46,6 +46,7 @@ const HINTS = {
   'vegetation.trees': '森の広さと密度。リアルタイムでは森の色、一枚絵では木そのものが描かれる',
   'vegetation.grass': '一枚絵で、カメラが地面に近いときに足元へ草を置く',
   'sun.elevation': '地平線からの太陽の高さ。マイナスは日没後',
+  'sun.moonAge': '月の満ち欠け（0 = 新月、約 7 = 上弦、約 15 = 満月、約 22 = 下弦）。月の形と空の位置、夜の明るさが変わる。「日時から」で合わせるとその日の月齢になる',
   'sun.azimuth': '北を 0° として東回りの方角（90° = 東、180° = 南）',
   'atmosphere.rayleigh': '空の青さ。大きいほど深い青、夕焼けは赤く',
   'atmosphere.turbidity': '空気の濁り（ちり・水蒸気）。大きいほど白っぽい空',
@@ -156,6 +157,7 @@ const SECTIONS = [
       { path: 'sun.elevation', label: '高度', min: -12, max: 90, step: 0.1, unit: '°' },
       { path: 'sun.azimuth', label: '方位', min: 0, max: 360, step: 0.5, unit: '°' },
       { path: 'sun.intensity', label: '強さ', min: 0, max: 3, step: 0.01 },
+      { path: 'sun.moonAge', label: '月齢', min: 0, max: 29.5, step: 0.1, unit: '日' },
       { path: 'sun.when', label: '日時から', type: 'sunTime' },
     ],
   },
@@ -314,6 +316,7 @@ export class Panel {
       const sun = solarPosition(lat, lon, new Date());
       changes['sun.elevation'] = Math.round(Math.max(-12, sun.elevation) * 10) / 10;
       changes['sun.azimuth'] = Math.round(sun.azimuth * 2) / 2;
+      changes['sun.moonAge'] = Math.round(moonAge(new Date()) * 10) / 10;
       this.store.patch(changes, { source: 'ui' });
       const kind = snow ? t('雪') : storm ? t('雷雨') : rain ? t('雨') : fog ? t('霧') : cover > 0.8 ? t('曇り') : cover > 0.3 ? t('晴れ') : t('快晴');
       window.dispatchEvent(new CustomEvent('kuniumi:toast', { detail: t('いまの天気：{kind}（雲 {c}%）', { kind, c: Math.round(cover * 100) }) }));
@@ -400,7 +403,7 @@ export class Panel {
         const lat = g?.lat ?? 35.68, lon = g?.lon ?? 139.77;
         const d = when.value ? new Date(when.value) : new Date();
         const p = solarPosition(lat, lon, d);
-        this.store.patch({ 'sun.elevation': Math.round(Math.max(-12, p.elevation) * 10) / 10, 'sun.azimuth': Math.round(p.azimuth * 2) / 2 }, { source: 'ui' });
+        this.store.patch({ 'sun.elevation': Math.round(Math.max(-12, p.elevation) * 10) / 10, 'sun.azimuth': Math.round(p.azimuth * 2) / 2, 'sun.moonAge': Math.round(moonAge(d) * 10) / 10 }, { source: 'ui' });
       };
       // ▶：時刻を進め続ける（0.1 秒ごとに 5 分。一日の光の移り変わりを眺める）
       const play = document.createElement('button');

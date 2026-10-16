@@ -72,3 +72,36 @@ export function solarPosition(lat, lon, date = new Date()) {
   az = ((az % 360) + 360) % 360;
   return { elevation: el / R, azimuth: az };
 }
+
+// 月齢（日、0 = 新月 … 約 14.8 = 満月 … 29.53）。2000-01-06 18:14 UTC の新月から朔望月で数える（誤差は半日ほど）
+export const SYNODIC_MONTH = 29.530588;
+export function moonAge(date = new Date()) {
+  const days = (date.getTime() - Date.UTC(2000, 0, 6, 18, 14)) / 86400000;
+  return ((days % SYNODIC_MONTH) + SYNODIC_MONTH) % SYNODIC_MONTH;
+}
+
+// 月の光っている割合（0 = 新月、1 = 満月）
+export function moonIllumination(age) {
+  return (1 - Math.cos((age / SYNODIC_MONTH) * Math.PI * 2)) / 2;
+}
+
+// 月の向き（y = 上の単位ベクトル。x = 東、z = 南）：太陽の向きから、月齢の分だけ天球上を東へ離した所。
+// 黄道の代わりに「太陽を通り、真上より南へ傾いた所（中緯度の黄道の高さ）を通る大円」の上で回す近似。
+// 満月は太陽のほぼ反対、上弦は日没のころ南の空の高い所、下弦は夜明けのころ南の空。
+export function moonDirection(sunDir, age) {
+  const S = norm(sunDir);
+  const top = norm([0, 1, 0.7]); // 大円が通る「南寄りの天頂」
+  let A = cross(S, top);
+  if (Math.hypot(...A) < 1e-4) A = [1, 0, 0];
+  A = norm(A);
+  const th = (age / SYNODIC_MONTH) * Math.PI * 2;
+  const c = Math.cos(th), s = Math.sin(th);
+  const AxS = cross(A, S), d = dot3(A, S);
+  return [0, 1, 2].map((k) => S[k] * c + AxS[k] * s + A[k] * d * (1 - c));
+}
+const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const norm = (a) => {
+  const l = Math.hypot(...a) || 1;
+  return [a[0] / l, a[1] / l, a[2] / l];
+};
