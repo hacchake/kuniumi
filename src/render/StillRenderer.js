@@ -438,9 +438,13 @@ export class StillJob {
       }
     }
     for (const tex of [innerPhoto, outerPhoto]) if (tex) this.disposers.push(() => tex.dispose());
+    // 夜の街の明かり（夜ほど強く）
+    const nf = nightFactor(s.sun.elevation);
+    const lightsTex = nf > 0.02 && t.mode === 'heightmap' && t.heightmap?.lights ? await loadPhotoTexture(t.heightmap.lights) : null;
+    if (lightsTex) this.disposers.push(() => lightsTex.dispose());
     const terrainMesh = new THREE.Mesh(
       geo,
-      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: inlandWater ? 1 : 0.95, metalness: 0, map: innerPhoto, roughnessMap: inlandWater?.rough ?? null }),
+      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: inlandWater ? 1 : 0.95, metalness: 0, map: innerPhoto, roughnessMap: inlandWater?.rough ?? null, emissiveMap: lightsTex, emissive: lightsTex ? new THREE.Color(1, 0.8, 0.55) : new THREE.Color(0), emissiveIntensity: lightsTex ? nf * 4 : 0 }),
     );
     terrainMesh.name = 'Terrain';
     scene.add(terrainMesh);

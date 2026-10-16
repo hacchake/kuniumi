@@ -152,6 +152,8 @@ export class GpuTerrain {
       tHasWear: { value: 0 },
       tPhoto: { value: null }, // 地表の衛星写真（範囲と同じ正方形、行 0 = 北）
       tWaterMask: { value: null }, // 川・湖の印（OpenStreetMap。白 = 水）
+      tLights: { value: null }, // 夜の街の明かり（範囲と同じ正方形）
+      tLightsI: { value: 0 }, // 明かりの強さ（夜ほど強く。0 なら描かない）
       tSeason: { value: 0 }, // 季節（0 = そのまま、1 = 春、2 = 秋、3 = 冬）
       tWinterSnow: { value: 600 }, // 冬に雪が積もる高さ (m)
       tHasWaterMask: { value: 0 },
@@ -197,7 +199,7 @@ export class GpuTerrain {
           .replace('#include <beginnormal_vertex>', 'vec3 objectNormal; vec3 kTP; kTerrainVertex( kTP, objectNormal );')
           .replace('#include <begin_vertex>', 'vec3 transformed = kTP;');
         shader.fragmentShader = shader.fragmentShader
-          .replace('#include <common>', `#include <common>\n${TERRAIN_SHADING_GLSL}\nvarying float vTH, vTSlope, vTWear, vTJit, vTClump;\nvarying vec2 vTLocal, vTDetGrad;\nuniform vec2 tOriginW;\nuniform float tClipHalf, tHasPhoto, tHasWaterMask, tSeason, tWinterSnow;\nuniform sampler2D tPhoto, tWaterMask;\n${CURVE_GLSL}\n${FIELD_GLSL}`)
+          .replace('#include <common>', `#include <common>\n${TERRAIN_SHADING_GLSL}\nvarying float vTH, vTSlope, vTWear, vTJit, vTClump;\nvarying vec2 vTLocal, vTDetGrad;\nuniform vec2 tOriginW;\nuniform float tClipHalf, tHasPhoto, tHasWaterMask, tSeason, tWinterSnow, tLightsI;\nuniform sampler2D tPhoto, tWaterMask, tLights;\n${CURVE_GLSL}\n${FIELD_GLSL}`)
           // 面の向きと傾きは画素ごとに高さ場から出す（頂点の補間だと、区画の細かさが変わる所で線が出る）
           .replace(
             '#include <normal_fragment_begin>',
@@ -244,6 +246,11 @@ export class GpuTerrain {
           .replace(
             '#include <roughnessmap_fragment>',
             '#include <roughnessmap_fragment>\nroughnessFactor = mix( roughnessFactor, 0.07, kWm );',
+          )
+          // 夜の街の明かり（暗い陸の写りは除いて、明かりだけを光らせる）
+          .replace(
+            '#include <emissivemap_fragment>',
+            '#include <emissivemap_fragment>\nif ( tLightsI > 0.0 ) { vec3 kL = texture2D( tLights, clamp( tUV( vTLocal ), 0.0, 1.0 ) ).rgb; totalEmissiveRadiance += max( kL - 0.06, vec3( 0.0 ) ) * vec3( 1.0, 0.8, 0.55 ) * tLightsI * ( 1.0 - kWm ); }',
           );
       } else {
         shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', 'vec3 kTN; vec3 transformed; kTerrainVertex( transformed, kTN );');
@@ -330,6 +337,12 @@ export class GpuTerrain {
   setSeason(season, winterSnow = 600) {
     this.uniforms.tSeason.value = { spring: 1, autumn: 2, winter: 3 }[season] ?? 0;
     this.uniforms.tWinterSnow.value = winterSnow;
+  }
+
+  // 夜の街の明かり（THREE.Texture）と強さ（0 = 消す）
+  setLights(tex, intensity) {
+    this.uniforms.tLights.value = tex;
+    this.uniforms.tLightsI.value = tex ? intensity : 0;
   }
 
   setWaterMask(tex) {

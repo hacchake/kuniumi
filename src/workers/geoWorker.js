@@ -2,7 +2,7 @@
 // 取り寄せと解釈と標本化はここ（メインスレッドを止めない）。
 import { TERRARIUM_URL, TILE, lonLatToTile, gridLonLat, chooseZoom, tilesFor, decodeTerrarium, repairElevation } from '../core/geo.js';
 import { decodePng } from '../core/png16.js';
-import { imageryUrl, IMAGERY_MAX_ZOOM } from '../core/globe.js';
+import { imageryUrl, lightsUrl, IMAGERY_MAX_ZOOM, LIGHTS_MAX_ZOOM } from '../core/globe.js';
 
 const cache = new Map(); // "z/x/y" → Float32Array(256×256)（同じ所を何度も取りに行かない）
 const CACHE_MAX = 600;
@@ -103,9 +103,10 @@ async function decodeWithBitmap(buf) {
 // 範囲の写真を px × px（行 0 = 北）で作り、JPEG の data URL にして返す。
 // 写真のタイル（Web メルカトル）を取り寄せ、格子点ごとに経緯度 → タイルの画素 → 双一次補間
 const photoCache = new Map(); // "z/x/y" → Uint8ClampedArray(256×256×4)
-async function photoJob({ id, region, px, maxTiles = 300, concurrency = 8 }) {
+// source: 'photo'（衛星写真）| 'lights'（夜の街の明かり。ズーム 8 まで）
+async function photoJob({ id, region, px, maxTiles = 300, concurrency = 8, source = 'photo' }) {
   try {
-    const z = Math.min(IMAGERY_MAX_ZOOM, chooseZoom(region, px, maxTiles));
+    const z = Math.min(source === 'lights' ? LIGHTS_MAX_ZOOM : IMAGERY_MAX_ZOOM, chooseZoom(region, px, maxTiles));
     const tiles = tilesFor(region, z);
     let done = 0;
     const post = (phase) => self.postMessage({ id, progress: { phase, done, total: tiles.length, zoom: z } });
@@ -114,8 +115,8 @@ async function photoJob({ id, region, px, maxTiles = 300, concurrency = 8 }) {
     const worker = async () => {
       while (queue.length) {
         const t = queue.shift();
-        const key = `${t.z}/${t.x}/${t.y}`;
-        if (!photoCache.has(key)) photoCache.set(key, await fetchPhotoTile(t));
+        const key = `${source}:${t.z}/${t.x}/${t.y}`;
+        if (!photoCache.has(key)) photoCache.set(key, await fetchPhotoTile(t, source));
         done++;
         if (done % 4 === 0 || done === tiles.length) post('photo');
       }
@@ -130,7 +131,7 @@ async function photoJob({ id, region, px, maxTiles = 300, concurrency = 8 }) {
     const look = (gx, gy, dst) => {
       const tx = ((Math.floor(gx / TILE) % n) + n) % n;
       const ty = Math.max(0, Math.min(n - 1, Math.floor(gy / TILE)));
-      const d = photoCache.get(`${z}/${tx}/${ty}`);
+      const d = photoCache.get(`${source}:${z}/${tx}/${ty}`);
       if (!d) return false;
       const ix = ((gx % TILE) + TILE) % TILE, iy = Math.max(0, Math.min(TILE - 1, gy - ty * TILE));
       const k = (iy * TILE + ix) * 4;
@@ -202,8 +203,8 @@ async function photoJob({ id, region, px, maxTiles = 300, concurrency = 8 }) {
   }
 }
 
-async function fetchPhotoTile(t) {
-  const url = imageryUrl(t.z, t.x, t.y);
+async function fetchPhotoTile(t, source = 'photo') {
+  const url = source === 'lights' ? lightsUrl(t.z, t.x, t.y) : imageryUrl(t.z, t.x, t.y);
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const r = await fetch(url);

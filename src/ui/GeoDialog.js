@@ -59,8 +59,8 @@ export class GeoDialog {
   // ---- 計算はワーカーで ----
   // 衛星写真（JPEG の data URL）を作る。写真の一辺 px
   // 写真は別のワーカーで（標高の取り寄せ・組み立てと同時に進める）
-  #runPhoto(region, px, maxTiles, onProgress) {
-    return this.#post({ photo: true, region, px, maxTiles }, onProgress, 'photoWorker');
+  #runPhoto(region, px, maxTiles, onProgress, source = 'photo') {
+    return this.#post({ photo: true, region, px, maxTiles, source }, onProgress, 'photoWorker');
   }
 
   #run(region, res, maxTiles, onProgress) {
@@ -99,7 +99,10 @@ export class GeoDialog {
       const photos = (async () => {
         const inner = await this.#runPhoto(region, photoSizeFor(region.size), 360, null);
         const outer = outerSize > region.size * 1.3 ? await this.#runPhoto({ ...region, size: outerSize }, 2048, 200, null) : null;
-        return { inner: inner.url, outer: outer?.url ?? null };
+        // 夜の街の明かり（NASA Black Marble。粗いので小さくてよい）。取れなくても写真は使う
+        const lights = await this.#runPhoto(region, 512, 64, null, 'lights').catch(() => null);
+        const outerLights = outer ? await this.#runPhoto({ ...region, size: outerSize }, 1024, 64, null, 'lights').catch(() => null) : null;
+        return { inner: inner.url, outer: outer?.url ?? null, lights: lights?.url ?? null, outerLights: outerLights?.url ?? null };
       })().catch((err) => {
         console.warn('衛星写真を取り寄せられませんでした', err);
         return null;
@@ -190,6 +193,8 @@ export class GeoDialog {
       if (ph) {
         hm.photo = ph.inner;
         if (hm.surround && ph.outer) hm.surround.photo = ph.outer;
+        if (ph.lights) hm.lights = ph.lights; // 夜の街の明かり（JPEG、行 0 = 北）
+        if (hm.surround && ph.outerLights) hm.surround.lights = ph.outerLights;
         hm.geo.photo = IMAGERY_ATTRIBUTION;
       }
       this.apply({ heightmap: hm, region, res, min, max, name }, { restore, after });

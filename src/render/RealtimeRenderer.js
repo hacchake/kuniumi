@@ -458,6 +458,7 @@ export class RealtimeRenderer {
       this.water.material.uniforms.kWaterGain.value = (0.75 / Math.max(0.02, a.exposure)) * Math.max(0.03, Math.min(1, strength / 25));
 
       this.nightLight.intensity = nightFactor(s.sun.elevation) * Math.PI * 0.15;
+      this.#applyLights();
       this.atmosphere.uniforms.nightSky.value.set(...NIGHT_SKY).multiplyScalar(nightFactor(s.sun.elevation));
       this.renderer.toneMappingExposure = a.exposure;
       this.scene.environmentIntensity = a.ambient;
@@ -546,6 +547,8 @@ export class RealtimeRenderer {
     const inner = use ? hm?.photo ?? null : null;
     const outer = use ? hm?.surround?.photo ?? null : null;
     const waterUrl = hm?.water ?? null;
+    const lightsUrl = hm?.lights ?? null;
+    const outerLightsUrl = hm?.surround?.lights ?? null;
     const load = async (url, slot) => {
       if (this.photoUrls?.[slot] === url) return;
       this.photoUrls = { ...this.photoUrls, [slot]: url };
@@ -566,6 +569,7 @@ export class RealtimeRenderer {
         }
       }
       this.photoTex = { ...this.photoTex, [slot]: tex };
+      if (slot === 'lights' || slot === 'outerLights') return this.#applyLights();
       if (slot === 'water') {
         // 印は色ではないので線形のまま
         if (tex) (tex.colorSpace = THREE.NoColorSpace), (tex.needsUpdate = true);
@@ -580,7 +584,15 @@ export class RealtimeRenderer {
       }
       else this.surround?.terrain.setPhoto(tex);
     };
-    await Promise.all([load(inner, 'inner'), load(outer, 'outer'), load(waterUrl, 'water')]);
+    await Promise.all([load(inner, 'inner'), load(outer, 'outer'), load(waterUrl, 'water'), load(lightsUrl, 'lights'), load(outerLightsUrl, 'outerLights')]);
+  }
+
+  // 夜の街の明かりの強さ：太陽が沈むほど強く（露出の逆数で、景色の明るさの尺度へ）
+  #applyLights() {
+    const s = this.store.get();
+    const k = nightFactor(s.sun.elevation) * (0.35 / Math.max(0.02, s.atmosphere.exposure));
+    this.gpuTerrain.setLights(this.photoTex?.lights ?? null, k);
+    this.surround?.terrain.setLights(this.photoTex?.outerLights ?? null, k);
   }
 
   async #updateSurround(s) {
