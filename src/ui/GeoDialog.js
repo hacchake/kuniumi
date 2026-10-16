@@ -1,5 +1,5 @@
 import { t } from '../i18n/index.js';
-import { GEO_PRESETS, ELEVATION_ATTRIBUTION, EARTH_R, aeqdInverse, sizeFromBBox, chooseZoom, tilesFor, fillSeaFloor } from '../core/geo.js';
+import { GEO_PRESETS, ELEVATION_ATTRIBUTION, EARTH_R, aeqdInverse, sizeFromBBox, chooseZoom, tilesFor, fillSeaFloor, featherToSurround } from '../core/geo.js';
 import { fieldToHeightmap } from '../io/heightmap.js';
 import { SIZE_MAX } from '../core/schema.js';
 
@@ -77,7 +77,10 @@ export class GeoDialog {
       let o = null;
       if (outerSize > region.size * 1.3) o = await this.#run({ ...region, size: outerSize }, SURROUND_RES, 160, (p) => this.#progress(p, true));
       // 沿岸の海底の深さを周りの地形で補う
-      const heights = o ? fillSeaFloor(r.heights, res, region.size, o.heights, SURROUND_RES, outerSize) : r.heights;
+      // 縁は周りの地形の高さへ寄せる（境目に段差を作らない）
+      const heights = o
+        ? featherToSurround(fillSeaFloor(r.heights, res, region.size, o.heights, SURROUND_RES, outerSize), res, region.size, o.heights, SURROUND_RES, outerSize)
+        : r.heights;
       let min = Infinity, max = -Infinity;
       for (const h of heights) {
         if (h < min) min = h;

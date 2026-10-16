@@ -152,3 +152,28 @@ export function fillSeaFloor(inner, res, size, outer, ores, osize) {
   }
   return out;
 }
+
+// 範囲の縁（一辺の frac の幅）を、周りの地形の高さへ滑らかに寄せる。
+// 縁ではちょうど周りの地形と同じ高さになるので、細かい地形と粗い地形の境目に段差や崖ができない
+export function featherToSurround(inner, res, size, outer, ores, osize, frac = 0.03) {
+  const out = new Float32Array(inner);
+  const k = size / osize;
+  const sm = (x) => x * x * (3 - 2 * x);
+  for (let j = 0; j < res; j++) {
+    const fj = j / (res - 1);
+    const v = (0.5 + (fj - 0.5) * k) * (ores - 1);
+    const j0 = Math.min(ores - 2, Math.max(0, Math.floor(v))), fy = v - j0;
+    for (let i = 0; i < res; i++) {
+      const fi = i / (res - 1);
+      const e = Math.min(fi, 1 - fi, fj, 1 - fj);
+      if (e >= frac) continue;
+      const u = (0.5 + (fi - 0.5) * k) * (ores - 1);
+      const i0 = Math.min(ores - 2, Math.max(0, Math.floor(u))), fx = u - i0;
+      const a = outer[j0 * ores + i0], b = outer[j0 * ores + i0 + 1], c = outer[(j0 + 1) * ores + i0], d = outer[(j0 + 1) * ores + i0 + 1];
+      const o = (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy;
+      const w = sm(e / frac);
+      out[j * res + i] = o + (inner[j * res + i] - o) * w;
+    }
+  }
+  return out;
+}

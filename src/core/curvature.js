@@ -32,3 +32,27 @@ export function curveNormal(x, z, nx, ny, nz, cx, cz, R, out = [0, 0, 0]) {
   out[2] = restZ + uz * c * a + uz * s * ny;
   return out;
 }
+
+// 一枚絵の海の円盤（StillRenderer の curvedDisc）の作り方と、そのたわみ。
+// 円盤は中心から外へ、半径 × (DISC_RATIO − 1) ずつの同心円と、一周 DISC_SEG 分割の三角形でできている。
+// 平らな三角形は球面より内側にたわむので、その深さ（弦のたわみ L²/8R）を見積もる
+export const DISC_RATIO = 1.03;
+export const DISC_SEG = 720;
+export function discSag(r, R) {
+  if (!(R > 0)) return 0;
+  const L = Math.max(r * (DISC_RATIO - 1), (2 * Math.PI * r) / DISC_SEG, 1);
+  return (L * L) / (8 * R);
+}
+
+// 平らな三角形（一辺 L）でできた地形も球面より内側にたわむ。陸の頂点をその分だけ持ち上げ、
+// 遠くの低い海岸が海面の下へ沈んで縞にならないようにする（対角線ぶん √2 倍で見積もる）
+export function landLift(y, spacing, level, R) {
+  if (!(R > 0) || y < level) return y;
+  const L = spacing * 1.42;
+  return y + (L * L) / (8 * R);
+}
+
+// 水の下の地形は、海面のたわみより深くしておく（浅瀬が水面から顔を出したり、水深のむらが縞に見えたりしないように）
+export function belowWater(y, d, level, R) {
+  return y < level ? Math.min(y, level - 0.5 - discSag(d, R) * 1.2) : y;
+}

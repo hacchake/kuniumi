@@ -1,7 +1,7 @@
 import { createTerrainSurface } from './terrainSurface.js';
 import { createTerrainShader, valueNoise } from './terrainColor.js';
 import { createVegetationRules, placeVegetation } from './vegetation.js';
-import { curvePoint, curveNormal } from './curvature.js';
+import { curvePoint, curveNormal, belowWater, landLift } from './curvature.js';
 
 // 静止画用の地形：カメラに近いほど細かい区画（四分木）に分け、地形の高さを直接計算して作る（ノイズ地形・ハイトマップ地形の両方）。
 // 格子の地形は遠景には十分だが、近景では 1 マス数 m の多角形が角張って見える。
@@ -169,7 +169,12 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
         const gx = (hg[k + 1] - hg[k - 1]) / (2 * s);
         const gz = (hg[k + G] - hg[k - G]) / (2 * s);
         const nl = Math.hypot(gx, 1, gz);
-        curvePoint(x - P.ox, y, z - P.oz, pcx, pcz, P.R, pp);
+        // 丸い星では、水の下の地形を海面の円盤のたわみより深くする
+        const lvl = water.enabled ? water.level : -Infinity;
+        // 持ち上げる量は、カメラからの距離で決まる頂点の間隔の見積もり（区画の境目で食い違わないように連続的に）
+        const sEst = Math.hypot(x - C[0], y - C[1], z - C[2]) * detail * pixel * 2;
+        const yy = P.R > 0 ? landLift(water.enabled ? belowWater(y, Math.hypot(x - P.cx, z - P.cz), water.level, P.R) : y, sEst, lvl, P.R) : y;
+        curvePoint(x - P.ox, yy, z - P.oz, pcx, pcz, P.R, pp);
         curveNormal(x - P.ox, z - P.oz, -gx / nl, 1 / nl, -gz / nl, pcx, pcz, P.R, pn);
         positions.set(pp, vo * 3);
         normals.set(pn, vo * 3);

@@ -13,7 +13,7 @@ import { computeAtmosphere } from './atmospherePass.js';
 import { atmosphereParams } from './atmosphereParams.js';
 import { coniferGeometry, broadleafGeometry, grassGeometry, fillInstances } from '../three/vegetationMeshes.js';
 import { planetRadius } from '../core/schema.js';
-import { curvePoint } from '../core/curvature.js';
+import { curvePoint, DISC_RATIO, DISC_SEG } from '../core/curvature.js';
 import { buildSurroundMesh } from '../core/surroundMesh.js';
 import { decodePng } from '../core/png16.js';
 
@@ -285,23 +285,29 @@ export class StillJob {
       // さざ波は「表面の粗さ」で表す。繰り返しの法線マップはパストレーサのテクスチャ合成で継ぎ目が線になるため使わない。
       // 粗さは「揺らぎ」「波の大きさ」から決める（太陽の照り返しが広がり、遠くの水面が空を柔らかく映す）
       const tint = new THREE.Color(s.water.color);
-      const wmat = new THREE.MeshPhysicalMaterial({
-        color: 0xffffff,
-        roughness: Math.min(0.25, 0.015 + s.water.distortion * 0.008 * s.water.waveScale),
-        metalness: 0,
-        transmission: 1,
-        ior: 1.333,
-        thickness: 1,
-        // 水の色は「吸収されにくい色」として持たせる（浅瀬が水の色に染まり、深い所ほど暗くなる）
-        attenuationColor: tint.clone().lerp(new THREE.Color(1, 1, 1), 0.55),
-        attenuationDistance: 10,
-      });
+      const rough = Math.min(0.25, 0.015 + s.water.distortion * 0.008 * s.water.waveScale);
+      // 上空（20 km 以上）から見下ろすときは、海底は見えないので「透ける水」をやめ、暗い水の色と表面の反射だけにする。
+      // 透ける水のままだと、球面に沿わせた三角形の面ごとに屈折がずれ、同心円の縞になる
+      const fromSky = R > 0 && s.camera.position[1] > 20000;
+      const wmat = fromSky
+        ? new THREE.MeshPhysicalMaterial({ color: tint.clone().multiplyScalar(0.35), roughness: Math.max(rough, 0.06), metalness: 0, ior: 1.333, specularIntensity: 1 })
+        : new THREE.MeshPhysicalMaterial({
+            color: 0xffffff,
+            roughness: rough,
+            metalness: 0,
+            transmission: 1,
+            ior: 1.333,
+            thickness: 1,
+            // 水の色は「吸収されにくい色」として持たせる（浅瀬が水の色に染まり、深い所ほど暗くなる）
+            attenuationColor: tint.clone().lerp(new THREE.Color(1, 1, 1), 0.55),
+            attenuationDistance: 10,
+          });
       water = new THREE.Mesh(wgeo, wmat);
       if (!(R > 0)) water.position.y = s.water.level;
       scene.add(water);
       // 水の底：地形の外まで光が素通りしないよう、暗い海底でふさぐ
       const bedY = Math.min(t.baseHeight, s.water.level) - 3; // 地形の最低点のすぐ下（縁の段差を作らない）
-      const bgeo = R > 0 ? curvedDisc(R, bedY) : new THREE.PlaneGeometry(span, span, 1, 1);
+      const bgeo = R > 0 ? curvedDisc(R, bedY, Math.PI * R * 0.98, 256, 1.06) : new THREE.PlaneGeometry(span, span, 1, 1);
       if (!(R > 0)) bgeo.rotateX(-Math.PI / 2);
       const bed = new THREE.Mesh(bgeo, new THREE.MeshStandardMaterial({ color: 0x1a1612, roughness: 1 }));
       if (!(R > 0)) bed.position.y = bedY;
@@ -514,11 +520,9 @@ function flipRows(data, W, H) {
 }
 
 // 丸い星の水面（と海底）：注視点（原点）を中心に、近くは細かく遠くは粗い同心円の円盤を、標高 level の球面に沿って曲げる
-function curvedDisc(R, level) {
-  const SEG = 256;
-  const maxR = Math.PI * R * 0.98;
+function curvedDisc(R, level, maxR = Math.PI * R * 0.98, SEG = DISC_SEG, ratio = DISC_RATIO) {
   const radii = [0];
-  for (let r = 2; r < maxR; r *= 1.06) radii.push(r);
+  for (let r = 2; r < maxR; r *= ratio) radii.push(r);
   radii.push(maxR);
   const pos = new Float32Array((1 + (radii.length - 1) * SEG) * 3);
   const p = [0, 0, 0];

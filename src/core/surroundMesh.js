@@ -1,5 +1,5 @@
 import { createTerrainShader } from './terrainColor.js';
-import { curvePoint, curveNormal } from './curvature.js';
+import { curvePoint, curveNormal, belowWater, landLift } from './curvature.js';
 
 // 一枚絵用の「周りの地形」（地球から取り込んだ範囲の外側）のメッシュ。Three.js 非依存。
 // meters: 標高 (m) の格子（res × res、行 0 = 北）、size: 一辺 (m)。
@@ -34,7 +34,9 @@ export function buildSurroundMesh(meters, res, size, { innerSize, terrain, water
       const gz = (at(i, Math.min(n - 1, j + 1)) - at(i, Math.max(0, j - 1))) / (2 * cell);
       const nl = Math.hypot(gx, 1, gz);
       const k = (j * n + i) * 3;
-      curvePoint(x - P.ox, y, z - P.oz, pcx, pcz, P.R, pp);
+      const lvl = water.enabled ? water.level : -Infinity;
+      const yy = P.R > 0 ? landLift(water.enabled ? belowWater(y, Math.hypot(x - P.cx, z - P.cz), water.level, P.R) : y, cell, lvl, P.R) : y;
+      curvePoint(x - P.ox, yy, z - P.oz, pcx, pcz, P.R, pp);
       curveNormal(x - P.ox, z - P.oz, -gx / nl, 1 / nl, -gz / nl, pcx, pcz, P.R, pn);
       positions.set(pp, k);
       normals.set(pn, k);

@@ -97,3 +97,16 @@ describe('沿岸の海底を補う', () => {
     expect(r[1]).toBe(50);
   });
 });
+
+describe('範囲の縁を周りの地形へ寄せる', () => {
+  it('縁は周りの高さ、内側はそのまま', async () => {
+    const { featherToSurround } = await import('../src/core/geo.js');
+    const res = 65, inner = new Float32Array(res * res).fill(1000);
+    const outer = new Float32Array(9).fill(200);
+    const r = featherToSurround(inner, res, 100, outer, 3, 600, 0.1);
+    expect(r[0]).toBeCloseTo(200);
+    expect(r[32 * res + 32]).toBe(1000);
+    expect(r[32 * res + 3]).toBeGreaterThan(200);
+    expect(r[32 * res + 3]).toBeLessThan(1000);
+  });
+});
