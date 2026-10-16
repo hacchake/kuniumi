@@ -40,7 +40,7 @@ export class GlobeMode {
       this.renderer.sunMode = this.sunSel.value;
       this.renderer.setExaggeration(Number(this.exagSel.value));
       this.renderer.setImagery(this.colorSel.value === 'photo');
-      this.renderer.setClouds(this.cloudsCb.checked);
+      this.#applyClouds();
     }
     this.renderer.sceneSun = this.getSun();
     this.renderer.start();
@@ -92,7 +92,13 @@ export class GlobeMode {
               <option value="height">${t('標高と緯度から')}</option>
             </select>
           </label>
-          <label class="globe-check"><input type="checkbox" data-clouds checked /> ${t('雲')}</label>
+          <label>${t('雲')}
+            <select data-clouds>
+              <option value="today">${t('きのうの実際の雲（衛星）')}</option>
+              <option value="procedural">${t('手続きの雲')}</option>
+              <option value="none">${t('なし')}</option>
+            </select>
+          </label>
           <label>${t('高さ')}
             <select data-exag>
               <option value="1">×1</option>
@@ -127,7 +133,7 @@ export class GlobeMode {
     this.exagSel = el.querySelector('[data-exag]');
     this.colorSel = el.querySelector('[data-color]');
     this.cloudsCb = el.querySelector('[data-clouds]');
-    this.cloudsCb.onchange = () => this.renderer?.setClouds(this.cloudsCb.checked);
+    this.cloudsCb.onchange = () => this.#applyClouds();
     this.colorSel.onchange = () => this.renderer?.setImagery(this.colorSel.value === 'photo');
     el.querySelector('form').addEventListener('submit', (e) => {
       e.preventDefault();
@@ -315,6 +321,16 @@ export class GlobeMode {
     name ||= `${v.lat.toFixed(2)}°, ${v.lon.toFixed(2)}°`;
     this.close();
     this.onImport({ lat: v.lat, lon: v.lon, size, name });
+  }
+
+  async #applyClouds() {
+    const mode = this.cloudsCb.value;
+    const ok = await this.renderer?.setClouds(mode);
+    if (mode === 'today' && ok === false) {
+      this.toast?.(t('実際の雲を取り寄せられませんでした。手続きの雲にします'));
+      this.cloudsCb.value = 'procedural';
+      this.renderer?.setClouds('procedural');
+    }
   }
 
   #showInfo(i) {

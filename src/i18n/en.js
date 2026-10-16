@@ -535,4 +535,8 @@ export const EN = {
   "いまの実際の天気と時刻（その場所）": "Live weather & time (that place)",
   "いまの天気：{kind}（雲 {c}%）": "Current weather: {kind} (clouds {c}%)",
   "天気を取り寄せられませんでした: {msg}": "Could not fetch the weather: {msg}",
+  "きのうの実際の雲（衛星）": "Yesterday's real clouds (satellite)",
+  "手続きの雲": "Procedural clouds",
+  "なし": "None",
+  "実際の雲を取り寄せられませんでした。手続きの雲にします": "Could not fetch real clouds. Using procedural clouds",
 };

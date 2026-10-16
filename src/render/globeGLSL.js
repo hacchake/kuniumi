@@ -160,7 +160,8 @@ export const GLOBE_SURFACE_GLSL = /* glsl */ `
 // 地表・空の画素ごとに「視線が雲の層を通る所」の雲を求めて重ね、地表には太陽からの雲の影も落とす。
 // GLOBE_ATMO_GLSL の後に置く
 export const GLOBE_CLOUD_GLSL = /* glsl */ `
-  uniform float cloudOn, cloudH, cloudCover, cloudTime;
+  uniform float cloudOn, cloudH, cloudCover, cloudTime, cloudReal;
+  uniform sampler2D cloudToday, cloudBase; // 今日の衛星画像と、雲の無い地図（どちらも地球全体の正距円筒、行 0 = 北）
   float cHash( vec3 p ) {
     p = fract( p * vec3( 0.1031, 0.1030, 0.0973 ) );
     p += dot( p, p.yxz + 33.33 );
@@ -173,7 +174,21 @@ export const GLOBE_CLOUD_GLSL = /* glsl */ `
                 mix( mix( cHash( i + vec3( 0, 0, 1 ) ), cHash( i + vec3( 1, 0, 1 ) ), f.x ), mix( cHash( i + vec3( 0, 1, 1 ) ), cHash( i + vec3( 1, 1, 1 ) ), f.x ), f.y ), f.z );
   }
   // 雲の濃さ（0..1）。u: 地球中心からの向き。oct: 重ねる段の数（遠くや影では少なく）
+  // 今日の衛星画像から雲の濃さ：白く（明るく色の薄い）、雲の無い地図では白くない所（雪・氷・砂漠を雲にしない）
+  float gRealCloud( vec3 u, int oct ) {
+    float lat = asin( clamp( u.y, -1.0, 1.0 ) ), lon = atan( - u.z, u.x );
+    vec2 uv = vec2( lon / 6.2831853 + 0.5, 0.5 - lat / 3.1415927 );
+    vec3 c = texture2D( cloudToday, uv ).rgb, b = texture2D( cloudBase, uv ).rgb;
+    float mx = max( c.r, max( c.g, c.b ) ), mn = min( c.r, min( c.g, c.b ) );
+    float sat = ( mx - mn ) / max( mx, 1e-3 );
+    float d = smoothstep( 0.42, 0.78, mx ) * ( 1.0 - smoothstep( 0.15, 0.35, sat ) );
+    d *= 1.0 - smoothstep( 0.3, 0.55, max( b.r, max( b.g, b.b ) ) ); // 地面がもともと白い所は雲にしない
+    // 近くで見たときの細かい雲のむら（画像は約 10 km / 画素なので）
+    if ( oct > 6 ) d *= 0.75 + 0.5 * cNoise( u * 900.0 + cloudTime * 0.02 ) * cNoise( u * 3100.0 );
+    return clamp( d, 0.0, 1.0 );
+  }
   float gCloudDensity( vec3 u, int oct ) {
+    if ( cloudReal > 0.5 ) return gRealCloud( u, oct );
     // 大きな流れ（低気圧の渦のようなゆがみ）
     // 2 段のゆがみで、風に引き伸ばされた筋や渦にする
     vec3 q = u * 2.2 + vec3( cloudTime * 0.01, 0.0, 0.0 );

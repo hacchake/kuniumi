@@ -60,6 +60,9 @@ export class GlobeRenderer {
       cloudH: { value: 6000 }, // 雲の層の高さ (m)
       cloudCover: { value: 0.5 }, // 雲の量（0..1）
       cloudTime: { value: 0 }, // 雲がゆっくり流れる
+      cloudReal: { value: 0 }, // 今日の実際の雲（衛星画像）を使うか
+      cloudToday: { value: null },
+      cloudBase: { value: null },
     };
 
     this.tiles = new Map(); // "z/x/y" → タイル
@@ -390,8 +393,52 @@ export class GlobeRenderer {
     this.view.tilt = Math.min(this.view.tilt, this.#maxTilt());
   }
 
-  setClouds(on) {
-    this.shared.cloudOn.value = on ? 1 : 0;
+  // 雲：'none' | 'procedural'（手続きの雲）| 'today'（昨日〜今日の衛星画像の雲。取り寄せられなければ手続きの雲）
+  async setClouds(mode) {
+    if (mode === true) mode = 'procedural';
+    if (mode === false) mode = 'none';
+    this.shared.cloudOn.value = mode === 'none' ? 0 : 1;
+    this.shared.cloudReal.value = 0;
+    if (mode !== 'today') return true;
+    try {
+      await this.#loadRealClouds();
+      this.shared.cloudReal.value = 1;
+      return true;
+    } catch (err) {
+      console.warn('今日の雲を取り寄せられませんでした', err);
+      return false;
+    }
+  }
+
+  // NASA GIBS の WMS で、地球全体の正距円筒の画像を 2 枚：きのう（UTC）の VIIRS の写真と、雲の無い Blue Marble
+  async #loadRealClouds() {
+    if (this.shared.cloudToday.value) return;
+    const wms = (layer, time) =>
+      `https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS=${layer}&CRS=EPSG:4326&BBOX=-90,-180,90,180&WIDTH=4096&HEIGHT=2048&FORMAT=image/jpeg${time ? `&TIME=${time}` : ''}`;
+    const load = async (url) => {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const bmp = await createImageBitmap(await r.blob(), { imageOrientation: 'none' });
+      const tex = new THREE.Texture(bmp);
+      tex.flipY = false; // 行 0 = 北
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.colorSpace = THREE.NoColorSpace;
+      tex.needsUpdate = true;
+      return tex;
+    };
+    const day = (k) => new Date(Date.now() - k * 86400000).toISOString().slice(0, 10);
+    let today = null;
+    for (const k of [1, 2]) {
+      try {
+        today = await load(wms('VIIRS_SNPP_CorrectedReflectance_TrueColor', day(k)));
+        this.cloudDate = day(k);
+        break;
+      } catch (err) {
+        if (k === 2) throw err;
+      }
+    }
+    this.shared.cloudBase.value = await load(wms('BlueMarble_NextGeneration'));
+    this.shared.cloudToday.value = today;
   }
 
   setImagery(on) {
