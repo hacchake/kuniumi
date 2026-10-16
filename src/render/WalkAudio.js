@@ -137,6 +137,34 @@ export class WalkAudio {
     src.start(t0, Math.random() * 1.5, len + 0.05);
   }
 
+  // 雷鳴：delay 秒後に、はじめに裂ける音、あとから低い音が長く転がる。strength 0..1（近いほど大きい）
+  thunder(delay = 2, strength = 0.7) {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running') return;
+    const t0 = ctx.currentTime + delay;
+    const len = 3 + Math.random() * 3;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuf;
+    src.loop = true;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(900 * strength + 200, t0);
+    lp.frequency.exponentialRampToValueAtTime(90, t0 + len * 0.6);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(0.5 * strength, t0 + 0.05 + (1 - strength) * 0.4);
+    // ごろごろ：何度か小さく盛り返しながら消える
+    let t = t0 + 0.4;
+    while (t < t0 + len * 0.7) {
+      g.gain.linearRampToValueAtTime(0.18 * strength * (0.5 + Math.random()), t);
+      t += 0.25 + Math.random() * 0.5;
+    }
+    g.gain.exponentialRampToValueAtTime(0.0005, t0 + len);
+    src.connect(lp).connect(g).connect(this.master);
+    src.start(t0, Math.random() * 1.5);
+    src.stop(t0 + len + 0.1);
+  }
+
   #chirp() {
     const ctx = this.ctx;
     const t0 = ctx.currentTime;

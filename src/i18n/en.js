@@ -539,4 +539,5 @@ export const EN = {
   "手続きの雲": "Procedural clouds",
   "なし": "None",
   "実際の雲を取り寄せられませんでした。手続きの雲にします": "Could not fetch real clouds. Using procedural clouds",
+  "雷雨": "Thunderstorm",
 };

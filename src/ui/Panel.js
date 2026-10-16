@@ -11,6 +11,7 @@ const WEATHER = {
   fog: { label: '霧', set: { clouds: 0.5, cloudDensity: 0.6, turbidity: 9, haze: 1.0, mieCoefficient: 0.02, fogHeight: 2500, rays: 0.8, precip: 'none' } },
   hazy: { label: 'かすみ（春）', set: { clouds: 0.15, cloudDensity: 0.4, turbidity: 10, haze: 0.7, mieCoefficient: 0.015, fogHeight: 1500, rays: 0.6, precip: 'none' } },
   rain: { label: '雨', set: { clouds: 0.98, cloudDensity: 0.9, cloudThickness: 2000, turbidity: 8, haze: 0.75, mieCoefficient: 0.012, fogHeight: 1800, rays: 0.2, precip: 'rain' } },
+  storm: { label: '雷雨', set: { clouds: 1, cloudDensity: 1, cloudThickness: 2500, turbidity: 9, haze: 0.85, mieCoefficient: 0.014, fogHeight: 2000, rays: 0.15, precip: 'storm' } },
   snow: { label: '雪', set: { clouds: 0.95, cloudDensity: 0.75, cloudThickness: 1500, turbidity: 6, haze: 0.6, mieCoefficient: 0.01, fogHeight: 1500, rays: 0.2, precip: 'snow' } },
 };
 
@@ -298,6 +299,7 @@ export class Panel {
       const code = c.weather_code;
       const snow = (code >= 71 && code <= 77) || code === 85 || code === 86 || c.snowfall > 0;
       const rain = !snow && ((code >= 51 && code <= 67) || (code >= 80 && code <= 82) || code >= 95 || c.rain > 0);
+      const storm = code >= 95; // 雷雨
       const fog = code === 45 || code === 48;
       const cover = Math.min(1, Math.max(0, c.cloud_cover / 100));
       const vis = Math.max(200, c.visibility ?? 20000);
@@ -307,13 +309,13 @@ export class Panel {
         'atmosphere.haze': Math.round(Math.min(1.2, Math.max(0.12, 6000 / vis)) * 100) / 100,
         'atmosphere.fogHeight': fog ? 2500 : rain || snow ? 1600 : 900,
         'atmosphere.rays': fog ? 0.8 : 0.5,
-        'atmosphere.precip': snow ? 'snow' : rain ? 'rain' : 'none',
+        'atmosphere.precip': snow ? 'snow' : storm ? 'storm' : rain ? 'rain' : 'none',
       };
       const sun = solarPosition(lat, lon, new Date());
       changes['sun.elevation'] = Math.round(Math.max(-12, sun.elevation) * 10) / 10;
       changes['sun.azimuth'] = Math.round(sun.azimuth * 2) / 2;
       this.store.patch(changes, { source: 'ui' });
-      const kind = snow ? t('雪') : rain ? t('雨') : fog ? t('霧') : cover > 0.8 ? t('曇り') : cover > 0.3 ? t('晴れ') : t('快晴');
+      const kind = snow ? t('雪') : storm ? t('雷雨') : rain ? t('雨') : fog ? t('霧') : cover > 0.8 ? t('曇り') : cover > 0.3 ? t('晴れ') : t('快晴');
       window.dispatchEvent(new CustomEvent('kuniumi:toast', { detail: t('いまの天気：{kind}（雲 {c}%）', { kind, c: Math.round(cover * 100) }) }));
     } catch (err) {
       window.dispatchEvent(new CustomEvent('kuniumi:toast', { detail: t('天気を取り寄せられませんでした: {msg}', { msg: err.message ?? err }) }));

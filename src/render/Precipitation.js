@@ -42,7 +42,7 @@ export class Precipitation {
   }
 
   set(kind) {
-    this.kind = kind ?? 'none';
+    this.kind = kind === 'storm' ? 'rain' : kind ?? 'none'; // 雷雨の雨はふつうの雨と同じ
     this.rain.visible = this.kind === 'rain';
     this.snow.visible = this.kind === 'snow';
   }

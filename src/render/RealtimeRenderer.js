@@ -94,6 +94,9 @@ export class RealtimeRenderer {
     // 夜の光（月明かり・星明かり）。太陽が沈むと強くなる
     this.nightLight = new THREE.HemisphereLight(new THREE.Color(...NIGHT_SKY).multiplyScalar(8), 0x101014, 0);
     this.world.add(this.nightLight);
+    // 稲光（雷雨のとき一瞬だけ）：雲の下から地面を青白く照らす
+    this.flashLight = new THREE.HemisphereLight(0xdfe6ff, 0x30343c, 0);
+    this.world.add(this.flashLight);
 
     // 水
     this.water = new Water(createWaterDisc(2e7), {
@@ -508,8 +511,11 @@ export class RealtimeRenderer {
 
       this.nightLight.intensity = nightFactor(s.sun.elevation) * Math.PI * 0.15;
       this.precip.set(a.precip);
-      this.gpuTerrain.uniforms.tWet.value = a.precip === 'rain' ? 1 : 0;
-      if (this.surround) this.surround.terrain.uniforms.tWet.value = a.precip === 'rain' ? 1 : 0;
+      const wet = a.precip === 'rain' || a.precip === 'storm' ? 1 : 0;
+      this.gpuTerrain.uniforms.tWet.value = wet;
+      if (this.surround) this.surround.terrain.uniforms.tWet.value = wet;
+      this.storm = a.precip === 'storm';
+      this.baseExposure = a.exposure;
       this.precipLight = 1 - nightFactor(s.sun.elevation) * 0.8;
       this.#applyLights();
       this.atmosphere.uniforms.nightSky.value.set(...NIGHT_SKY).multiplyScalar(nightFactor(s.sun.elevation));
@@ -874,7 +880,7 @@ export class RealtimeRenderer {
     } else {
       this.wasGrounded = false;
     }
-    this.audio.update(dt, { above, speed: Math.min(speed, 2000), nearSea, day, inForest: (s.vegetation?.trees ?? 0) > 0.3, rain: s.atmosphere.precip === 'rain' });
+    this.audio.update(dt, { above, speed: Math.min(speed, 2000), nearSea, day, inForest: (s.vegetation?.trees ?? 0) > 0.3, rain: s.atmosphere.precip === 'rain' || s.atmosphere.precip === 'storm' });
   }
 
   capture() {
@@ -989,10 +995,48 @@ export class RealtimeRenderer {
     this.#frame();
   }
 
+  // 雷雨の稲光：ときどき 2〜3 回またたく光で画面全体の露出を上げる（夜ほど強く）。雷鳴は少し遅れて
+  #lightning(dt) {
+    if (!this.storm) {
+      if (this.flash) {
+        this.flash = null;
+        this.renderer.toneMappingExposure = this.baseExposure ?? 1;
+      }
+      this.flashLight.intensity = 0;
+      return;
+    }
+    this.nextFlash = (this.nextFlash ?? 3) - dt;
+    if (this.nextFlash <= 0 && !this.flash) {
+      this.nextFlash = 5 + Math.random() * 12;
+      const n = 1 + Math.floor(Math.random() * 3);
+      const pulses = [];
+      let t = 0;
+      for (let i = 0; i < n; i++) {
+        pulses.push([t, 0.05 + Math.random() * 0.08, i === 0 ? 1 : 0.4 + Math.random() * 0.6]);
+        t += 0.08 + Math.random() * 0.15;
+      }
+      this.flash = { t: 0, pulses, end: t + 0.2 };
+      // 近い雷ほど早く大きく（光ってから 0.5〜5 秒）
+      const near = Math.random();
+      if (this.walk.active) this.audio.thunder?.(0.5 + (1 - near) * 4.5, 0.5 + near * 0.5);
+    }
+    let k = 0;
+    if (this.flash) {
+      const f = this.flash;
+      f.t += dt;
+      for (const [s, len, amp] of f.pulses) if (f.t >= s && f.t < s + len) k = Math.max(k, amp * (1 - (f.t - s) / len));
+      if (f.t > f.end) this.flash = null;
+    }
+    const night = nightFactor(this.store.get().sun.elevation);
+    this.renderer.toneMappingExposure = (this.baseExposure ?? 1) * (1 + k * (0.3 + night * 0.45));
+    this.flashLight.intensity = k * Math.PI * (2 + night * 4);
+  }
+
   #frame() {
     if (this._paused) return;
     this.timer.update();
     const dt = this.timer.getDelta();
+    this.#lightning(Math.min(dt, 0.1));
     this.#adaptQuality(dt);
     if (this.envDirty) this.#updateEnvironment();
     this.water.material.uniforms.time.value += dt * 0.6;
