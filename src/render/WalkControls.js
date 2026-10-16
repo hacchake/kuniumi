@@ -55,6 +55,9 @@ export class WalkControls {
     this.touchKeys.clear();
     this.stick.x = this.stick.y = 0;
     this.active = true;
+    // 双眼鏡（Z キー・画面の「望遠」）：視野を 1/6 に。入ったときの視野を覚えておく
+    this.baseFov = this.camera.fov;
+    this.setZoom(false);
     // 歩くときは足元へ降ろす
     if (mode === 'walk') {
       const p = this.camera.position;
@@ -70,7 +73,18 @@ export class WalkControls {
     this.keys.clear();
     this.touchKeys.clear();
     if (document.pointerLockElement === this.canvas) document.exitPointerLock();
+    this.setZoom(false);
+    if (this.baseFov) {
+      this.camera.fov = this.baseFov;
+      this.camera.updateProjectionMatrix();
+    }
     this.onModeChange(null);
+  }
+
+  setZoom(on) {
+    this.zoom = on;
+    this.binoc?.toggleAttribute('hidden', !on);
+    this.touchUI?.querySelector('[data-zoom]')?.classList.toggle('on', on);
   }
 
   toggleMode() {
@@ -144,6 +158,14 @@ export class WalkControls {
         this.grounded = false;
       }
     }
+    // 望遠：視野をなめらかに狭める・戻す
+    if (this.baseFov) {
+      const want = this.zoom ? this.baseFov / 6 : this.baseFov;
+      if (Math.abs(cam.fov - want) > 0.01) {
+        cam.fov += (want - cam.fov) * Math.min(1, dt * 8);
+        cam.updateProjectionMatrix();
+      }
+    }
     cam.quaternion.setFromEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
     cam.updateMatrixWorld();
     return true;
@@ -152,8 +174,10 @@ export class WalkControls {
   #bind() {
     const c = this.canvas;
     const look = (dx, dy) => {
-      this.yaw -= dx * LOOK;
-      this.pitch = THREE.MathUtils.clamp(this.pitch - dy * LOOK, -1.55, 1.55);
+      // 望遠のときは、視野の狭さに合わせてゆっくり見回す
+      const k = this.baseFov ? this.camera.fov / this.baseFov : 1;
+      this.yaw -= dx * LOOK * k;
+      this.pitch = THREE.MathUtils.clamp(this.pitch - dy * LOOK * k, -1.55, 1.55);
     };
     c.addEventListener('click', (e) => {
       // 指で触る端末ではカーソルを隠さない
@@ -201,6 +225,7 @@ export class WalkControls {
     window.addEventListener('keydown', (e) => {
       if (!this.active || (e.target instanceof Element && e.target.closest('input, select, textarea'))) return;
       if (e.code === 'KeyF' && !e.repeat) this.toggleMode();
+      if (e.code === 'KeyZ' && !e.repeat) this.setZoom(!this.zoom);
       this.keys.add(e.code);
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
     });
@@ -222,9 +247,15 @@ export class WalkControls {
         <button type="button" data-k="KeyC" data-hold data-fly>下降</button>
         <button type="button" data-run>走る</button>
         <button type="button" data-mode>飛行モード</button>
+        <button type="button" data-zoom>望遠</button>
       </div>`;
     host.appendChild(el);
     this.touchUI = el;
+    // 双眼鏡をのぞいたときの丸い縁
+    this.binoc = document.createElement('div');
+    this.binoc.className = 'walk-binoc';
+    this.binoc.hidden = true;
+    host.appendChild(this.binoc);
     const stick = el.querySelector('.walk-stick'), knob = el.querySelector('.walk-knob');
     let sid = null;
     const setStick = (e) => {
@@ -271,6 +302,7 @@ export class WalkControls {
       e.currentTarget.classList.toggle('on', this.run);
     });
     el.querySelector('[data-mode]').addEventListener('click', () => this.toggleMode());
+    el.querySelector('[data-zoom]').addEventListener('click', () => this.setZoom(!this.zoom));
     // 触る端末で歩き始めたら出す
     const coarse = () => this.touchUsed || matchMedia('(pointer: coarse)').matches;
     this.syncTouchUI = () => {
@@ -279,6 +311,7 @@ export class WalkControls {
       el.querySelector('[data-k="Space"]').textContent = fly ? t('上昇') : t('ジャンプ');
       el.querySelector('[data-fly]').hidden = !fly;
       el.querySelector('[data-mode]').textContent = fly ? t('歩行モード') : t('飛行モード');
+      el.querySelector('[data-zoom]').textContent = t('望遠');
     };
   }
 }

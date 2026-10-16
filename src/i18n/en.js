@@ -407,8 +407,8 @@ export const EN = {
   "🚶 歩く": "🚶 Walk",
   "✕ 歩くのをやめる": "✕ Stop walking",
   "（速さ ×{k}）": " (speed ×{k})",
-  "歩く：W/A/S/D 移動　マウス 見回す（クリックでカーソルを隠す）　Space ジャンプ　Shift 走る　F 飛ぶ　ホイール 速さ　Esc 戻る": "Walk: W/A/S/D move · mouse look (click to capture cursor) · Space jump · Shift run · F fly · wheel speed · Esc back",
-  "飛ぶ：W/A/S/D 移動　Space/E 上昇　C/Q 下降　Shift 速く　F 歩く　ホイール 速さ　Esc 戻る": "Fly: W/A/S/D move · Space/E up · C/Q down · Shift fast · F walk · wheel speed · Esc back",
+  "歩く：W/A/S/D 移動　マウス 見回す（クリックでカーソルを隠す）　Space ジャンプ　Shift 走る　F 飛ぶ　Z 望遠　ホイール 速さ　Esc 戻る": "Walk: W/A/S/D move · mouse look (click to capture cursor) · Space jump · Shift run · F fly · Z zoom · wheel speed · Esc back",
+  "飛ぶ：W/A/S/D 移動　Space/E 上昇　C/Q 下降　Shift 速く　F 歩く　Z 望遠　ホイール 速さ　Esc 戻る": "Fly: W/A/S/D move · Space/E up · C/Q down · Shift fast · F walk · Z zoom · wheel speed · Esc back",
   "歩き回る（G）：W/A/S/D で移動・マウスで見回す・Space でジャンプ・Shift で走る・F で飛ぶ・Esc で戻る": "Walk around (G): W/A/S/D move · mouse look · Space jump · Shift run · F fly · Esc back",
   "周りの地形を取り寄せています… {done} / {total}": "Downloading surrounding terrain… {done} / {total}",
   // ---- 地球モード ----
@@ -491,7 +491,7 @@ export const EN = {
   "見ている所を取り込んで、そのまま地上を歩き始める": "Import the spot in view and start walking on the ground",
   "歩く（🚶 / G）": "Walk (🚶 / G)",
   "W/A/S/D・マウス": "W/A/S/D · mouse",
-  "移動・見回す（Space ジャンプ、Shift 走る、F 飛ぶ、Esc 戻る）": "Move · look (Space jump, Shift run, F fly, Esc back)",
+  "移動・見回す（Space ジャンプ、Shift 走る、F 飛ぶ、Z 望遠、Esc 戻る）": "Move · look (Space jump, Shift run, F fly, Z zoom, Esc back)",
   "タブレット": "Tablet",
   "左下のスティックで移動、画面をなぞって見回す、右下のボタンでジャンプなど": "Stick at lower left to move, drag the screen to look, buttons at lower right to jump etc.",
   "地図": "Map",
@@ -549,4 +549,5 @@ export const EN = {
   "夜の北の空（南半球の地形では南の空）に、ゆらめくオーロラを出す強さ。雲が多いと隠れる（リアルタイム表示）": "Strength of the shimmering aurora in the night sky to the north (to the south for southern-hemisphere terrain). Hidden by heavy cloud (realtime view)",
   "天気をゆっくり移り変わらせる（もう一度押すと止まる）": "Let the weather change slowly (press again to stop)",
   "夜側の両極のまわりに、オーロラの輪（磁気緯度 約 67°、高さ 100〜300 km）を出す": "Show the auroral ovals around both poles on the night side (magnetic latitude ~67°, 100–300 km high)",
+  "望遠": "Zoom",
 };

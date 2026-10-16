@@ -423,6 +423,10 @@ html[lang='en'] .create-title { letter-spacing: 0.08em; }
 /* ---- 歩く（指で触る端末の操作部品） ---- */
 .walk-touch { position: absolute; inset: auto 0 0 0; height: 0; z-index: 25; pointer-events: none; }
 .walk-touch[hidden] { display: none; }
+/* 双眼鏡をのぞいたときの丸い縁（歩くモードの望遠） */
+.walk-binoc { position: absolute; inset: 0; z-index: 20; pointer-events: none; background: radial-gradient(circle at 50% 50%, transparent 0, transparent min(38vw, 42vh), rgba(0, 0, 0, 0.92) calc(min(38vw, 42vh) + 6px)); }
+.walk-binoc[hidden] { display: none; }
+.walk-btns [data-zoom].on { background: rgba(212, 175, 95, 0.45); }
 .walk-stick { position: absolute; left: 22px; bottom: 28px; width: 132px; height: 132px; border-radius: 50%; background: rgba(11, 15, 26, 0.35); border: 1.5px solid rgba(233, 228, 216, 0.35); pointer-events: auto; touch-action: none; }
 .walk-knob { position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 50%; background: rgba(233, 228, 216, 0.55); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4); }
 .walk-btns { position: absolute; right: 18px; bottom: 28px; display: grid; grid-template-columns: repeat(2, 76px); gap: 10px; pointer-events: auto; }

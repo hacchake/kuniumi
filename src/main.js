@@ -585,8 +585,8 @@ view.onWalk = (mode, speed) => {
   hintEl.textContent = !mode
     ? hintDefault
     : (mode === 'walk'
-        ? t('歩く：W/A/S/D 移動　マウス 見回す（クリックでカーソルを隠す）　Space ジャンプ　Shift 走る　F 飛ぶ　ホイール 速さ　Esc 戻る')
-        : t('飛ぶ：W/A/S/D 移動　Space/E 上昇　C/Q 下降　Shift 速く　F 歩く　ホイール 速さ　Esc 戻る')) + sp;
+        ? t('歩く：W/A/S/D 移動　マウス 見回す（クリックでカーソルを隠す）　Space ジャンプ　Shift 走る　F 飛ぶ　Z 望遠　ホイール 速さ　Esc 戻る')
+        : t('飛ぶ：W/A/S/D 移動　Space/E 上昇　C/Q 下降　Shift 速く　F 歩く　Z 望遠　ホイール 速さ　Esc 戻る')) + sp;
 };
 walkBtn.addEventListener('click', () => view.setWalk(view.walking ? null : 'walk'));
 document.addEventListener('pointerlockchange', () => {
