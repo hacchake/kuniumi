@@ -39,19 +39,25 @@ self.onmessage = async (e) => {
       const ty = Math.max(0, Math.min(n - 1, Math.floor(gy / TILE)));
       const px = ((gx % TILE) + TILE) % TILE;
       const py = Math.max(0, Math.min(TILE - 1, gy - ty * TILE));
-      const d = cache.get(`${z}/${tx}/${ty}`);
+      // 同じタイルを続けて引くことが多いので、直前のタイルを覚えておく（文字列の鍵を毎回作らない）
+      if (tx !== ltx || ty !== lty) {
+        ltx = tx;
+        lty = ty;
+        ld = cache.get(`${z}/${tx}/${ty}`);
+      }
       // 範囲の縁で隣のタイルが無いときは、直前の値で代える
-      if (d) last = d[py * TILE + px];
+      if (ld) last = ld[py * TILE + px];
       return last;
     };
+    let ltx = -1, lty = -1, ld = null;
+    const map = makeMapper(region, res, z);
     let last = 0;
     const out = new Float32Array(res * res);
     let min = Infinity, max = -Infinity;
     for (let j = 0; j < res; j++) {
       for (let i = 0; i < res; i++) {
-        const p = gridLonLat(i, j, res, region);
-        const t = lonLatToTile(p.lon, p.lat, z);
-        const gx = t.x * TILE - 0.5, gy = t.y * TILE - 0.5;
+        map(i, j);
+        const gx = MX, gy = MY;
         const x0 = Math.floor(gx), y0 = Math.floor(gy), fx = gx - x0, fy = gy - y0;
         const h =
           (at(x0, y0) * (1 - fx) + at(x0 + 1, y0) * fx) * (1 - fy) +
@@ -221,4 +227,35 @@ async function fetchPhotoTile(t, source = 'photo') {
     }
   }
   return null;
+}
+
+// 格子点 (i, j)（px × px、行 0 = 北）→ ズーム z の全体での画素座標（MX, MY に入れる）。
+// 経緯度 → タイルの画素の対応はなめらかなので、S 画素おきの格子点だけ正確に求めて、間は補間する（三角関数を 1/256 に）
+let MX = 0, MY = 0;
+function makeMapper(region, px, z) {
+  const S = 16, gn = Math.ceil((px - 1) / S) + 1;
+  const GX = new Float64Array(gn * gn), GY = new Float64Array(gn * gn);
+  for (let b = 0; b < gn; b++) {
+    for (let a = 0; a < gn; a++) {
+      const p = gridLonLat(Math.min(px - 1, a * S), Math.min(px - 1, b * S), px, region);
+      const t = lonLatToTile(p.lon, p.lat, z);
+      GX[b * gn + a] = t.x * TILE - 0.5;
+      GY[b * gn + a] = t.y * TILE - 0.5;
+    }
+  }
+  const world = 2 ** z * TILE;
+  return (i, j) => {
+    const a = Math.min(gn - 2, Math.floor(i / S)), b = Math.min(gn - 2, Math.floor(j / S));
+    const i0 = a * S, j0 = b * S, i1 = Math.min(px - 1, i0 + S), j1 = Math.min(px - 1, j0 + S);
+    const fx = (i - i0) / Math.max(1, i1 - i0), fy = (j - j0) / Math.max(1, j1 - j0);
+    const k = b * gn + a;
+    let x00 = GX[k], x10 = GX[k + 1], x01 = GX[k + gn], x11 = GX[k + gn + 1];
+    // 経度 ±180° をまたぐ所は、つながるように 1 周ぶんずらす
+    if (Math.max(x00, x10, x01, x11) - Math.min(x00, x10, x01, x11) > world / 2) {
+      const fix = (v) => (v < world / 2 ? v + world : v);
+      (x00 = fix(x00)), (x10 = fix(x10)), (x01 = fix(x01)), (x11 = fix(x11));
+    }
+    MX = (x00 * (1 - fx) + x10 * fx) * (1 - fy) + (x01 * (1 - fx) + x11 * fx) * fy;
+    MY = (GY[k] * (1 - fx) + GY[k + 1] * fx) * (1 - fy) + (GY[k + gn] * (1 - fx) + GY[k + gn + 1] * fx) * fy;
+  };
 }
