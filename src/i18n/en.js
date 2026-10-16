@@ -567,4 +567,5 @@ export const EN = {
   "経路をたどるのをやめました": "Stopped following the route",
   "経路をたどって歩きます（移動のキーで止まる）": "Following the route (movement keys stop it)",
   "先に経路（GPX）を読み込んでください": "Load a route (GPX) first",
+  "最高": "Max",
 };

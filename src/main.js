@@ -9,6 +9,7 @@ import { GeoDialog } from './ui/GeoDialog.js';
 import { GlobeMode } from './ui/GlobeMode.js';
 import { MiniMap } from './ui/MiniMap.js';
 import { WalkHud } from './ui/WalkHud.js';
+import { RouteProfile } from './ui/RouteProfile.js';
 import { trackToGpx, parseGpx, routeLength } from './core/gpx.js';
 import { aeqdForward } from './core/geo.js';
 import { Labels } from './ui/Labels.js';
@@ -261,6 +262,8 @@ async function openGpx(file) {
   view.setRoute(route);
   miniMap.route = route;
   followBtn.hidden = !view.walking;
+  routeProfile.set(route, (x, z) => view.treeTerrain.groundAt(x, z));
+  routeProfile.show(view.walking);
   toast(t('経路を描きました（{km} km、{n} 点。範囲の中は {pct}%）', { km: (routeLength(pts) / 1000).toFixed(2), n: pts.length, pct: Math.round((inside / route.length) * 100) }));
 }
 
@@ -593,7 +596,12 @@ const miniMap = new MiniMap(document.getElementById('stage'), view, store);
 view.labels = new Labels(document.getElementById('stage'));
 // 歩く・飛ぶときの計器（方位・標高・速さ）
 const walkHud = new WalkHud(document.getElementById('stage'));
-view.onHud = (info) => walkHud.show(view.walking ? { ...info, dist: miniMap.dist } : null);
+// 経路の断面図（標高グラフ）
+const routeProfile = new RouteProfile(document.getElementById('stage'));
+view.onHud = (info) => {
+  walkHud.show(view.walking ? { ...info, dist: miniMap.dist } : null);
+  routeProfile.draw(view.camera.position.x, view.camera.position.z);
+};
 // 歩いている間の音を消す／出す（地図の下のボタンか M キー）
 const soundBtn = document.createElement('button');
 soundBtn.type = 'button';
@@ -639,6 +647,7 @@ window.addEventListener('keydown', (e) => {
 });
 view.onWalk = (mode, speed) => {
   if (!mode) walkHud.show(null);
+  routeProfile.show(!!mode);
   followBtn.hidden = !mode || !view.routePts;
   if (!mode) followBtn.classList.remove('active');
   walkBtn.classList.toggle('active', !!mode);
