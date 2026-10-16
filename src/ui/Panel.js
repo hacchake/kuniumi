@@ -292,6 +292,15 @@ export class Panel {
     this.store.patch(changes, { source: 'ui-reset' });
   }
 
+  // いまの大気の値（天気のひな形と同じ項目だけ）
+  #weatherNow() {
+    const a = this.store.get().atmosphere;
+    const out = {};
+    for (const k of Object.keys(WEATHER.fine.set)) out[k] = a[k];
+    out.cloudThickness = a.cloudThickness;
+    return out;
+  }
+
   // その場所（地球から取り込んだ地形の中心、ほかは東京）のいまの天気（Open-Meteo）と太陽にする
   async #liveWeather() {
     const g = this.store.get().terrain.heightmap?.geo;
@@ -386,7 +395,45 @@ export class Panel {
         for (const [k, v] of Object.entries(w.set)) changes[`atmosphere.${k}`] = v;
         this.store.patch(changes, { source: 'ui' });
       };
-      row.appendChild(sel);
+      // ▶：天気の移り変わり（晴れ → 薄曇り → 曇り → 雨 → 曇り → 晴れ → 快晴 …）。8 秒かけてなめらかに移り、20 秒とどまる
+      const play = document.createElement('button');
+      play.type = 'button';
+      play.className = 'sun-go sun-play';
+      play.textContent = '▶';
+      play.title = t('天気をゆっくり移り変わらせる（もう一度押すと止まる）');
+      let timer = 0;
+      play.onclick = (e) => {
+        e.preventDefault();
+        if (timer) {
+          clearInterval(timer);
+          timer = 0;
+          play.textContent = '▶';
+          return;
+        }
+        play.textContent = '■';
+        const seq = ['fine', 'thin', 'cloudy', 'rain', 'cloudy', 'fine', 'clear'];
+        let i = 0, from = this.#weatherNow(), t0 = performance.now();
+        const MOVE = 8000, HOLD = 20000;
+        timer = setInterval(() => {
+          const to = WEATHER[seq[i % seq.length]].set;
+          const k = Math.min(1, (performance.now() - t0) / MOVE);
+          const e2 = k * k * (3 - 2 * k);
+          const changes = {};
+          for (const [key, v] of Object.entries(to)) {
+            if (typeof v === 'number') changes[`atmosphere.${key}`] = Math.round(((from[key] ?? v) + (v - (from[key] ?? v)) * e2) * 10000) / 10000;
+            else changes[`atmosphere.${key}`] = e2 >= 0.5 ? v : from[key] ?? v; // 雨・雪は半ばで切り替える
+          }
+          if (k < 1 || !this.weatherHeld) this.store.patch(changes, { source: 'ui', history: false }); // 自動の変化は元に戻す対象にしない
+          this.weatherHeld = k >= 1;
+          if (performance.now() - t0 > MOVE + HOLD) {
+            from = { ...to };
+            i++;
+            t0 = performance.now();
+            this.weatherHeld = false;
+          }
+        }, 200);
+      };
+      row.append(sel, play);
       return row;
     }
     if (f.type === 'sunTime') {

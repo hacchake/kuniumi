@@ -547,4 +547,5 @@ export const EN = {
   "日": "d",
   "オーロラ": "Aurora",
   "夜の北の空（南半球の地形では南の空）に、ゆらめくオーロラを出す強さ。雲が多いと隠れる（リアルタイム表示）": "Strength of the shimmering aurora in the night sky to the north (to the south for southern-hemisphere terrain). Hidden by heavy cloud (realtime view)",
+  "天気をゆっくり移り変わらせる（もう一度押すと止まる）": "Let the weather change slowly (press again to stop)",
 };
