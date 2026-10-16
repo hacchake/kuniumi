@@ -20,6 +20,7 @@ import { Rainbow } from './Rainbow.js';
 import { Fireflies } from './Fireflies.js';
 import { Moon } from './Moon.js';
 import { Footprints } from './Footprints.js';
+import { Boat } from './Boat.js';
 import { Aurora } from './Aurora.js';
 import { ShootingStars } from './ShootingStars.js';
 import { RealtimeTrees } from './RealtimeTrees.js';
@@ -188,6 +189,7 @@ void main() {`)
     // 木（一枚絵と同じ所に同じ木。カメラの周りだけ）
     this.trees = new RealtimeTrees(this.world, (m) => patchStandardMaterial(m, this.shared));
     this.footprints = new Footprints(this.world, (m) => patchStandardMaterial(m, this.shared));
+    this.boat = new Boat(this.world, (m) => patchStandardMaterial(m, this.shared));
     this.sandprints = new Footprints(this.world, (m) => patchStandardMaterial(m, this.shared), 0x6b5a44); // 砂浜の足跡（濡れた砂の色）
     this.treeTerrain = {
       sample: (x, z) => this.#terrainAt(x, z).sample(x, z),
@@ -218,6 +220,10 @@ void main() {`)
       },
       onModeChange: (mode) => this.onWalk?.(mode, this.walk.speedScale),
       collide: (p) => this.trees.pushOut(p) | this.buildings?.pushOut(p),
+      isDeep: (x, z) => {
+        const s = this.store.get();
+        return s.water.enabled && this.#terrainAt(x, z).groundAt(x, z) < s.water.level - 1.2;
+      },
     });
 
     this.timer = new THREE.Timer();
@@ -905,7 +911,7 @@ void main() {`)
     const day = Math.min(1, Math.max(0, s.sun.elevation / 8));
     // 足音：歩く（飛ばない）とき、地面を進んだ距離が歩幅を超えるごと。走ると歩幅を広く
     const w = this.walk;
-    if (w.mode === 'walk') {
+    if (w.mode === 'walk' && !w.boating) {
       const ground = this.gpuTerrain.groundAt(p.x, p.z);
       const wading = s.water.enabled && ground < s.water.level; // 浅瀬（深い所では水面の上を歩く）
       const snowy = (this.snowCover ?? 0) > 0.3 || (s.terrain.season === 'winter' && ground > (s.terrain.winterSnow ?? 600));
@@ -1139,7 +1145,15 @@ void main() {`)
       const above = Math.max(2, p.y - this.gpuTerrain.groundAt(p.x, p.z));
       this.controls.target.copy(p).addScaledVector(this.walk.forward(), Math.max(20, above * 2));
       this.#walkSound(dt, p, above);
+      // 小舟：座っている所（舟の後ろ寄り）が目の下に来るように
+      const w = this.walk;
+      if (w.boating) {
+        const lvl = this.store.get().water.level;
+        const f = w.forward().setY(0).normalize();
+        this.boat.place(new THREE.Vector3(p.x + f.x * 0.9, lvl - 0.12 + (w.bobY + 0.55) * 0.9, p.z + f.z * 0.9), w.yaw, w.boatRoll, w.boatPitch); // 目と舟は一緒に傾く
+      } else this.boat.hide();
     } else {
+      this.boat?.hide();
       this.#updateFlight();
       this.controls.update();
     }

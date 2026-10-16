@@ -18,8 +18,11 @@ const LOOK = 0.0022; // マウス 1 画素あたりの回転 (rad)
 export class WalkControls {
   // groundAt(x, z): 足元の高さ（地形と水面の高い方）
   // collide(p): 木などに当たったら位置を押し戻す（歩くときだけ）
-  constructor(camera, canvas, { groundAt, onModeChange, collide }) {
+  constructor(camera, canvas, { groundAt, onModeChange, collide, isDeep }) {
     this.collide = collide ?? null;
+    this.isDeep = isDeep ?? null; // 深い水の上か（そこでは小舟に乗って揺れる）
+    this.bobY = 0;
+    this.boatT = 0;
     this.camera = camera;
     this.canvas = canvas;
     this.groundAt = groundAt;
@@ -111,6 +114,9 @@ export class WalkControls {
     let iz = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0) + this.stick.y;
     const il = Math.hypot(ix, iz);
     if (il > 1) (ix /= il), (iz /= il);
+    // 前のコマの舟の揺れ（上下）を外してから動かす
+    p.y -= this.bobY;
+    this.bobY = 0;
     const ground = this.groundAt(p.x, p.z);
     const fwdFlat = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
     const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
@@ -166,7 +172,20 @@ export class WalkControls {
         cam.updateProjectionMatrix();
       }
     }
-    cam.quaternion.setFromEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
+    // 小舟：深い水の上では、波でゆっくり上下・左右に揺れる（座った目の高さ）
+    this.boating = this.mode === 'walk' && !!this.isDeep?.(p.x, p.z);
+    this.boatT += dt;
+    let roll = 0, pitchOff = 0;
+    if (this.boating) {
+      const t = this.boatT;
+      this.bobY = 0.1 * Math.sin(t * 1.3) + 0.04 * Math.sin(t * 2.2 + 1.0) - 0.55;
+      roll = 0.035 * Math.sin(t * 1.05) + 0.015 * Math.sin(t * 1.9 + 2.0);
+      pitchOff = 0.02 * Math.sin(t * 1.5 + 0.7);
+      p.y += this.bobY;
+    }
+    this.boatRoll = roll;
+    this.boatPitch = pitchOff;
+    cam.quaternion.setFromEuler(new THREE.Euler(this.pitch + pitchOff, this.yaw, roll, 'YXZ'));
     cam.updateMatrixWorld();
     return true;
   }
