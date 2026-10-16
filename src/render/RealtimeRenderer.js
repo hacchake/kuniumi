@@ -597,7 +597,9 @@ export class RealtimeRenderer {
   #applyLights() {
     const s = this.store.get();
     const k = nightFactor(s.sun.elevation) * (0.35 / Math.max(0.02, s.atmosphere.exposure));
+    this.lightsBase = k;
     this.gpuTerrain.setLights(this.photoTex?.lights ?? null, k);
+    this.buildings?.setNight(nightFactor(s.sun.elevation) * (0.5 / Math.max(0.02, s.atmosphere.exposure)));
     this.surround?.terrain.setLights(this.photoTex?.outerLights ?? null, k);
   }
 
@@ -827,6 +829,12 @@ export class RealtimeRenderer {
     this.#placeSun(s);
     if (this.terrain) this.trees.update(s, cam.position, this.treeTerrain, this.controls.target.clone().sub(cam.position));
     if (this.terrain) this.buildings.update(s, cam.position, (x, z) => this.gpuTerrain.groundAt(x, z));
+    // 夜の街の明かり（衛星から見た街のにじみ）は、地面に近いほど弱く（足元が一面に光らないように。近くは建物の窓が灯る）
+    if (this.lightsBase > 0 && this.terrain) {
+      const above = cam.position.y - this.gpuTerrain.groundAt(cam.position.x, cam.position.z);
+      const f = THREE.MathUtils.clamp((above - 150) / 2500, 0.08, 1);
+      this.gpuTerrain.uniforms.tLightsI.value = this.gpuTerrain.uniforms.tLights.value ? this.lightsBase * f : 0;
+    }
     const shift = new THREE.Vector3(ox, 0, oz);
     const flatPos = cam.position.clone();
     const flatQuat = cam.quaternion.clone();

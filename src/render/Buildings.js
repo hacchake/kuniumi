@@ -16,6 +16,41 @@ export class Buildings {
     parent.add(this.group);
     this.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0, side: THREE.DoubleSide });
     patchMaterial?.(this.material);
+    // 夜の窓の明かり：壁を階（3.2 m）と窓（3.5 m）の升目に分け、ところどころの窓を灯す
+    this.night = { value: 0 };
+    const prev = this.material.onBeforeCompile;
+    this.material.onBeforeCompile = (sh, r) => {
+      prev?.call(this.material, sh, r);
+      sh.uniforms.bNight = this.night;
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', `#include <common>
+varying vec3 vBPos;
+varying vec3 vBNrm;`)
+        .replace('#include <begin_vertex>', `#include <begin_vertex>
+vBPos = position;
+vBNrm = normal;`);
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', `#include <common>
+uniform float bNight;
+varying vec3 vBPos;
+varying vec3 vBNrm;
+float bHash( vec3 p ) { p = fract( p * 0.1031 ); p += dot( p, p.yzx + 33.33 ); return fract( ( p.x + p.y ) * p.z ); }`)
+        .replace(
+          '#include <emissivemap_fragment>',
+          `#include <emissivemap_fragment>
+          if ( bNight > 0.0 && abs( vBNrm.y ) < 0.5 ) {
+            float along = abs( vBNrm.x ) > abs( vBNrm.z ) ? vBPos.z : vBPos.x;
+            vec2 cell = vec2( along / 3.5, vBPos.y / 3.2 );
+            vec2 f = fract( cell );
+            float win = step( 0.22, f.x ) * step( f.x, 0.78 ) * step( 0.3, f.y ) * step( f.y, 0.8 );
+            vec3 id = vec3( floor( cell ), floor( dot( vBNrm.xz, vec2( 13.1, 7.7 ) ) ) );
+            float on = step( 0.55, bHash( id ) );
+            vec3 warm = mix( vec3( 1.0, 0.78, 0.48 ), vec3( 0.85, 0.9, 1.0 ), step( 0.85, bHash( id + 3.7 ) ) );
+            totalEmissiveRadiance += warm * win * on * bNight;
+          }`,
+        );
+    };
+    this.material.customProgramCacheKey = () => 'buildings-night';
     this.tiles = new Map(); // "x/y" → { mesh, used, state }
     this.worker = null;
     this.urlTemplate = null;
@@ -37,6 +72,11 @@ export class Buildings {
   #clear() {
     for (const t of this.tiles.values()) if (t.mesh) (this.group.remove(t.mesh), t.mesh.geometry.dispose());
     this.tiles.clear();
+  }
+
+  // 夜の窓の明かりの強さ（0 = 昼）
+  setNight(k) {
+    this.night.value = k;
   }
 
   // s: シーン、cam: カメラ（世界座標・平らな地図の上）、groundAt(x, z)
