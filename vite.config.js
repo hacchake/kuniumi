@@ -35,6 +35,10 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // 新しい版を公開したら、待たせずにすぐ切り替える（古い版が出続けないように）
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
         // 本体と学習済みデータは最初に保存。フォント（日本語は文字範囲ごとに分割）は使った分だけ後から保存
         globPatterns: ['**/*.{js,css,html,svg,png,tza,webmanifest}'],
         globIgnores: ['**/files/*.woff', '**/*.woff2'],
