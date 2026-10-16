@@ -136,7 +136,8 @@ export const GEO_PRESETS = [
 // 平野の干拓地・水田など海面すれすれの陸（0 m 以下の点がまだらに混じる）を海にすると、
 // 陸の中に水たまりが散らばり、細かさが変わるたびにちらつくため。海につながらない低い所は陸（1.5 m）にする。
 // inner: 範囲の標高 (m)、res × res・一辺 size。outer: 同じ中心の周りの地形、ores × ores・一辺 osize
-export function fillSeaFloor(inner, res, size, outer, ores, osize) {
+// isWater(i, j): 衛星写真などで水に見えるか（渡せば、0 m 以下でも水に見えない所は海にしない）
+export function fillSeaFloor(inner, res, size, outer, ores, osize, isWater = null) {
   const out = new Float32Array(inner);
   const k = size / osize;
   const outerAt = (i, j) => {
@@ -154,6 +155,7 @@ export function fillSeaFloor(inner, res, size, outer, ores, osize) {
     for (let i = 0; i < res; i++) {
       const n = j * res + i, h = inner[n];
       if (h > 0) continue;
+      if (isWater && h >= -40 && !isWater(i, j)) continue;
       if (h < -40 || outerAt(i, j) < -2) {
         sea[n] = 1;
         stack.push(n);
@@ -171,6 +173,7 @@ export function fillSeaFloor(inner, res, size, outer, ores, osize) {
   }
   function visit(m) {
     if (sea[m] || inner[m] > 0) return;
+    if (isWater && inner[m] >= -40 && !isWater(m % res, Math.floor(m / res))) return;
     sea[m] = 1;
     stack.push(m);
   }

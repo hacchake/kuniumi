@@ -156,3 +156,29 @@ describe('衛星写真（地表の色）', () => {
     expect(photoSizeFor(3e6)).toBe(4096);
   });
 });
+
+describe('海か陸か（衛星写真も使う）', () => {
+  it('写真で水に見えない 0 m 以下の低地は、海とつながっていても陸', async () => {
+    const { fillSeaFloor } = await import('../src/core/geo.js');
+    // 5 × 5 すべて 0 m 以下。粗いデータではどこも海。写真では左の 2 列だけ水、右の 3 列は水田
+    const inner = new Float32Array(25).fill(-0.5);
+    const outer = new Float32Array(9).fill(-300);
+    const r = fillSeaFloor(inner, 5, 100, outer, 3, 600, (i) => i <= 1);
+    expect(r[2 * 5 + 0]).toBeLessThan(-1); // 水の所は海（粗いデータの深さ）
+    expect(r[2 * 5 + 3]).toBe(1.5); // 水田は陸
+    // 写真を渡さなければ、これまでどおり全部海
+    expect(fillSeaFloor(inner, 5, 100, outer, 3, 600)[2 * 5 + 3]).toBeLessThan(-1);
+  });
+  it('写真の水らしさ：開けた海は高く、水田・街は低い', async () => {
+    const { photoWater } = await import('../src/io/photo.js');
+    const one = (rgb) => {
+      const data = new Uint8ClampedArray(16);
+      for (let k = 0; k < 4; k++) data.set([...rgb, 255], k * 4);
+      return photoWater({ data, width: 2, height: 2 }, 0.5, 0.5);
+    };
+    const enc = (v) => Math.round(255 * (v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - 0.055));
+    expect(one([0.03, 0.067, 0.074].map(enc))).toBeGreaterThan(0.8); // 瀬戸内海
+    expect(one([0.067, 0.117, 0.098].map(enc))).toBeLessThan(0.1); // 水田
+    expect(one([0.275, 0.275, 0.227].map(enc))).toBeLessThan(0.05); // 街
+  });
+});

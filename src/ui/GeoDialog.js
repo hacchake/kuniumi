@@ -3,6 +3,7 @@ import { GEO_PRESETS, ELEVATION_ATTRIBUTION, EARTH_R, aeqdInverse, sizeFromBBox,
 import { fieldToHeightmap } from '../io/heightmap.js';
 import { SIZE_MAX } from '../core/schema.js';
 import { IMAGERY_ATTRIBUTION } from '../core/globe.js';
+import { decodePhoto, photoWater } from '../io/photo.js';
 
 // 「地球の地形を取り込む」ダイアログ。
 // 地名検索（OpenStreetMap の Nominatim）か、ひな形・緯度経度で範囲を決め、
@@ -105,10 +106,18 @@ export class GeoDialog {
       const r = await this.#run(region, res, res >= 4097 ? 600 : 400, (p) => this.#progress(p));
       let o = null;
       if (outerSize > region.size * 1.3) o = await this.#run({ ...region, size: outerSize }, SURROUND_RES, 320, (p) => this.#progress(p, true));
+      // 衛星写真が届いていれば、海か陸かの判定にも使う（海抜 0 m 以下の水田・干拓地を海にしない）
+      this.#progressText(t('衛星写真を仕上げています…'));
+      const ph = await photos;
+      let isWater = null;
+      if (ph?.inner) {
+        const px = await decodePhoto(ph.inner, 2048).catch(() => null);
+        if (px) isWater = (i, j) => photoWater(px, i / (res - 1), j / (res - 1)) > 0.5;
+      }
       // 沿岸の海底の深さを周りの地形で補う
       // 縁は周りの地形の高さへ寄せる（境目に段差を作らない）
       const heights = o
-        ? featherToSurround(fillSeaFloor(r.heights, res, region.size, o.heights, SURROUND_RES, outerSize), res, region.size, o.heights, SURROUND_RES, outerSize)
+        ? featherToSurround(fillSeaFloor(r.heights, res, region.size, o.heights, SURROUND_RES, outerSize, isWater), res, region.size, o.heights, SURROUND_RES, outerSize)
         : r.heights;
       let min = Infinity, max = -Infinity;
       for (const h of heights) {
@@ -129,8 +138,6 @@ export class GeoDialog {
         hm.surround = { png: shm.png, res: SURROUND_RES, size: outerSize, min: o.min, max: o.max };
       }
       // 地表の色：衛星写真（範囲と周りの地形）
-      this.#progressText(t('衛星写真を仕上げています…'));
-      const ph = await photos;
       if (ph) {
         hm.photo = ph.inner;
         if (hm.surround && ph.outer) hm.surround.photo = ph.outer;

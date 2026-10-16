@@ -1,5 +1,5 @@
 import { createTerrainSurface } from './terrainSurface.js';
-import { photoAt, PHOTO_ALBEDO } from '../io/photo.js';
+import { PHOTO_ALBEDO } from '../io/photo.js';
 import { createTerrainShader, valueNoise } from './terrainColor.js';
 import { createVegetationRules, placeVegetation } from './vegetation.js';
 import { curvePoint, curveNormal, belowWater, landLift } from './curvature.js';
@@ -188,13 +188,11 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
           (valueNoise(x / 2, z / 2, 25) - 0.5) * 0.12 +
           (valueNoise(x / 0.5, z / 0.5, 32) - 0.5) * 0.06;
         shade(y, Math.hypot(gx, gz), wearAt(x, z), jitter, col, x, z);
-        // 衛星写真があれば陸の色は写真から（水の下は手続きの色のまま）
+        // 衛星写真があれば、色は写真のテクスチャ（一枚絵の材質の map。uv で貼る）から。
+        // 頂点の色は明るさの倍率と細かい色むらだけ（頂点ごとに写真を拾うと、遠くの粗い区画で写真がぼやけるため）
         if (photo && !(water.enabled && y < water.level)) {
-          photoAt(photo, x / size + 0.5, z / size + 0.5, col);
           const k = PHOTO_ALBEDO * (1 + jitter * 0.35);
-          col[0] *= k;
-          col[1] *= k;
-          col[2] *= k;
+          col[0] = col[1] = col[2] = k;
         }
         colors.set(col, vo * 3);
         vo++;

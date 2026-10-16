@@ -42,5 +42,13 @@ export function photoForest(photo, u, v) {
   return smooth(0.02, 0.14, green) * (1 - smooth(0.07, 0.16, lum)) * (1 - smooth(0.9, 1.1, b / (g + 1e-4)));
 }
 
+// 写真から見た「水らしさ」（0..1）：開けた海・湖の暗い青。水田・干拓地・街は低い
+// （濁った浅い入り江は水田と色で見分けにくいので、陸として写真の色で描く）
+export function photoWater(photo, u, v) {
+  const [r, g, b] = photoAt(photo, u, v, tmp);
+  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return smooth(0.88, 1.0, b / (g + 1e-4)) * (1 - smooth(0.07, 0.11, lum));
+}
+
 // 写真の明るさを地表の色（反射率）に合わせる倍率。衛星写真は大気の明るさも含むので少し下げる
 export const PHOTO_ALBEDO = 0.85;

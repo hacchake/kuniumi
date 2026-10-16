@@ -15,7 +15,22 @@ import { coniferGeometry, broadleafGeometry, grassGeometry, fillInstances } from
 import { planetRadius } from '../core/schema.js';
 import { curvePoint, DISC_RATIO, DISC_SEG } from '../core/curvature.js';
 import { buildSurroundMesh } from '../core/surroundMesh.js';
-import { decodePhoto } from '../io/photo.js';
+
+// 衛星写真（JPEG の data URL）をテクスチャに。行 0 = 北 = uv の v 1（flipY のまま）
+function loadPhotoTexture(url) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const tex = new THREE.Texture(img);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 8;
+      tex.needsUpdate = true;
+      resolve(tex);
+    };
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
 import { decodePng } from '../core/png16.js';
 
 // 高画質の一枚絵モード。リアルタイム表示と同じシーン JSON を、別の描画器（パストレーサ）で解釈する。
@@ -85,7 +100,7 @@ export class StillJob {
       if (img) {
         const meters = new Float32Array(img.data.length);
         for (let k = 0; k < meters.length; k++) meters[k] = sur.min + img.data[k] * (sur.max - sur.min);
-        const photo = s.terrain.photo !== false && sur.photo ? await decodePhoto(sur.photo).catch(() => null) : null;
+        const photo = s.terrain.photo !== false && !!sur.photo;
         terrain.surround = buildSurroundMesh(meters, img.width, sur.size, { innerSize: s.terrain.size, terrain: s.terrain, water: s.water, place: this.place, photo });
       }
     }
@@ -97,7 +112,7 @@ export class StillJob {
     await this.view.objects.ready();
     const objectMeshes = this.view.objects.exportMeshes();
     const celestial = new Set(s.objects.filter((o) => o.celestial).map((o) => o.id));
-    const built = this.#buildScene(s, terrain, objectMeshes);
+    const built = await this.#buildScene(s, terrain, objectMeshes);
     mark('scene');
     const camera = this.#camera(s, W / H);
     this.#check();
@@ -242,7 +257,7 @@ export class StillJob {
     });
   }
 
-  #buildScene(s, terrain, objectMeshes) {
+  async #buildScene(s, terrain, objectMeshes) {
     const scene = new THREE.Scene();
     const textures = [];
     const t = s.terrain;
@@ -258,7 +273,12 @@ export class StillJob {
     geo.computeBoundingBox();
     geo.computeBoundingSphere();
     this.stats.terrainTriangles = r.triangles;
-    const terrainMesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 }));
+    // 地球から取り込んだ地形の衛星写真は、テクスチャとして貼る（遠くまで写真の細かさで）
+    const usePhoto = t.mode === 'heightmap' && t.photo !== false;
+    const innerPhoto = usePhoto && t.heightmap?.photo ? await loadPhotoTexture(t.heightmap.photo) : null;
+    const outerPhoto = usePhoto && t.heightmap?.surround?.photo ? await loadPhotoTexture(t.heightmap.surround.photo) : null;
+    for (const tex of [innerPhoto, outerPhoto]) if (tex) this.disposers.push(() => tex.dispose());
+    const terrainMesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, map: innerPhoto }));
     terrainMesh.name = 'Terrain';
     scene.add(terrainMesh);
     this.disposers.push(() => (geo.dispose(), terrainMesh.material.dispose()));
@@ -269,8 +289,11 @@ export class StillJob {
       sg.setAttribute('position', new THREE.BufferAttribute(sr.positions, 3));
       sg.setAttribute('normal', new THREE.BufferAttribute(sr.normals, 3));
       sg.setAttribute('color', new THREE.BufferAttribute(sr.colors, 3));
+      sg.setAttribute('uv', new THREE.BufferAttribute(sr.uvs, 2));
       sg.setIndex(new THREE.BufferAttribute(sr.index, 1));
-      surroundMesh = new THREE.Mesh(sg, terrainMesh.material);
+      const smat = outerPhoto ? new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, map: outerPhoto }) : terrainMesh.material;
+      if (outerPhoto) this.disposers.push(() => smat.dispose());
+      surroundMesh = new THREE.Mesh(sg, smat);
       surroundMesh.name = 'Surround';
       scene.add(surroundMesh);
       this.disposers.push(() => sg.dispose());
