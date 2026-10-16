@@ -14,6 +14,8 @@ import { atmosphereParams } from './atmosphereParams.js';
 import { coniferGeometry, broadleafGeometry, grassGeometry, fillInstances } from '../three/vegetationMeshes.js';
 import { planetRadius } from '../core/schema.js';
 import { curvePoint } from '../core/curvature.js';
+import { buildSurroundMesh } from '../core/surroundMesh.js';
+import { decodePng } from '../core/png16.js';
 
 // 高画質の一枚絵モード。リアルタイム表示と同じシーン JSON を、別の描画器（パストレーサ）で解釈する。
 // 数千 km の大地のため、座標の原点を注視点へずらし（Float32 の精度対策）、星の丸みもリアルタイム表示と同じ式で曲げて組む。
@@ -75,6 +77,16 @@ export class StillJob {
     const R = planetRadius(s);
     this.place = { ox: s.camera.target[0], oz: s.camera.target[2], cx: s.camera.target[0], cz: s.camera.target[2], R };
     const terrain = await this.#lodTerrain(s, W / H, H);
+    // 地球から取り込んだ地形なら、範囲の外側の「周りの地形」も粗く置く
+    const sur = s.terrain.mode === 'heightmap' ? s.terrain.heightmap?.surround : null;
+    if (sur) {
+      const img = await decodePng(await (await fetch(sur.png)).arrayBuffer());
+      if (img) {
+        const meters = new Float32Array(img.data.length);
+        for (let k = 0; k < meters.length; k++) meters[k] = sur.min + img.data[k] * (sur.max - sur.min);
+        terrain.surround = buildSurroundMesh(meters, img.width, sur.size, { innerSize: s.terrain.size, terrain: s.terrain, water: s.water, place: this.place });
+      }
+    }
     mark('terrain');
     this.#check();
 
@@ -248,6 +260,19 @@ export class StillJob {
     terrainMesh.name = 'Terrain';
     scene.add(terrainMesh);
     this.disposers.push(() => (geo.dispose(), terrainMesh.material.dispose()));
+    let surroundMesh = null;
+    if (terrain.surround) {
+      const sr = terrain.surround;
+      const sg = new THREE.BufferGeometry();
+      sg.setAttribute('position', new THREE.BufferAttribute(sr.positions, 3));
+      sg.setAttribute('normal', new THREE.BufferAttribute(sr.normals, 3));
+      sg.setAttribute('color', new THREE.BufferAttribute(sr.colors, 3));
+      sg.setIndex(new THREE.BufferAttribute(sr.index, 1));
+      surroundMesh = new THREE.Mesh(sg, terrainMesh.material);
+      surroundMesh.name = 'Surround';
+      scene.add(surroundMesh);
+      this.disposers.push(() => sg.dispose());
+    }
 
     // 水：透過・屈折・吸収をもつ本物の水。さざ波は法線マップ
     let water = null;
@@ -350,7 +375,7 @@ export class StillJob {
     scene.background = discScale > 1 ? mkEnv(bg) : scene.environment;
 
     scene.updateMatrixWorld(true);
-    return { scene, terrainMesh, water, plants, textures, skyP: p };
+    return { scene, terrainMesh, surroundMesh, water, plants, textures, skyP: p };
   }
 
   #camera(s, aspect) {
@@ -402,6 +427,7 @@ export class StillJob {
       }
     }
     const meshes = [{ object: built.terrainMesh }];
+    if (built.surroundMesh) meshes.push({ object: built.surroundMesh });
     if (built.water) meshes.push({ object: built.water, noShadow: true });
     for (const m of built.plants) meshes.push({ object: m });
     for (const m of objectMeshes) meshes.push({ object: m, celestial: celestial.has(m.userData.kuniumiId) });

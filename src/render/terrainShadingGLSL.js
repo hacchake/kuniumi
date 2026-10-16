@@ -156,7 +156,7 @@ export function updateTerrainShadingUniforms(u, s) {
   u.tForest.value.copy(lin(p.forest ?? '#1f3018'));
   u.tSea.value = w.enabled ? w.level : t.baseHeight - 1;
   u.tTop.value = t.baseHeight + t.heightScale;
-  u.tShoreBand.value = shoreBandOf(t.heightScale, t.baseHeight, u.tSea.value);
+  u.tShoreBand.value = shoreBandOf(t.heightScale, t.baseHeight, u.tSea.value, t.mode === 'heightmap' && !!t.heightmap?.geo);
   u.tRockSlope.value = p.rockSlope;
   u.tSnowLine.value = p.snowLine;
   u.tHeightScale.value = t.heightScale;

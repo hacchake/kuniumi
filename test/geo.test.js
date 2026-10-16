@@ -86,3 +86,14 @@ describe('シーン（大陸）', () => {
     expect(planetRadius(normalizeScene({ planet: { curvature: false } }))).toBe(0);
   });
 });
+
+describe('沿岸の海底を補う', () => {
+  it('0 m の海は粗いデータの深さに、陸はそのまま', async () => {
+    const { fillSeaFloor } = await import('../src/core/geo.js');
+    const inner = new Float32Array([0, 50, 0, 0]);
+    const outer = new Float32Array(9).fill(-800);
+    const r = fillSeaFloor(inner, 2, 100, outer, 3, 600);
+    expect(r[0]).toBeCloseTo(-800);
+    expect(r[1]).toBe(50);
+  });
+});

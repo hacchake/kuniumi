@@ -135,6 +135,8 @@ export class GpuTerrain {
       tDetailL0: { value: 64 },
       tHasWear: { value: 0 },
       tOriginUV: { value: new THREE.Vector2() },
+      tOriginW: { value: new THREE.Vector2() }, // 原点（世界座標）
+      tClipHalf: { value: 0 },
       ...curveUniforms,
     };
     this.geometry = createPatchGeometry();
@@ -173,12 +175,14 @@ export class GpuTerrain {
           .replace('#include <beginnormal_vertex>', 'vec3 objectNormal; vec3 kTP; kTerrainVertex( kTP, objectNormal );')
           .replace('#include <begin_vertex>', 'vec3 transformed = kTP;');
         shader.fragmentShader = shader.fragmentShader
-          .replace('#include <common>', `#include <common>\n${TERRAIN_SHADING_GLSL}\nvarying float vTH, vTSlope, vTWear, vTJit, vTClump;\nvarying vec2 vTLocal;`)
+          .replace('#include <common>', `#include <common>\n${TERRAIN_SHADING_GLSL}\nvarying float vTH, vTSlope, vTWear, vTJit, vTClump;\nvarying vec2 vTLocal;\nuniform vec2 tOriginW;\nuniform float tClipHalf;`)
           // 細かい色むらは、画素の大きさ（距離 × 画角）より大きい段だけ
           .replace(
             '#include <map_fragment>',
             // 海面より下は水面が覆うので描かない（遠くの粗い三角形で、浅い海底が水面から顔を出さないように）
             'if ( tWater > 0.5 && vTH < tSea ) discard;\n' +
+            // 周りの地形は、本来の地形がある内側を描かない
+            'if ( tClipHalf > 0.0 ) { vec2 kw = vTLocal + tOriginW; if ( max( abs( kw.x ), abs( kw.y ) ) < tClipHalf ) discard; }\n' +
             'float kPix = length( vViewPosition ) * 0.0015;\n' +
               'diffuseColor.rgb *= terrainColor( vTH, vTSlope, vTWear, vTJit + tJitterFine( vTLocal, kPix ), vTClump );',
           );
@@ -259,9 +263,12 @@ export class GpuTerrain {
   }
 
   // 大きさ・起伏・色などシーンの値
-  setScene(s) {
-    const t = s.terrain;
+  // over.size: 大地の大きさを差し替える（周りの地形用）。over.clipHalf: この半径の正方形の内側は描かない（内側は本来の地形が描く）
+  setScene(s, over = {}) {
+    const t = over.size ? { ...s.terrain, size: over.size } : s.terrain;
     this.terrain = t;
+    this.clipHalf = over.clipHalf ?? 0;
+    this.uniforms.tClipHalf.value = this.clipHalf;
     const u = this.uniforms;
     updateTerrainShadingUniforms(u, s);
     u.tSize.value = t.size;
@@ -285,6 +292,7 @@ export class GpuTerrain {
     const u = this.uniforms;
     this.origin.copy(origin);
     u.tOriginUV.value.set(origin.x / t.size + 0.5, origin.y / t.size + 0.5);
+    u.tOriginW.value.copy(origin);
     u.tOriginI.value.set(Math.round(origin.x / ORIGIN_STEP), Math.round(origin.y / ORIGIN_STEP));
     this.mesh.position.set(origin.x, 0, origin.y);
 
@@ -315,6 +323,9 @@ export class GpuTerrain {
   #select(x0, z0, size, level, depth, qi, qj) {
     const sel = this.sel;
     if (sel.count >= MAX_NODES) return;
+    // 周りの地形：内側にすっぽり入る区画は要らない
+    const ch = this.clipHalf;
+    if (ch > 0 && x0 >= -ch && z0 >= -ch && x0 + size <= ch && z0 + size <= ch) return;
     const [hmin, hmax] = this.#heightRange(depth, qi, qj);
     const [cx, cy, cz] = this.camW;
     // 箱までの距離（倍精度・平らな地図の上で）

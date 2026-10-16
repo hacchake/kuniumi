@@ -1,5 +1,5 @@
 import { t } from '../i18n/index.js';
-import { GEO_PRESETS, ELEVATION_ATTRIBUTION, EARTH_R, aeqdInverse, sizeFromBBox, chooseZoom, tilesFor } from '../core/geo.js';
+import { GEO_PRESETS, ELEVATION_ATTRIBUTION, EARTH_R, aeqdInverse, sizeFromBBox, chooseZoom, tilesFor, fillSeaFloor } from '../core/geo.js';
 import { fieldToHeightmap } from '../io/heightmap.js';
 import { SIZE_MAX } from '../core/schema.js';
 
@@ -12,6 +12,7 @@ const VIEW = 2.2; // 下見の地図に映す広さ（範囲の何倍）
 const MAP = 360; // 下見の地図の画素数
 const SIZE_MIN_KM = 5;
 const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
+const SURROUND_RES = 1025; // 周りの地形の格子
 
 export class GeoDialog {
   // apply(result): 取り込んだ結果をシーンへ（main.js が渡す）
@@ -71,13 +72,31 @@ export class GeoDialog {
     this.#setBusy(true);
     try {
       const r = await this.#run(region, res, res >= 4097 ? 600 : 400, (p) => this.#progress(p));
-      const span = Math.max(1, r.max - r.min);
-      const field = new Float32Array(r.heights.length);
-      for (let k = 0; k < field.length; k++) field[k] = (r.heights[k] - r.min) / span;
+      // 周りの地形：範囲の外も実際の地形が続いて見えるよう、6 倍の広さを粗く取り寄せる（地球の半周まで）
+      const outerSize = Math.min(Math.PI * EARTH_R * 0.9, Math.max(region.size * 6, region.size + 400e3));
+      let o = null;
+      if (outerSize > region.size * 1.3) o = await this.#run({ ...region, size: outerSize }, SURROUND_RES, 160, (p) => this.#progress(p, true));
+      // 沿岸の海底の深さを周りの地形で補う
+      const heights = o ? fillSeaFloor(r.heights, res, region.size, o.heights, SURROUND_RES, outerSize) : r.heights;
+      let min = Infinity, max = -Infinity;
+      for (const h of heights) {
+        if (h < min) min = h;
+        if (h > max) max = h;
+      }
+      const span = Math.max(1, max - min);
+      const field = new Float32Array(heights.length);
+      for (let k = 0; k < field.length; k++) field[k] = (heights[k] - min) / span;
       this.#progressText(t('地形をまとめています…'));
       const hm = await fieldToHeightmap(field, res, `${name}.png`);
       hm.geo = { lat: region.lat, lon: region.lon, size: region.size, res, zoom: r.zoom, name, source: ELEVATION_ATTRIBUTION };
-      this.apply({ heightmap: hm, region, res, min: r.min, max: r.max, name }, { restore });
+      if (o) {
+        const ospan = Math.max(1, o.max - o.min);
+        const of = new Float32Array(o.heights.length);
+        for (let k = 0; k < of.length; k++) of[k] = (o.heights[k] - o.min) / ospan;
+        const shm = await fieldToHeightmap(of, SURROUND_RES, `${name}_surround.png`);
+        hm.surround = { png: shm.png, res: SURROUND_RES, size: outerSize, min: o.min, max: o.max };
+      }
+      this.apply({ heightmap: hm, region, res, min, max, name }, { restore });
       if (!quiet) this.toast(t('{name} の地形を取り込みました（{km} km 四方・{res}×{res}・タイル {n} 枚）', { name, km: Math.round(region.size / 1000), res, n: r.tiles }));
       this.busy = false;
       this.close();
@@ -207,7 +226,12 @@ export class GeoDialog {
     if (b) this.#progressText(t('準備しています…'));
   }
 
-  #progress(p) {
+  #progress(p, surround = false) {
+    if (surround) {
+      this.bar.style.width = '100%';
+      this.#progressText(t('周りの地形を取り寄せています… {done} / {total}', { done: p.phase === 'fetch' ? p.done : p.total, total: p.total }));
+      return;
+    }
     if (p.phase === 'fetch') {
       this.bar.style.width = `${(p.done / Math.max(1, p.total)) * 70}%`;
       this.#progressText(t('標高タイルを取り寄せています… {done} / {total}（ズーム {z}）', { done: p.done, total: p.total, z: p.zoom }));

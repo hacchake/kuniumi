@@ -13,6 +13,7 @@ import { createCurveUniforms, curvePoint } from './curvatureGLSL.js';
 import { createWaterDisc, curveWater } from './waterDisc.js';
 import { planetRadius } from '../core/schema.js';
 import { WalkControls } from './WalkControls.js';
+import { decodePng } from '../core/png16.js';
 import { createWaterNormals } from '../three/waterNormals.js';
 import { TextureService } from '../three/TextureService.js';
 import { ObjectLayer } from '../three/objectLayer.js';
@@ -140,7 +141,7 @@ export class RealtimeRenderer {
     this.walk = new WalkControls(this.camera, canvas, {
       groundAt: (x, z) => {
         const s = this.store.get();
-        const g = this.gpuTerrain.groundAt(x, z);
+        const g = this.#terrainAt(x, z).groundAt(x, z);
         return s.water.enabled ? Math.max(g, s.water.level + 0.2) : g;
       },
       onModeChange: (mode) => this.onWalk?.(mode, this.walk.speedScale),
@@ -188,6 +189,7 @@ export class RealtimeRenderer {
     // 地形（高さ場を光線でたどる）と水面のうち近いほう
     const far = Math.max(s.terrain.size * 3, 100000);
     let hit = this.gpuTerrain.raycast(origin, direction, far);
+    if (!hit && this.surround?.ready) hit = this.surround.terrain.raycast(origin, direction, Math.max(far, this.surround.size * 2));
     if (s.water.enabled && Math.abs(direction.y) > 1e-6) {
       const tw = (s.water.level - origin.y) / direction.y;
       if (tw > 0 && (!hit || tw < hit.distanceTo(origin))) hit = origin.clone().addScaledVector(direction, tw);
@@ -297,10 +299,14 @@ export class RealtimeRenderer {
       cov.value = this.reflectClouds ?? saved;
       // 映り込みの地形は細部の起伏を省いて軽くする（揺らぐ水面では見分けがつかない）
       const det = this.gpuTerrain.uniforms.tDetailAmt;
+      const detO = this.surround?.terrain.uniforms.tDetailAmt;
+      const savedDetO = detO?.value;
+      if (detO) detO.value = 0;
       const savedDet = det.value;
       det.value = 0;
       waterBefore.apply(this.water, args);
       det.value = savedDet;
+      if (detO) detO.value = savedDetO;
       cov.value = saved;
       helper.visible = vis;
     };
@@ -365,6 +371,7 @@ export class RealtimeRenderer {
     }
     if (has('terrain') || has('water') || has('vegetation')) {
       this.gpuTerrain.setScene(s);
+      this.#updateSurround(s);
       this.shadowDirty = true;
     }
     if (has('planet')) {
@@ -466,6 +473,55 @@ export class RealtimeRenderer {
     }
     this.shadowDirty = true;
     this.onStatus(null);
+  }
+
+  // その地点を受け持つ地形（取り込んだ範囲の外なら周りの地形）
+  #terrainAt(x, z) {
+    const half = this.store.get().terrain.size / 2;
+    if (this.surround?.ready && (Math.abs(x) > half || Math.abs(z) > half)) return this.surround.terrain;
+    return this.gpuTerrain;
+  }
+
+  // 地球から取り込んだ地形の「周りの地形」（範囲の外も実際の地形が続いて見えるように、粗い高さ場で外側を描く）
+  async #updateSurround(s) {
+    const t = s.terrain;
+    const sur = t.mode === 'heightmap' ? t.heightmap?.surround : null;
+    const key = sur ? `${t.heightmap.id}` : null;
+    if (!sur) {
+      if (this.surround) this.surround.terrain.mesh.visible = false;
+      this.surroundKey = null;
+      return;
+    }
+    if (key !== this.surroundKey) {
+      this.surroundKey = key;
+      const img = await decodePng(await (await fetch(sur.png)).arrayBuffer());
+      if (this.surroundKey !== key || !img) return;
+      if (!this.surround) {
+        const terrain = new GpuTerrain({ curveUniforms: this.curveUniforms, patchMaterial: (m) => patchStandardMaterial(m, this.shared) });
+        terrain.mesh.castShadow = false;
+        terrain.mesh.name = 'Surround';
+        this.world.add(terrain.mesh);
+        this.surround = { terrain };
+      }
+      // 標高 (m) で持ち、本来の地形と同じ「基準の標高・起伏の高さ」で 0..1 に直して使う（色の規則が内外でそろう）
+      const m = new Float32Array(img.data.length);
+      for (let k = 0; k < m.length; k++) m[k] = sur.min + img.data[k] * (sur.max - sur.min);
+      Object.assign(this.surround, { meters: m, res: img.width, size: sur.size, base: null, ready: false });
+    }
+    const S = this.surround;
+    if (!S?.meters) return;
+    const cur = this.store.get().terrain;
+    if (S.base !== cur.baseHeight || S.scale !== cur.heightScale) {
+      const f = new Float32Array(S.meters.length);
+      const sc = Math.max(1, cur.heightScale);
+      for (let k = 0; k < f.length; k++) f[k] = (S.meters[k] - cur.baseHeight) / sc;
+      S.terrain.setField(f, S.res, null);
+      S.base = cur.baseHeight;
+      S.scale = cur.heightScale;
+    }
+    S.terrain.setScene(this.store.get(), { size: S.size, clipHalf: cur.size / 2 });
+    S.terrain.mesh.visible = true;
+    S.ready = true;
   }
 
   // 太陽の影（平行光源）はカメラの見ている辺りだけを細かく。毎フレーム、注視点について動かす
@@ -621,6 +677,7 @@ export class RealtimeRenderer {
     this.atmosphere.setView(this.origin, R, this.curveUniforms.kCenter.value);
     this.scene.updateMatrixWorld();
     this.gpuTerrain.update(cam, this.origin);
+    if (this.surround?.ready && this.surround.terrain.mesh.visible) this.surround.terrain.update(cam, this.origin);
 
     if (this.atmosphere.enabled) {
       // 霧の光の筋のための影の地図：カメラの周りだけ。物を動かしている最中は作り直さない

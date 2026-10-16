@@ -135,6 +135,7 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
     waterEnabled: water.enabled,
     palette: terrain.palette,
     vegetation,
+    realWorld: terrain.mode === 'heightmap' && !!terrain.heightmap?.geo,
   });
   const col = [0, 0, 0];
   const G = N + 3; // 法線用に 1 マス外側も計算する
@@ -197,7 +198,7 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
   // ---- 木と草 ----
   let plants = null;
   if (vegetation) {
-    const rules = createVegetationRules({ heightScale, baseHeight, waterLevel: water.level, waterEnabled: water.enabled, palette: terrain.palette, vegetation });
+    const rules = createVegetationRules({ heightScale, baseHeight, waterLevel: water.level, waterEnabled: water.enabled, palette: terrain.palette, vegetation, realWorld: terrain.mode === 'heightmap' && !!terrain.heightmap?.geo });
     plants = placeVegetation(rules, size, surface.coarse, (x, z) => heightAt(x, z, 0.5), view);
     // 木と草の根元の位置も同じように移して曲げる（幹の傾きは近くでは無視できる）
     for (const list of [plants.conifer, plants.broadleaf, plants.grass]) {

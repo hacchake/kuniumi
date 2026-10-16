@@ -129,3 +129,26 @@ export const GEO_PRESETS = [
   { name: 'アイスランド', lat: 64.9, lon: -18.7, size: 600, res: 2049 },
   { name: 'ニュージーランド', lat: -41, lon: 173, size: 1600, res: 4097 },
 ];
+
+// 高ズームの標高タイルは、沿岸の海が 0 m 付近の平らな値になっていて海底の深さが入っていないことがある。
+// 粗いズームの「周りの地形」（ETOPO1 などの海底地形が入っている）で、範囲の海の部分を補う。
+// inner: 範囲の標高 (m)、res × res・一辺 size。outer: 同じ中心の周りの地形、ores × ores・一辺 osize
+export function fillSeaFloor(inner, res, size, outer, ores, osize) {
+  const out = new Float32Array(inner);
+  const k = size / osize;
+  for (let j = 0; j < res; j++) {
+    const v = (0.5 + (j / (res - 1) - 0.5) * k) * (ores - 1);
+    const j0 = Math.min(ores - 2, Math.max(0, Math.floor(v))), fy = v - j0;
+    for (let i = 0; i < res; i++) {
+      const h = inner[j * res + i];
+      if (h > 0 || h < -40) continue; // 陸地と、もともと深さの入っている海はそのまま
+      const u = (0.5 + (i / (res - 1) - 0.5) * k) * (ores - 1);
+      const i0 = Math.min(ores - 2, Math.max(0, Math.floor(u))), fx = u - i0;
+      const a = outer[j0 * ores + i0], b = outer[j0 * ores + i0 + 1], c = outer[(j0 + 1) * ores + i0], d = outer[(j0 + 1) * ores + i0 + 1];
+      const o = (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy;
+      // 粗いデータでは海岸近くが陸の値になるので、そこは浅瀬（−1.5 m）にとどめる
+      out[j * res + i] = Math.min(h, o < -2 ? o : -1.5);
+    }
+  }
+  return out;
+}

@@ -20,9 +20,11 @@ export function defaultVegetation() {
 }
 
 // 水際（砂浜・草の生えない帯）の高さの幅 (m)。起伏の大きさに比例させるが、
-// 海底を含む実際の地形（起伏の大半が海の深さ）では広くなりすぎるので、海面から上の高さで決め、30 m までにする
-export function shoreBandOf(heightScale, baseHeight, sea) {
-  return Math.max(4, Math.min(heightScale * 0.012, (baseHeight + heightScale - sea) * 0.012, 30));
+// 海底を含む実際の地形（起伏の大半が海の深さ）では広くなりすぎるので、海面から上の高さで決め、30 m までにする。
+// 地球から取り込んだ地形（realWorld）では、平野が砂浜にならないよう 5 m までにする
+export function shoreBandOf(heightScale, baseHeight, sea, realWorld = false) {
+  const b = Math.max(4, Math.min(heightScale * 0.012, (baseHeight + heightScale - sea) * 0.012, 30));
+  return realWorld ? Math.min(b, 5) : b;
 }
 
 // ctx: { heightScale, baseHeight, waterLevel, waterEnabled, palette, vegetation }
@@ -31,7 +33,7 @@ export function createVegetationRules(ctx) {
   const { heightScale, baseHeight, waterEnabled, palette } = ctx;
   const sea = waterEnabled ? ctx.waterLevel : baseHeight - 1;
   const top = baseHeight + heightScale;
-  const shoreBand = shoreBandOf(heightScale, baseHeight, sea);
+  const shoreBand = shoreBandOf(heightScale, baseHeight, sea, !!ctx.realWorld);
   const rs = palette.rockSlope;
   const sl = palette.snowLine;
   const seed = veg.seed | 0;

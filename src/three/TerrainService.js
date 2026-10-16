@@ -63,6 +63,7 @@ export class TerrainService {
         waterLevel: scene.water.level,
         waterEnabled: scene.water.enabled,
         palette: t.palette,
+        realWorld: t.mode === 'heightmap' && !!t.heightmap?.geo,
         vegetation: scene.vegetation,
         seed: t.mode === 'noise' ? t.noise.seed : 0,
         textureSize: this.textureSize ?? undefined,

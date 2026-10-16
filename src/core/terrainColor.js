@@ -49,7 +49,7 @@ export function createTerrainShader(opts) {
   P.soil = P.shore.map((v, i) => (v + P.high[i]) * 0.5);
   const sea = waterEnabled ? waterLevel : baseHeight - 1;
   const top = baseHeight + heightScale;
-  const shoreBand = shoreBandOf(heightScale, baseHeight, sea);
+  const shoreBand = shoreBandOf(heightScale, baseHeight, sea, !!opts.realWorld);
   const rs = palette.rockSlope;
   const sl = palette.snowLine;
   const rockCol = [0, 0, 0];
