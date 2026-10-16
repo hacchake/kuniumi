@@ -188,6 +188,7 @@ void main() {`)
     // 木（一枚絵と同じ所に同じ木。カメラの周りだけ）
     this.trees = new RealtimeTrees(this.world, (m) => patchStandardMaterial(m, this.shared));
     this.footprints = new Footprints(this.world, (m) => patchStandardMaterial(m, this.shared));
+    this.sandprints = new Footprints(this.world, (m) => patchStandardMaterial(m, this.shared), 0x6b5a44); // 砂浜の足跡（濡れた砂の色）
     this.treeTerrain = {
       sample: (x, z) => this.#terrainAt(x, z).sample(x, z),
       groundAt: (x, z) => this.#terrainAt(x, z).groundAt(x, z),
@@ -921,6 +922,11 @@ void main() {`)
           this.stepDist = 0;
           this.audio.step(surface, 1);
           if (surface === 'snow') this.footprints.step(p.x, p.z, w.yaw, (x, z) => this.gpuTerrain.groundAt(x, z));
+          // 砂浜：水際から 1.5 m の高さまで（川・湖の印がある所や写真の地形でも、海の水面の近くなら）
+          else if (surface === 'ground' && s.water.enabled && ground - s.water.level < 1.5) {
+            this.sandprints.step(p.x, p.z, w.yaw, (x, z) => this.gpuTerrain.groundAt(x, z));
+            this.sandprints.setSnow(1);
+          }
           if (wading) this.precip.splash(new THREE.Vector3(p.x, s.water.level, p.z).addScaledVector(w.forward().setY(0).normalize(), 1.0), w.forward().setY(0).normalize(), 1);
         }
       }

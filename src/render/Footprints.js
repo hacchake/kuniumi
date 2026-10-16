@@ -1,18 +1,18 @@
 import * as THREE from 'three';
 
-// 雪の上の足跡：歩幅ごとに左右交互に、少し暗い小判形のへこみを地面に置く（新しい 400 個まで）。
+// 足跡（雪の上・砂浜）：歩幅ごとに左右交互に、少し暗い小判形のへこみを地面に置く（新しい 400 個まで）。
 // 位置は最初の足跡を原点にした相対で持つ（遠い所でも揺れないように）。原点から 2 km 離れたら消して置き直す。
 const MAX = 400;
 
 export class Footprints {
   // patchMaterial: 丸み・雲の影の差し込み（木と同じ）
-  constructor(parent, patchMaterial) {
+  constructor(parent, patchMaterial, color = 0x6f7a8a) {
     // 小判形（楕円）を平らに寝かせた板
     const shape = new THREE.Shape();
     shape.absellipse(0, 0, 0.055, 0.13, 0, Math.PI * 2);
     const geo = new THREE.ShapeGeometry(shape, 12).rotateX(-Math.PI / 2);
     this.material = new THREE.MeshStandardMaterial({
-      color: 0x6f7a8a,
+      color,
       roughness: 1,
       transparent: true,
       opacity: 0.45,
