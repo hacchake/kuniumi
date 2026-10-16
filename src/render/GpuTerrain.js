@@ -157,6 +157,8 @@ export class GpuTerrain {
       tWet: { value: 0 }, // 雨で濡れた地面（0..1）：暗く、少しつややかに
       tSeason: { value: 0 }, // 季節（0 = そのまま、1 = 春、2 = 秋、3 = 冬）
       tWinterSnow: { value: 600 }, // 冬に雪が積もる高さ (m)
+      tSnowCover: { value: 0 }, // 降っている雪の積もり具合（0..1）。季節に関係なく、平らな所からまだらに白くなる
+      tSnowFloor: { value: 0 }, // これより低い所（水面）には積もらない
       tHasWaterMask: { value: 0 },
       tHasPhoto: { value: 0 },
       tOriginUV: { value: new THREE.Vector2() },
@@ -200,7 +202,7 @@ export class GpuTerrain {
           .replace('#include <beginnormal_vertex>', 'vec3 objectNormal; vec3 kTP; kTerrainVertex( kTP, objectNormal );')
           .replace('#include <begin_vertex>', 'vec3 transformed = kTP;');
         shader.fragmentShader = shader.fragmentShader
-          .replace('#include <common>', `#include <common>\n${TERRAIN_SHADING_GLSL}\nvarying float vTH, vTSlope, vTWear, vTJit, vTClump;\nvarying vec2 vTLocal, vTDetGrad;\nuniform vec2 tOriginW;\nuniform float tClipHalf, tHasPhoto, tHasWaterMask, tSeason, tWinterSnow, tLightsI, tWet;\nuniform sampler2D tPhoto, tWaterMask, tLights;\n${CURVE_GLSL}\n${FIELD_GLSL}`)
+          .replace('#include <common>', `#include <common>\n${TERRAIN_SHADING_GLSL}\nvarying float vTH, vTSlope, vTWear, vTJit, vTClump;\nvarying vec2 vTLocal, vTDetGrad;\nuniform vec2 tOriginW;\nuniform float tClipHalf, tHasPhoto, tHasWaterMask, tSeason, tWinterSnow, tLightsI, tWet, tSnowCover, tSnowFloor;\nuniform sampler2D tPhoto, tWaterMask, tLights;\n${CURVE_GLSL}\n${FIELD_GLSL}`)
           // 面の向きと傾きは画素ごとに高さ場から出す（頂点の補間だと、区画の細かさが変わる所で線が出る）
           .replace(
             '#include <normal_fragment_begin>',
@@ -241,6 +243,13 @@ export class GpuTerrain {
               '    float kSn = smoothstep( tWinterSnow - 150.0, tWinterSnow + 250.0, vTH ) * ( 1.0 - smoothstep( 0.55, 1.0, length( kG0 ) ) );\n' +
               '    kTC = mix( kTC * vec3( 0.95, 0.92, 0.85 ) * mix( 1.0, 0.75, kGr ), vec3( 0.82, 0.85, 0.9 ), kSn * ( 1.0 - kWm ) );\n' +
               '  }\n' +
+              '}\n' +
+              // 降り積もる雪：まだら（ノイズ）が積もるほど広がり、急な斜面と川・海には積もらない
+              'if ( tSnowCover > 0.0 ) {\n' +
+              '  float kNs = tValueNoise( vTLocal, 64.0, 91 ) * 0.6 + tValueNoise( vTLocal, 8.0, 92 ) * 0.4;\n' +
+              '  float kAc = smoothstep( 1.0 - tSnowCover * 1.15, 1.15 - tSnowCover * 1.15, kNs ) * ( 1.0 - smoothstep( 0.45, 0.9, length( kG0 ) ) );\n' +
+              '  kAc *= ( 1.0 - kWm ) * smoothstep( tSnowFloor, tSnowFloor + 0.5, vTH );\n' +
+              '  kTC = mix( kTC, vec3( 0.82, 0.85, 0.9 ), kAc );\n' +
               '}\n' +
               'diffuseColor.rgb *= kTC * ( 1.0 - 0.3 * tWet * ( 1.0 - kWm ) );',
           )

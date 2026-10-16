@@ -891,7 +891,7 @@ void main() {`)
     if (w.mode === 'walk') {
       const ground = this.gpuTerrain.groundAt(p.x, p.z);
       const wading = s.water.enabled && ground < s.water.level; // 浅瀬（深い所では水面の上を歩く）
-      const snowy = s.atmosphere.precip === 'snow' || (s.terrain.season === 'winter' && ground > (s.terrain.winterSnow ?? 600));
+      const snowy = (this.snowCover ?? 0) > 0.3 || (s.terrain.season === 'winter' && ground > (s.terrain.winterSnow ?? 600));
       const surface = wading ? 'water' : snowy ? 'snow' : 'ground';
       if (w.grounded && !this.wasGrounded) {
         this.audio.step(surface, 2); // 着地
@@ -1061,11 +1061,27 @@ void main() {`)
     this.flashLight.intensity = k * Math.PI * (2 + night * 4);
   }
 
+  // 降る雪が積もる（約 1 分半で真っ白に近く）・やめば少しずつ解ける（約 3 分）
+  #snowCover(dt) {
+    const s = this.store.get();
+    const target = s.atmosphere.precip === 'snow' ? 1 : 0;
+    const c0 = this.snowCover ?? 0;
+    const c = target > c0 ? Math.min(1, c0 + dt / 90) : Math.max(0, c0 - dt / 180);
+    this.snowCover = c;
+    const floor = s.water.enabled ? s.water.level + 0.3 : -1e9;
+    for (const t of [this.gpuTerrain, this.surround?.terrain]) {
+      if (!t) continue;
+      t.uniforms.tSnowCover.value = c;
+      t.uniforms.tSnowFloor.value = floor;
+    }
+  }
+
   #frame() {
     if (this._paused) return;
     this.timer.update();
     const dt = this.timer.getDelta();
     this.#lightning(Math.min(dt, 0.1));
+    this.#snowCover(Math.min(dt, 0.1));
     this.#adaptQuality(dt);
     if (this.envDirty) this.#updateEnvironment();
     this.water.material.uniforms.time.value += dt * 0.6;
