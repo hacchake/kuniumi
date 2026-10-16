@@ -39,6 +39,7 @@ export class GlobeMode {
       this.linkView = null;
       this.renderer.setSunMode(this.sunSel.value);
       this.renderer.setExaggeration(Number(this.exagSel.value));
+      this.renderer.setAurora(this.auroraCb?.checked ? 1 : 0);
       this.renderer.setImagery(this.colorSel.value === 'photo');
       this.#applyClouds();
     }
@@ -100,6 +101,7 @@ export class GlobeMode {
               <option value="none">${t('なし')}</option>
             </select>
           </label>
+          <label class="globe-check" title="${t('夜側の両極のまわりに、オーロラの輪（磁気緯度 約 67°、高さ 100〜300 km）を出す')}"><input type="checkbox" data-aurora /> ${t('オーロラ')}</label>
           <label>${t('高さ')}
             <select data-exag>
               <option value="1">×1</option>
@@ -142,6 +144,8 @@ export class GlobeMode {
     });
     this.sunSel.onchange = () => this.renderer?.setSunMode(this.sunSel.value);
     this.exagSel.onchange = () => this.renderer?.setExaggeration(Number(this.exagSel.value));
+    this.auroraCb = el.querySelector('[data-aurora]');
+    this.auroraCb.onchange = () => this.renderer?.setAurora(this.auroraCb.checked ? 1 : 0);
     el.querySelector('[data-fav]').onclick = () => this.#addFavorite();
     el.querySelector('[data-share]').onclick = () => this.#share();
     // 検索の欄をたたいたら（空のとき）お気に入りの一覧

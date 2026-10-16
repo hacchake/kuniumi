@@ -74,6 +74,7 @@ export class GlobeRenderer {
     this.#setupWorker();
     this.#setupShaders();
     this.#setupSky();
+    this.#setupAurora();
     this.#setupControls();
     this.#resize();
     new ResizeObserver(() => this.#resize()).observe(container);
@@ -580,6 +581,95 @@ export class GlobeRenderer {
     this.scene.add(sky);
   }
 
+  // オーロラ：夜側の両極のまわり（磁気緯度 約 67° の輪、高さ 100〜300 km）に光る帯。宇宙からは輪、地上からは空のカーテン。
+  // 画面全体に光線を飛ばし、その高さの殻の中を歩いて光を足し合わせる（地球に隠れる所は数えない）
+  #setupAurora() {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
+    const pole = (lat, lon) => new THREE.Vector3(...ecef(lat, lon, 1));
+    this.auroraMat = new THREE.ShaderMaterial({
+      uniforms: {
+        camC: this.shared.camC, sunDir: this.shared.sunDir, planetR: this.shared.planetR,
+        invProj: this.skyMat.uniforms.invProj, camRot: this.skyMat.uniforms.camRot,
+        magN: { value: pole(80.7, -72.7) }, magS: { value: pole(-80.7, 107.3) },
+        aTime: { value: 0 }, aI: { value: 0 },
+      },
+      vertexShader: /* glsl */ `
+        varying vec2 vNdc;
+        void main() { vNdc = position.xy; gl_Position = vec4( position.xy, 1.0, 1.0 ); }`,
+      fragmentShader: /* glsl */ `
+        varying vec2 vNdc;
+        uniform mat4 invProj, camRot;
+        uniform vec3 camC, sunDir, magN, magS;
+        uniform float planetR, aTime, aI;
+        vec2 rs( vec3 ro, vec3 rd, float r ) {
+          float b = dot( ro, rd ), c = dot( ro, ro ) - r * r, d = b * b - c;
+          if ( d < 0.0 ) return vec2( 1e30, -1e30 );
+          d = sqrt( d );
+          return vec2( - b - d, - b + d );
+        }
+        float h1( float n ) { return fract( sin( n ) * 43758.5453 ); }
+        float n1( float x ) { float i = floor( x ), f = fract( x ); return mix( h1( i ), h1( i + 1.0 ), f * f * ( 3.0 - 2.0 * f ) ); }
+        void main() {
+          vec4 v = invProj * vec4( vNdc, -1.0, 1.0 );
+          v /= v.w;
+          vec3 dir = normalize( ( camRot * vec4( v.xyz, 0.0 ) ).xyz );
+          float R0 = planetR + 95000.0, R1 = planetR + 320000.0;
+          vec2 o = rs( camC, dir, R1 );
+          if ( o.y < 0.0 || o.x > o.y ) discard;
+          float t0 = max( o.x, 0.0 ), t1 = o.y;
+          vec2 pl = rs( camC, dir, planetR );
+          if ( pl.x < pl.y && pl.x > 0.0 ) t1 = min( t1, pl.x );
+          if ( t1 <= t0 ) discard;
+          vec3 col = vec3( 0.0 );
+          const int N = 24;
+          float dt = ( t1 - t0 ) / float( N );
+          for ( int i = 0; i < N; i ++ ) {
+            vec3 p = camC + dir * ( t0 + ( float( i ) + 0.5 ) * dt );
+            float r = length( p );
+            if ( r < R0 || r > R1 ) continue;
+            vec3 u = p / r;
+            // 夜側だけ（昼の空には見えない）
+            float night = smoothstep( 0.05, -0.15, dot( u, sunDir ) );
+            if ( night <= 0.0 ) continue;
+            // 磁気緯度（北・南の近い方）
+            float mn = asin( clamp( dot( u, magN ), -1.0, 1.0 ) ), ms = asin( clamp( dot( u, magS ), -1.0, 1.0 ) );
+            float ml = max( mn, ms );
+            vec3 mp = mn > ms ? magN : magS;
+            // 磁気の経度（カーテンのうねりと縦の筋に使う）
+            vec3 e1 = normalize( cross( mp, vec3( 0.0, 1.0, 0.001 ) ) ), e2 = cross( mp, e1 );
+            float mlon = atan( dot( u, e2 ), dot( u, e1 ) );
+            float center = radians( 67.0 ) + ( n1( mlon * 3.0 + aTime * 0.05 ) - 0.5 ) * radians( 4.0 );
+            float band = exp( - pow( ( ml - center ) / radians( 2.2 ), 2.0 ) );
+            if ( band < 0.01 ) continue;
+            float hgt = ( r - R0 ) / ( R1 - R0 ); // 0 = 下の縁（緑）、1 = 上（赤）
+            float rays = 0.4 + 0.9 * n1( mlon * 120.0 + aTime * 0.3 ) * n1( mlon * 37.0 - aTime * 0.2 );
+            vec3 c = mix( vec3( 0.15, 1.0, 0.4 ), vec3( 0.8, 0.2, 0.45 ), smoothstep( 0.15, 0.6, hgt ) ) * exp( - hgt * 2.5 );
+            col += c * band * rays * night * dt;
+          }
+          gl_FragColor = vec4( col * aI * 1.5e-5, 1.0 );
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }`,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const m = new THREE.Mesh(g, this.auroraMat);
+    m.frustumCulled = false;
+    m.renderOrder = 10;
+    m.visible = false;
+    this.auroraMesh = m;
+    this.scene.add(m);
+  }
+
+  // オーロラの強さ（0 = 出さない）
+  setAurora(k) {
+    this.auroraMat.uniforms.aI.value = k;
+    this.auroraMesh.visible = k > 0;
+  }
+
   // ---- 操作 ----
   #setupControls() {
     const c = this.canvas;
@@ -791,6 +881,7 @@ export class GlobeRenderer {
 
     this.shared.camC.value.set(C[0], C[1], C[2]);
     this.shared.cloudTime.value += dt * 0.02;
+    if (this.auroraMat) this.auroraMat.uniforms.aTime.value += dt;
     this.shared.sunDir.value.copy(this.#sunDir());
     this.skyMat.uniforms.invProj.value.copy(this.camera.projectionMatrixInverse);
     this.skyMat.uniforms.camRot.value.copy(this.camera.matrixWorld);
