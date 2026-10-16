@@ -911,6 +911,13 @@ void main() {`)
       nearSea = Math.min(1, n / 3) * Math.max(0, 1 - (p.y - s.water.level) / 60);
     }
     const day = Math.min(1, Math.max(0, s.sun.elevation / 8));
+    // 計器（約 0.2 秒ごと）：方位・標高・地面からの高さ・速さ（ならした値）
+    this.hudSpeed = (this.hudSpeed ?? 0) + (Math.min(speed, 3e5) - (this.hudSpeed ?? 0)) * Math.min(1, dt * 4);
+    this.hudT = (this.hudT ?? 0) - dt;
+    if (this.hudT <= 0) {
+      this.hudT = 0.2;
+      this.onHud?.({ heading: (-this.walk.yaw * 180) / Math.PI, alt: p.y - (this.walk.mode === 'walk' ? 1.65 : 0), above: p.y - this.walk.groundAt(p.x, p.z) + 0.2, speed: this.hudSpeed, fly: this.walk.mode === 'fly' });
+    }
     // 足音：歩く（飛ばない）とき、地面を進んだ距離が歩幅を超えるごと。走ると歩幅を広く
     const w = this.walk;
     if (w.mode === 'walk' && !w.boating) {

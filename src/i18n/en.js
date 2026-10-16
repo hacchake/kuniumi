@@ -550,4 +550,5 @@ export const EN = {
   "天気をゆっくり移り変わらせる（もう一度押すと止まる）": "Let the weather change slowly (press again to stop)",
   "夜側の両極のまわりに、オーロラの輪（磁気緯度 約 67°、高さ 100〜300 km）を出す": "Show the auroral ovals around both poles on the night side (magnetic latitude ~67°, 100–300 km high)",
   "望遠": "Zoom",
+  "対地": "AGL",
 };

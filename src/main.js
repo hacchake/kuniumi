@@ -8,6 +8,7 @@ import { createDefaultScene, normalizeScene, deepMerge, EARTH_RADIUS } from './c
 import { GeoDialog } from './ui/GeoDialog.js';
 import { GlobeMode } from './ui/GlobeMode.js';
 import { MiniMap } from './ui/MiniMap.js';
+import { WalkHud } from './ui/WalkHud.js';
 import { Labels } from './ui/Labels.js';
 import { loadSkeleton, loadBigParts, saveScene } from './io/autosave.js';
 import { createStore } from './core/store.js';
@@ -556,6 +557,9 @@ const hintEl = document.querySelector('.hint');
 const hintDefault = hintEl?.textContent ?? '';
 const miniMap = new MiniMap(document.getElementById('stage'), view, store);
 view.labels = new Labels(document.getElementById('stage'));
+// 歩く・飛ぶときの計器（方位・標高・速さ）
+const walkHud = new WalkHud(document.getElementById('stage'));
+view.onHud = (info) => walkHud.show(view.walking ? info : null);
 // 歩いている間の音を消す／出す（地図の下のボタンか M キー）
 const soundBtn = document.createElement('button');
 soundBtn.type = 'button';
@@ -575,6 +579,7 @@ window.addEventListener('keydown', (e) => {
   if (view.walking && e.code === 'KeyM' && !e.repeat && !(e.target instanceof Element && e.target.closest('input, select, textarea'))) soundBtn.click();
 });
 view.onWalk = (mode, speed) => {
+  if (!mode) walkHud.show(null);
   walkBtn.classList.toggle('active', !!mode);
   miniMap.show(!!mode);
   soundBtn.hidden = !mode;
