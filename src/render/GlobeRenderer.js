@@ -4,7 +4,7 @@ import {
   behindHorizon, orbitCamera, subsolarPoint, gridAt, locateTile, IMAGERY_MAX_ZOOM, LIGHTS_MAX_ZOOM, imageryUrl, lightsUrl, ancestorXf,
 } from '../core/globe.js';
 import { sunDirection } from '../core/sun.js';
-import { GLOBE_ATMO_GLSL, GLOBE_SURFACE_GLSL } from './globeGLSL.js';
+import { GLOBE_ATMO_GLSL, GLOBE_SURFACE_GLSL, GLOBE_CLOUD_GLSL } from './globeGLSL.js';
 
 // 地球モード：地球全体を丸ごと描く。
 //   ・地表は標高タイル（Web メルカトル z/x/y）の四分木。近い所ほど細かいズームのタイルに分ける
@@ -53,6 +53,10 @@ export class GlobeRenderer {
       exag: { value: 1 },
       imgOn: { value: 1 }, // 衛星写真の色を使うか
       lightsI: { value: 2.5 }, // 夜の街の明かりの強さ
+      cloudOn: { value: 1 }, // 雲を描くか
+      cloudH: { value: 6000 }, // 雲の層の高さ (m)
+      cloudCover: { value: 0.5 }, // 雲の量（0..1）
+      cloudTime: { value: 0 }, // 雲がゆっくり流れる
     };
 
     this.tiles = new Map(); // "z/x/y" → タイル
@@ -187,6 +191,7 @@ export class GlobeRenderer {
       #include <logdepthbuf_pars_fragment>
       ${GLOBE_ATMO_GLSL}
       ${GLOBE_SURFACE_GLSL}
+      ${GLOBE_CLOUD_GLSL}
       void main() {
         #include <logdepthbuf_fragment>
         float dist = length( vRel );
@@ -206,9 +211,20 @@ export class GlobeRenderer {
           col += max( L - 0.06, vec3( 0.0 ) ) * vec3( 1.0, 0.82, 0.55 ) * lightsI * night;
         }
         #endif
+        // 雲の影（夜の街の明かりには落とさないよう、明かりは足した後でもよい程度の弱さ）
+        col *= gCloudShadow( wp );
         vec3 ins, tr;
         gAtmosphere( camC, vd, dist, 8, ins, tr );
-        gl_FragColor = vec4( col * tr + ins, 1.0 );
+        vec3 outc = col * tr + ins;
+        // 手前にある雲（雲までの空気の分だけかすませる）
+        float tc;
+        vec4 cl = gClouds( camC, vd, dist, tc );
+        if ( cl.a > 0.0 ) {
+          vec3 ci, ct;
+          gAtmosphere( camC, vd, tc, 6, ci, ct );
+          outc = mix( outc, cl.rgb * ct + ci, cl.a );
+        }
+        gl_FragColor = vec4( outc, 1.0 );
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }`;
@@ -359,6 +375,10 @@ export class GlobeRenderer {
     }
   }
 
+  setClouds(on) {
+    this.shared.cloudOn.value = on ? 1 : 0;
+  }
+
   setImagery(on) {
     this.shared.imgOn.value = on ? 1 : 0;
   }
@@ -445,6 +465,7 @@ export class GlobeRenderer {
         uniform mat4 invProj, camRot;
         uniform float starI;
         ${GLOBE_ATMO_GLSL}
+        ${GLOBE_CLOUD_GLSL}
         float sHash( vec3 p ) { p = fract( p * 0.3183099 + 0.1 ); p *= 17.0; return fract( p.x * p.y * p.z * ( p.x + p.y + p.z ) ); }
         vec3 stars( vec3 d ) {
           vec3 s = vec3( 0.0 );
@@ -475,6 +496,14 @@ export class GlobeRenderer {
           if ( tMax > 1e29 ) {
             float sd = dot( dir, sunDir );
             col += tr * ( sunI * 60.0 * smoothstep( 0.99996, 0.99999, sd ) + stars( dir ) * starI );
+          }
+          // 空に見える雲（地上から見上げたとき・宇宙から地球の縁のあたり）
+          float tc;
+          vec4 cl = gClouds( camC, dir, tMax, tc );
+          if ( cl.a > 0.0 ) {
+            vec3 ci, ct;
+            gAtmosphere( camC, dir, tc, 6, ci, ct );
+            col = mix( col, cl.rgb * ct + ci, cl.a );
           }
           gl_FragColor = vec4( col, 1.0 );
           #include <tonemapping_fragment>
@@ -697,6 +726,7 @@ export class GlobeRenderer {
     this.camera.updateMatrixWorld();
 
     this.shared.camC.value.set(C[0], C[1], C[2]);
+    this.shared.cloudTime.value += dt * 0.02;
     this.shared.sunDir.value.copy(this.#sunDir());
     this.skyMat.uniforms.invProj.value.copy(this.camera.projectionMatrixInverse);
     this.skyMat.uniforms.camRot.value.copy(this.camera.matrixWorld);

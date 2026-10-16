@@ -148,3 +148,77 @@ export const GLOBE_SURFACE_GLSL = /* glsl */ `
     return col;
   }
 `;
+
+// 雲の層（地表から cloudH の高さの薄い殻。手続きの雲：方向の 3D ノイズで、大きな雲の群れから数 km の雲まで）。
+// 地表・空の画素ごとに「視線が雲の層を通る所」の雲を求めて重ね、地表には太陽からの雲の影も落とす。
+// GLOBE_ATMO_GLSL の後に置く
+export const GLOBE_CLOUD_GLSL = /* glsl */ `
+  uniform float cloudOn, cloudH, cloudCover, cloudTime;
+  float cHash( vec3 p ) {
+    p = fract( p * vec3( 0.1031, 0.1030, 0.0973 ) );
+    p += dot( p, p.yxz + 33.33 );
+    return fract( ( p.x + p.y ) * p.z );
+  }
+  float cNoise( vec3 p ) {
+    vec3 i = floor( p ), f = fract( p );
+    f = f * f * ( 3.0 - 2.0 * f );
+    return mix( mix( mix( cHash( i ), cHash( i + vec3( 1, 0, 0 ) ), f.x ), mix( cHash( i + vec3( 0, 1, 0 ) ), cHash( i + vec3( 1, 1, 0 ) ), f.x ), f.y ),
+                mix( mix( cHash( i + vec3( 0, 0, 1 ) ), cHash( i + vec3( 1, 0, 1 ) ), f.x ), mix( cHash( i + vec3( 0, 1, 1 ) ), cHash( i + vec3( 1, 1, 1 ) ), f.x ), f.y ), f.z );
+  }
+  // 雲の濃さ（0..1）。u: 地球中心からの向き。oct: 重ねる段の数（遠くや影では少なく）
+  float gCloudDensity( vec3 u, int oct ) {
+    // 大きな流れ（低気圧の渦のようなゆがみ）
+    // 2 段のゆがみで、風に引き伸ばされた筋や渦にする
+    vec3 q = u * 2.2 + vec3( cloudTime * 0.01, 0.0, 0.0 );
+    vec3 w = vec3( cNoise( q ), cNoise( q + 17.1 ), cNoise( q + 31.7 ) ) - 0.5;
+    vec3 q2 = u * 5.0 + w * 2.2;
+    vec3 w2 = vec3( cNoise( q2 + 5.3 ), cNoise( q2 + 11.9 ), cNoise( q2 + 23.3 ) ) - 0.5;
+    // 東西に引き伸ばす（偏西風・貿易風の向き）
+    vec3 east = normalize( vec3( u.z, 0.0, - u.x ) + 1e-5 );
+    vec3 p = u * 6.0 + w * 2.6 + w2 * 0.9 + east * dot( w, east ) * 1.5 + vec3( 0.0, cloudTime * 0.02, 0.0 );
+    float n = 0.0, a = 0.5, sum = 0.0;
+    for ( int i = 0; i < 10; i ++ ) {
+      if ( i >= oct ) break;
+      n += cNoise( p ) * a;
+      sum += a;
+      p = p * 2.13 + 1.7;
+      a *= 0.52;
+    }
+    n /= sum;
+    // 熱帯の上と中緯度の帯に多く、亜熱帯の高気圧の帯（緯度 25° 付近）は少なく
+    float lat = abs( u.y );
+    float band = 0.06 * cos( lat * 12.0 ) - 0.04;
+    float c0 = 1.0 - cloudCover - band;
+    // 縁はやわらかく（薄い雲の広がり）、芯は濃く
+    return smoothstep( c0 - 0.08, c0 + 0.22, n ) * smoothstep( c0 - 0.08, c0 + 0.05, n );
+  }
+  // 視線 ro + rd t（t < tMax）で見える雲：rgb = 光った雲の色、a = 不透明さ、tc = 雲までの距離
+  vec4 gClouds( vec3 ro, vec3 rd, float tMax, out float tc ) {
+    tc = 0.0;
+    if ( cloudOn < 0.5 ) return vec4( 0.0 );
+    float rc = planetR + cloudH;
+    vec2 t = gRaySphere( ro, rd, rc );
+    if ( t.x > t.y ) return vec4( 0.0 );
+    tc = length( ro ) < rc ? t.y : t.x;
+    if ( tc <= 0.0 || tc > tMax ) return vec4( 0.0 );
+    vec3 p = ro + rd * tc;
+    vec3 u = normalize( p );
+    // 遠いほど粗く（細かい段はちらつくだけなので省く）
+    int oct = int( clamp( 10.0 - log2( max( 1.0, tc / 4000.0 ) ), 4.0, 10.0 ) );
+    float d = gCloudDensity( u, oct );
+    if ( d <= 0.001 ) return vec4( 0.0 );
+    float mu = dot( u, sunDir );
+    vec3 sunT = gTrans( gSunDepth( p ) );
+    // 雲は白く、昼の側は太陽で、夜の側は暗く。厚い所ほど下側が少し暗い
+    vec3 col = sunI * ( sunT * smoothstep( -0.12, 0.2, mu ) * ( 0.75 - 0.25 * d ) + vec3( 0.06, 0.08, 0.12 ) * smoothstep( -0.3, 0.3, mu ) ) * 0.9;
+    return vec4( col, d * 0.92 );
+  }
+  // 地表の点 wp に落ちる雲の影（1 = 日なた）
+  float gCloudShadow( vec3 wp ) {
+    if ( cloudOn < 0.5 ) return 1.0;
+    vec2 t = gRaySphere( wp, sunDir, planetR + cloudH );
+    if ( t.y <= 0.0 ) return 1.0;
+    vec3 p = wp + sunDir * t.y;
+    return 1.0 - 0.75 * gCloudDensity( normalize( p ), 5 );
+  }
+`;

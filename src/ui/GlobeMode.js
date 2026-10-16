@@ -37,6 +37,7 @@ export class GlobeMode {
       this.renderer.sunMode = this.sunSel.value;
       this.renderer.setExaggeration(Number(this.exagSel.value));
       this.renderer.setImagery(this.colorSel.value === 'photo');
+      this.renderer.setClouds(this.cloudsCb.checked);
     }
     this.renderer.sceneSun = this.getSun();
     this.renderer.start();
@@ -88,6 +89,7 @@ export class GlobeMode {
               <option value="height">${t('標高と緯度から')}</option>
             </select>
           </label>
+          <label class="globe-check"><input type="checkbox" data-clouds checked /> ${t('雲')}</label>
           <label>${t('高さ')}
             <select data-exag>
               <option value="1">×1</option>
@@ -112,6 +114,8 @@ export class GlobeMode {
     this.sunSel = el.querySelector('[data-sun]');
     this.exagSel = el.querySelector('[data-exag]');
     this.colorSel = el.querySelector('[data-color]');
+    this.cloudsCb = el.querySelector('[data-clouds]');
+    this.cloudsCb.onchange = () => this.renderer?.setClouds(this.cloudsCb.checked);
     this.colorSel.onchange = () => this.renderer?.setImagery(this.colorSel.value === 'photo');
     el.querySelector('form').addEventListener('submit', (e) => {
       e.preventDefault();

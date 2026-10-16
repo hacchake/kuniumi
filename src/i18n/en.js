@@ -449,4 +449,5 @@ export const EN = {
   "飛行モード": "Fly",
   "歩行モード": "Walk",
   "移動": "Move",
+  "雲": "Clouds",
 };
