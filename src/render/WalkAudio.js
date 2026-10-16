@@ -2,6 +2,7 @@
 //   風  ：白い雑音を帯域で絞ったもの。高い所・速く動くほど強く、ゆっくり強弱がつく
 //   波  ：海の近くでは、低い雑音を寄せては返す強弱で
 //   鳥  ：昼の地上で、ときどきさえずり（音の高さを素早く上下させた短い音）
+//   足音：歩幅ごとに短い雑音。地面（とん）・雪（さくっ）・浅い水の中（ぱしゃ）で音を変える。着地は強く
 // 「歩く」を押した操作の中で始めるので、ブラウザの自動再生の制限にかからない。
 export class WalkAudio {
   constructor() {
@@ -19,6 +20,7 @@ export class WalkAudio {
     this.ctx = ctx;
     // 2 秒の白い雑音を繰り返し使う
     const buf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+    this.noiseBuf = buf;
     const d = buf.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     const noise = () => {
@@ -95,6 +97,44 @@ export class WalkAudio {
       this.nextBird = 1.5 + Math.random() * (inForest ? 3 : 9);
       if (day > 0.5 && above < 40 && !rain) this.#chirp();
     }
+  }
+
+  // 足音を 1 つ鳴らす。surface: 'ground' | 'snow' | 'water'、strength: 1 = ふつうの 1 歩（着地は大きく）
+  step(surface = 'ground', strength = 1) {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running') return;
+    const t0 = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuf;
+    const f = ctx.createBiquadFilter();
+    const g = ctx.createGain();
+    const j = 0.85 + Math.random() * 0.3; // 1 歩ごとに少し違う音
+    let len, peak;
+    if (surface === 'water') {
+      f.type = 'bandpass';
+      f.frequency.setValueAtTime(1400 * j, t0);
+      f.frequency.exponentialRampToValueAtTime(500 * j, t0 + 0.25);
+      f.Q.value = 0.9;
+      len = 0.3;
+      peak = 0.16;
+    } else if (surface === 'snow') {
+      f.type = 'bandpass';
+      f.frequency.value = 2300 * j;
+      f.Q.value = 1.4;
+      len = 0.17;
+      peak = 0.1;
+    } else {
+      f.type = 'lowpass';
+      f.frequency.value = 520 * j;
+      len = 0.09;
+      peak = 0.22;
+    }
+    peak *= Math.min(2.5, strength);
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(peak, t0 + (surface === 'snow' ? 0.03 : 0.008));
+    g.gain.exponentialRampToValueAtTime(0.0005, t0 + len);
+    src.connect(f).connect(g).connect(this.master);
+    src.start(t0, Math.random() * 1.5, len + 0.05);
   }
 
   #chirp() {

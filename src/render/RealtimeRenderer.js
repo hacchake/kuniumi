@@ -851,6 +851,29 @@ export class RealtimeRenderer {
       nearSea = Math.min(1, n / 3) * Math.max(0, 1 - (p.y - s.water.level) / 60);
     }
     const day = Math.min(1, Math.max(0, s.sun.elevation / 8));
+    // 足音：歩く（飛ばない）とき、地面を進んだ距離が歩幅を超えるごと。走ると歩幅を広く
+    const w = this.walk;
+    if (w.mode === 'walk') {
+      const ground = this.gpuTerrain.groundAt(p.x, p.z);
+      const wading = s.water.enabled && ground < s.water.level; // 浅瀬（深い所では水面の上を歩く）
+      const snowy = s.atmosphere.precip === 'snow' || (s.terrain.season === 'winter' && ground > (s.terrain.winterSnow ?? 600));
+      const surface = wading ? 'water' : snowy ? 'snow' : 'ground';
+      if (w.grounded && !this.wasGrounded) {
+        this.audio.step(surface, 2); // 着地
+        this.stepDist = 0;
+      } else if (w.grounded) {
+        const horiz = Math.hypot(p.x - last.x, p.z - last.z);
+        this.stepDist = (this.stepDist ?? 0) + Math.min(horiz, 5);
+        const stride = horiz / Math.max(dt, 1e-3) > 3 ? 1.6 : 0.75;
+        if (this.stepDist >= stride) {
+          this.stepDist = 0;
+          this.audio.step(surface, 1);
+        }
+      }
+      this.wasGrounded = w.grounded;
+    } else {
+      this.wasGrounded = false;
+    }
     this.audio.update(dt, { above, speed: Math.min(speed, 2000), nearSea, day, inForest: (s.vegetation?.trees ?? 0) > 0.3, rain: s.atmosphere.precip === 'rain' });
   }
 
@@ -959,6 +982,11 @@ export class RealtimeRenderer {
     cam.updateMatrixWorld();
     this.world.position.set(0, 0, 0);
     this.world.updateMatrixWorld(true);
+  }
+
+  // 1 コマ進める（画面が隠れて描画の合図が来ないときの確認・テスト用）
+  step() {
+    this.#frame();
   }
 
   #frame() {
