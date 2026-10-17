@@ -26,6 +26,7 @@ import { exportHeightmap, importHeightmap } from './io/heightmap.js';
 import { blenderScript } from './io/blenderScript.js';
 import { downloadBlob, pickFile, safeName, extOf } from './io/files.js';
 import { encodeRadianceHDR } from './core/tonemap.js';
+import { encodeEXR } from './core/exr.js';
 import { createHistory } from './core/history.js';
 import { registerSW } from 'virtual:pwa-register';
 import { t, lang, setLang, translateDom, watchDom } from './i18n/index.js';
@@ -671,6 +672,8 @@ stillActions.addEventListener('click', async (e) => {
     downloadBlob(blob, `${stillResult.name}.png`);
   } else if (act === 'hdr') {
     downloadBlob(encodeRadianceHDR(stillResult.hdr, stillResult.width, stillResult.height), `${stillResult.name}.hdr`);
+  } else if (act === 'exr') {
+    downloadBlob(encodeEXR(stillResult.hdr, stillResult.width, stillResult.height), `${stillResult.name}.exr`);
   }
 });
 

@@ -220,3 +220,35 @@ describe('空の飾り（一枚絵用）', () => {
     expect(at(46)[0] + at(46)[1] + at(46)[2]).toBeLessThan(0.05); // 暗い帯
   });
 });
+
+describe('EXR', () => {
+  it('半精度への変換', async () => {
+    const { toHalf } = await import('../src/core/exr.js');
+    expect(toHalf(1)).toBe(0x3c00);
+    expect(toHalf(-2)).toBe(0xc000);
+    expect(toHalf(0.5)).toBe(0x3800);
+    expect(toHalf(65504)).toBe(0x7bff);
+    expect(toHalf(1e6)).toBe(0x7c00);
+    expect(toHalf(0)).toBe(0);
+  });
+  it('three.js の EXRLoader で読み戻せる（色と上下の向き）', async () => {
+    const { encodeEXR } = await import('../src/core/exr.js');
+    const { EXRLoader } = await import('three/examples/jsm/loaders/EXRLoader.js');
+    const THREE = await import('three');
+    const W = 3, H = 2;
+    const hdr = new Float32Array(W * H * 4);
+    for (let i = 0; i < W * H; i++) hdr.set([i * 0.5, 2, 10 + i, 1], i * 4);
+    const buf = await encodeEXR(hdr, W, H).arrayBuffer();
+    const r = new EXRLoader().setDataType(THREE.FloatType).parse(buf);
+    expect(r.width).toBe(W);
+    expect(r.height).toBe(H);
+    // EXRLoader は下の行から並べ直す：画像の上の行（i = 0..2）は data の最後の行
+    const px = (x, yFromTop) => {
+      const row = H - 1 - yFromTop;
+      const k = (row * W + x) * 4;
+      return [r.data[k], r.data[k + 1], r.data[k + 2]];
+    };
+    expect(px(0, 0)).toEqual([0, 2, 10]);
+    expect(px(2, 1)).toEqual([2.5, 2, 15]);
+  });
+});

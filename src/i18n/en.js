@@ -582,4 +582,6 @@ export const EN = {
   "ピントの距離": "Focus distance",
   "被写界深度。大きいほどピントの外（手前・奥）が大きくぼける（ミニチュア写真のような見え方にも）。0 はぼかさない。一枚絵だけ": "Depth of field. Larger values blur more outside the focus (also gives a miniature-photo look). 0 means no blur. Stills only",
   "ピントを合わせる距離。0 にすると、カメラの注視点（見ている所）に合わせる": "Focus distance. 0 focuses on the camera target (where you are looking)",
+  "EXR を保存": "Save EXR",
+  "線形 HDR（OpenEXR .exr、半精度 16bit）。.hdr より色の精度が高く、Blender・Nuke などでそのまま使える": "Linear HDR (OpenEXR .exr, 16-bit half float). More colour precision than .hdr; opens directly in Blender, Nuke and others",
 };
