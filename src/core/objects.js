@@ -76,6 +76,7 @@ export function createObject(type, { position = [0, 0, 0], size = 300, material 
     scale: [size, size, size],
     celestial: false, // true: 遠景のかすみを受けない（空に浮かぶ天体向け）
     castShadow: true,
+    reflect: true, // 水面に映す（false で映り込みから外す）
     material: applyMaterialPreset({ ...defaultMaterial(), seed: Math.floor(Math.random() * 1e5) }, material),
   };
 }
@@ -92,6 +93,7 @@ export function normalizeObject(o) {
     scale: vec3(o?.scale, 100),
     celestial: !!o?.celestial,
     castShadow: o?.castShadow ?? true,
+    reflect: o?.reflect ?? true,
     material: { ...defaultMaterial(), ...(o?.material ?? {}) },
   };
 }

@@ -451,7 +451,12 @@ void main() {`)
       this.trees.group.visible = false;
       const bVis = this.buildings?.group.visible;
       if (this.buildings) this.buildings.group.visible = false;
+      // 「水面に映す」を切った物体は映り込みから外す
+      const noReflect = new Set(this.store.get().objects.filter((o) => o.reflect === false).map((o) => o.id));
+      const hidden = noReflect.size ? this.objects.meshes.filter((m) => noReflect.has(m.userData.kuniumiId) && m.visible) : [];
+      for (const m of hidden) m.visible = false;
       waterBefore.apply(this.water, args);
+      for (const m of hidden) m.visible = true;
       this.trees.group.visible = treesVis;
       if (this.buildings) this.buildings.group.visible = bVis;
       det.value = savedDet;

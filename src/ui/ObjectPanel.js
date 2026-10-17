@@ -105,6 +105,7 @@ export class ObjectPanel {
     add(this.#vecRow('縦横奥', o.scale, 1, (v) => this.#update((x) => ({ ...x, scale: v.map((n) => Math.max(0.01, n)) })), 'm'));
     add(this.#toggleRow('天体（かすみを受けない）', o.celestial, (v) => this.#update((x) => ({ ...x, celestial: v }))));
     add(this.#toggleRow('影を落とす', o.castShadow, (v) => this.#update((x) => ({ ...x, castShadow: v }))));
+    add(this.#toggleRow('水面に映す', o.reflect !== false, (v) => this.#update((x) => ({ ...x, reflect: v }))));
 
     // 素材
     add(sub('素材'));
