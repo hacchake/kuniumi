@@ -14,7 +14,7 @@ import { sunIrradiance, discScaleFor } from '../core/skyModel.js';
 import { computeAtmosphere, renderMask } from './atmospherePass.js';
 import { atmosphereParams } from './atmosphereParams.js';
 import { fillInstances } from '../three/vegetationMeshes.js';
-import { detailedBroadleaf, detailedConifer, detailedGrass, detailedFlowers, detailedRock, detailedReeds } from '../three/detailedPlants.js';
+import { detailedBroadleaf, detailedConifer, detailedGrass, detailedFlowers, detailedRock, detailedReeds, detailedFern } from '../three/detailedPlants.js';
 import { planetRadius } from '../core/schema.js';
 import { curvePoint, DISC_RATIO, DISC_SEG } from '../core/curvature.js';
 import { buildSurroundMesh } from '../core/surroundMesh.js';
@@ -612,17 +612,22 @@ export class StillJob {
         this.disposers.push(() => (geo.dispose(), mat.dispose()));
       };
       // 置き場所の一覧を、形の違う 3 本へ振り分ける（同じ木が並ばないように）
-      const split = (list, n) => {
+      const split = (list, n, salt = 0) => {
         const out = Array.from({ length: n }, () => []);
         for (let k = 0; k < list.length; k += 5) {
-          const h = Math.abs(Math.sin(list[k] * 12.9898 + list[k + 2] * 78.233) * 43758.5453) % 1;
+          const h = Math.abs(Math.sin(list[k] * (12.9898 + salt) + list[k + 2] * (78.233 - salt * 3.1)) * 43758.5453) % 1;
           out[Math.min(n - 1, Math.floor(h * n))].push(list[k], list[k + 1], list[k + 2], list[k + 3], list[k + 4]);
         }
         return out;
       };
       const trunk = new THREE.Color('#4a3a2c');
       const conCol = new THREE.Color(s.terrain.season === 'winter' ? '#33433a' : '#1d3519');
-      const brdCol = new THREE.Color({ spring: '#4f8028', autumn: '#a04c16', winter: '#4d4136' }[s.terrain.season] ?? '#325a22');
+      // 広葉樹の色は木ごとにばらつかせる（秋は赤・橙・黄・まだ緑の木が混ざる）
+      const brdCols = ({
+        spring: ['#4f8028', '#6a9a30', '#5d8a3a', '#7a9a3c'],
+        autumn: ['#a8461a', '#c27a1c', '#b8962a', '#8c2c16', '#6a7026'],
+        winter: ['#4d4136', '#584a3c', '#463c34'],
+      }[s.terrain.season] ?? ['#325a22', '#3e6a26', '#2c4e20', '#4a6a2a']).map((c) => new THREE.Color(c));
       split(P.conifer, 3).forEach((list, i) => {
         const g = detailedConifer(i + 1);
         add(g.trunk, trunk, list);
@@ -631,7 +636,7 @@ export class StillJob {
       split(P.broadleaf, 3).forEach((list, i) => {
         const g = detailedBroadleaf(i + 1);
         add(g.trunk, trunk, list);
-        add(g.crown, brdCol, list, { side: THREE.DoubleSide, colorVar: 0.3, seed: 5 + i, roughness: 0.7 });
+        split(list, brdCols.length, 7.3).forEach((sub, j) => add(j ? g.crown.clone() : g.crown, brdCols[j], sub, { side: THREE.DoubleSide, colorVar: 0.3, seed: 5 + i * 7 + j, roughness: 0.7 }));
       });
       const grassCol = new THREE.Color(s.terrain.palette.low).lerp(new THREE.Color('#9fa84a'), 0.25);
       const grassLists = split(P.grass, 3);
@@ -639,6 +644,9 @@ export class StillJob {
       // 岩と石（形の違う 4 種）。色は大地の岩の色を明るめに
       const rockCol = new THREE.Color(s.terrain.palette.rock).lerp(new THREE.Color('#b4afa6'), 0.6);
       split(P.rocks ?? [], 4).forEach((list, i) => add(detailedRock(i + 1), rockCol, list, { roughness: 0.9, colorVar: 0.25, seed: 21 + i }));
+      // シダ（森の下草）
+      const fernCol = new THREE.Color(s.terrain.season === 'autumn' ? '#5a6a26' : '#3a6a22');
+      if (s.terrain.season !== 'winter') split(P.ferns ?? [], 2).forEach((list, i) => add(detailedFern(i + 1), fernCol, list, { side: THREE.DoubleSide, roughness: 0.65, colorVar: 0.3, seed: 41 + i }));
       // 葦（水際）。季節で色を変える（秋冬は枯れ色）
       const reedCol = new THREE.Color({ spring: '#6f8a3c', autumn: '#a08a52', winter: '#9a8a68' }[s.terrain.season] ?? '#6a7d38');
       split(P.reeds ?? [], 2).forEach((list, i) => add(detailedReeds(i + 1), reedCol, list, { side: THREE.DoubleSide, roughness: 0.6, colorVar: 0.25, seed: 31 + i }));

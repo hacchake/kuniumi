@@ -42,12 +42,13 @@ export function createVegetationRules(ctx) {
   const seed = veg.seed | 0;
 
   // 植物が育てる土地か（0..1）：急斜面・雪線近く・水辺・土砂のたまり場は苦手
-  const habitat = (H, slope, wv) => {
+  // nearShore: 草のように水際のすぐ近くまで育つもの
+  const habitat = (H, slope, wv, nearShore = false) => {
     const alt = (H - sea) / Math.max(1, top - sea);
     return (
       (1 - smooth(rs * 0.45, rs * 0.85, slope)) *
       (1 - smooth(sl - 0.28, sl - 0.1, alt)) *
-      smooth(shoreBand * 1.2, shoreBand * 3, H - sea) *
+      (nearShore ? smooth(shoreBand * 0.1 + 0.1, shoreBand * 0.6 + 0.4, H - sea) : smooth(shoreBand * 1.2, shoreBand * 3, H - sea)) *
       (1 - smooth(0.006, 0.03, wv))
     );
   };
@@ -81,7 +82,14 @@ export function createVegetationRules(ctx) {
     grass(H, slope, wv, x, z) {
       if (!(veg.grass > 0)) return 0;
       const open = 0.35 + 0.65 * smooth(0.3, 0.7, valueNoise(x / 8, z / 8, seed + 5));
-      return habitat(H, slope, wv) * open * Math.min(1, veg.grass * 1.4);
+      return habitat(H, slope, wv, true) * open * Math.min(1, veg.grass * 1.4);
+    },
+    // シダ（森の下草）の密度（0..1）：木の多い所の、湿った緩い地面に
+    fern(H, slope, wv, x, z) {
+      if (!(veg.grass > 0)) return 0;
+      const f = this.forest(H, slope, wv, x, z);
+      const n = smooth(0.3, 0.6, valueNoise(x / 10, z / 10, seed + 17));
+      return smooth(0.15, 0.5, f) * n * (1 - smooth(rs * 0.5, rs * 0.9, slope));
     },
     // 葦（ヨシ）の密度（0..1）：水際の緩い所に群れて生える（浅瀬にも少し入る）
     reeds(H, slope, x, z) {
@@ -135,7 +143,7 @@ export function placeVegetation(rules, size, sample, heightAt, view, { maxTrees 
     return cos > Math.cos(Math.min(Math.PI, halfH * 1.25 + r / d));
   };
 
-  const out = { conifer: [], broadleaf: [], grass: [], rocks: [], reeds: [] };
+  const out = { conifer: [], broadleaf: [], grass: [], rocks: [], reeds: [], ferns: [] };
 
   // ---- 木：カメラの周りの見えている範囲に、格子＋ゆらぎで候補を置き、森の密度で間引く ----
   // 候補の位置は格子ごとのハッシュで決める（視点を変えても同じ所に同じ木が立つ）。
@@ -250,12 +258,34 @@ export function placeVegetation(rules, size, sample, heightAt, view, { maxTrees 
       }
     }
   }
+  // ---- シダ：カメラの周り 70 m まで（森の下草） ----
+  {
+    const ground = heightAt(C[0], C[2]);
+    const radius = Math.min(70, Math.max(0, 70 - (C[1] - ground) * 0.5));
+    for (const [r0, r1, cell] of [[0, 25, 0.8], [25, radius, 1.8]]) {
+      if (r0 >= radius) break;
+      const n = Math.ceil(Math.min(r1, radius) / cell);
+      for (let j = -n; j <= n; j++) {
+        for (let i = -n; i <= n; i++) {
+          const x = C[0] + (i + rand()) * cell, z = C[2] + (j + rand()) * cell;
+          const a = rand(), b = rand(), c = rand();
+          const d = Math.hypot(x - C[0], z - C[2]);
+          if (d < Math.max(r0, 1.5) || d > Math.min(r1, radius) || Math.abs(x) > size / 2 || Math.abs(z) > size / 2) continue;
+          if (!inView(x, z, 1.5)) continue;
+          const sm = sample(x, z);
+          if (a > rules.fern(sm.h, sm.slope, sm.wv, x, z)) continue;
+          out.ferns.push(x, heightAt(x, z) - 0.03, z, 0.6 + b * 0.8, c * Math.PI * 2);
+        }
+      }
+    }
+  }
   return {
     conifer: new Float32Array(out.conifer),
     broadleaf: new Float32Array(out.broadleaf),
     grass: new Float32Array(out.grass),
     rocks: new Float32Array(out.rocks),
     reeds: new Float32Array(out.reeds),
+    ferns: new Float32Array(out.ferns),
   };
 }
 

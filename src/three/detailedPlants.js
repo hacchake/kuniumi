@@ -295,3 +295,50 @@ export function detailedReeds(seed = 1) {
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   return g;
 }
+
+// シダの株：弓なりに広がる葉（7〜10 枚）。葉は中軸の左右に小葉が並び、先と根元ほど小さい
+export function detailedFern(seed = 1) {
+  const rand = mulberry32(seed * 101 + 29);
+  const pos = [], nrm = [], col = [];
+  const tri = (a, b, c, n, v) => {
+    for (const p of [a, b, c]) {
+      pos.push(p.x, p.y, p.z);
+      nrm.push(n.x, n.y, n.z);
+      col.push(v * 0.92, v, v * 0.85);
+    }
+  };
+  const fronds = 7 + Math.floor(rand() * 4);
+  for (let f = 0; f < fronds; f++) {
+    const az = (f / fronds) * Math.PI * 2 + rand() * 0.5;
+    const L = 0.75 + rand() * 0.35;
+    const rise = 0.55 + rand() * 0.35; // 立ち上がり
+    const dir = new THREE.Vector3(Math.cos(az), 0, Math.sin(az));
+    const side = new THREE.Vector3(-dir.z, 0, dir.x);
+    const at = (t) => new THREE.Vector3().addScaledVector(dir, L * t).setY(L * (rise * t - (rise + 0.15) * t * t));
+    const segs = 24;
+    const v0 = 0.8 + rand() * 0.4;
+    for (let s = 0; s < segs; s++) {
+      const t0 = s / segs, t1 = (s + 1) / segs, tm = (t0 + t1) / 2;
+      const a = at(t0), b = at(t1);
+      const tang = b.clone().sub(a).normalize();
+      const n = new THREE.Vector3().crossVectors(side, tang).normalize();
+      if (n.y < 0) n.negate();
+      // 小葉の長さ：中ほどが最大、先へ細る
+      const ll = 0.2 * L * Math.sin(Math.PI * Math.min(1, tm * 1.1 + 0.05)) * (1 - tm * 0.4);
+      const v = v0 * (0.6 + 0.5 * tm);
+      // 小葉は細長い葉（付け根は節の間の一部だけ、先は丸めず細く）
+      const a2 = a.clone().lerp(b, 0.15), b2 = a.clone().lerp(b, 0.65);
+      for (const sg of [-1, 1]) {
+        const tip = a.clone().lerp(b, 0.4).addScaledVector(side, sg * ll).addScaledVector(tang, ll * 0.3).addScaledVector(n, -ll * 0.2);
+        const mid = a2.clone().lerp(tip, 0.5).addScaledVector(n, ll * 0.05);
+        tri(a2, b2, mid, n, v);
+        tri(mid, b2, tip, n, v * 1.05);
+      }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  return g;
+}

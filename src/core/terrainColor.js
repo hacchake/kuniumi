@@ -82,9 +82,11 @@ export function createTerrainShader(opts) {
       mix(P.rock, smooth(0.004, 0.04, -wv) * 0.45);
     }
     // 森：木の密度ぶん、遠くから見た森の色（暗い緑）へ
+    let grassy = 0;
     if (x !== undefined) {
       // 草むら：草の生える所は、すき間の地面も草と陰の暗い緑に（砂色が透けて見えないように）
-      mix(grassSoil, smooth(0.04, 0.3, rules.grass(H, slope, wv, x, z)) * 0.85);
+      grassy = smooth(0.04, 0.3, rules.grass(H, slope, wv, x, z));
+      mix(grassSoil, grassy * 0.85);
       mix(P.forest, rules.forest(H, slope, wv, x, z) * 0.85);
     }
     // 岩肌：明るさにむらと地層の縞を付ける（一様な灰色だと作り物に見える）
@@ -113,7 +115,7 @@ export function createTerrainShader(opts) {
     // 水際の砂浜と水中
     if (waterEnabled) {
       const above = H - sea;
-      mix(P.shore, (1 - smooth(shoreBand * 0.5, shoreBand * 1.6, above + jitter * shoreBand)) * (1 - smooth(0.4, 0.9, slope)));
+      mix(P.shore, (1 - smooth(shoreBand * 0.5, shoreBand * 1.6, above + jitter * shoreBand)) * (1 - smooth(0.4, 0.9, slope)) * (1 - grassy * 0.85));
       // 近景：波打ち際の濡れて暗い土と、浅い水底の小石のまだら
       if (opts.fine && x !== undefined && above < 1.2) {
         mix(bedCol, (1 - smooth(-0.2, 1.2, above)) * 0.5);
