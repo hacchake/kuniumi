@@ -204,6 +204,7 @@ export const EN = {
   '森の量': 'Forest amount',
   '木の高さ': 'Tree height',
   '針葉樹の割合': 'Conifer ratio',
+  '熱帯（ヤシ・一枚絵）': 'Tropical (palms, still)',
   '草（一枚絵）': 'Grass (still)',
   '森の地面の色': 'Forest floor color',
   '高度': 'Elevation',

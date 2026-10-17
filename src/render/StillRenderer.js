@@ -14,7 +14,7 @@ import { sunIrradiance, discScaleFor } from '../core/skyModel.js';
 import { computeAtmosphere, renderMask } from './atmospherePass.js';
 import { atmosphereParams } from './atmosphereParams.js';
 import { fillInstances } from '../three/vegetationMeshes.js';
-import { detailedBroadleaf, detailedConifer, detailedGrass, detailedFlowers, detailedRock, detailedReeds, detailedFern } from '../three/detailedPlants.js';
+import { detailedBroadleaf, detailedConifer, detailedGrass, detailedFlowers, detailedRock, detailedReeds, detailedFern, detailedPalm, detailedTropicalPlant } from '../three/detailedPlants.js';
 import { planetRadius } from '../core/schema.js';
 import { curvePoint, DISC_RATIO, DISC_SEG } from '../core/curvature.js';
 import { buildSurroundMesh } from '../core/surroundMesh.js';
@@ -612,11 +612,12 @@ export class StillJob {
         this.disposers.push(() => (geo.dispose(), mat.dispose()));
       };
       // 置き場所の一覧を、形の違う 3 本へ振り分ける（同じ木が並ばないように）
-      const split = (list, n, salt = 0) => {
+      // first: 指定すると 2 つに分け、最初の組の割合をそれにする
+      const split = (list, n, salt = 0, first = null) => {
         const out = Array.from({ length: n }, () => []);
         for (let k = 0; k < list.length; k += 5) {
           const h = Math.abs(Math.sin(list[k] * (12.9898 + salt) + list[k + 2] * (78.233 - salt * 3.1)) * 43758.5453) % 1;
-          out[Math.min(n - 1, Math.floor(h * n))].push(list[k], list[k + 1], list[k + 2], list[k + 3], list[k + 4]);
+          out[first !== null ? (h < first ? 0 : 1) : Math.min(n - 1, Math.floor(h * n))].push(list[k], list[k + 1], list[k + 2], list[k + 3], list[k + 4]);
         }
         return out;
       };
@@ -633,7 +634,16 @@ export class StillJob {
         add(g.trunk, trunk, list);
         add(g.crown, conCol, list, { side: THREE.DoubleSide, colorVar: 0.25, seed: 3 + i });
       });
-      split(P.broadleaf, 3).forEach((list, i) => {
+      // 熱帯：広葉樹の一部をヤシに（割合は植生の「熱帯」）
+      const tropical = Math.max(0, Math.min(1, s.vegetation.tropical ?? 0));
+      const [palms, broad] = split(P.broadleaf, 2, 3.7, tropical);
+      const palmTrunk = new THREE.Color('#7d6e5a'), palmCol = new THREE.Color(s.terrain.season === 'winter' ? '#5a6a3a' : '#4a7a2a');
+      split(palms, 3).forEach((list, i) => {
+        const g = detailedPalm(i + 1);
+        add(g.trunk, palmTrunk, list);
+        add(g.crown, palmCol, list, { side: THREE.DoubleSide, colorVar: 0.3, seed: 51 + i, roughness: 0.6 });
+      });
+      split(broad, 3).forEach((list, i) => {
         const g = detailedBroadleaf(i + 1);
         add(g.trunk, trunk, list);
         split(list, brdCols.length, 7.3).forEach((sub, j) => add(j ? g.crown.clone() : g.crown, brdCols[j], sub, { side: THREE.DoubleSide, colorVar: 0.3, seed: 5 + i * 7 + j, roughness: 0.7 }));
@@ -646,7 +656,12 @@ export class StillJob {
       split(P.rocks ?? [], 4).forEach((list, i) => add(detailedRock(i + 1), rockCol, list, { roughness: 0.9, colorVar: 0.25, seed: 21 + i }));
       // シダ（森の下草）
       const fernCol = new THREE.Color(s.terrain.season === 'autumn' ? '#5a6a26' : '#3a6a22');
-      if (s.terrain.season !== 'winter') split(P.ferns ?? [], 2).forEach((list, i) => add(detailedFern(i + 1), fernCol, list, { side: THREE.DoubleSide, roughness: 0.65, colorVar: 0.3, seed: 41 + i }));
+      if (s.terrain.season !== 'winter') {
+        // 熱帯では、下草の一部が幅広の葉の株に
+        const [trop, ferns] = split(P.ferns ?? [], 2, 5.1, tropical * 0.6);
+        split(ferns, 2).forEach((list, i) => add(detailedFern(i + 1), fernCol, list, { side: THREE.DoubleSide, roughness: 0.65, colorVar: 0.3, seed: 41 + i }));
+        split(trop, 2).forEach((list, i) => add(detailedTropicalPlant(i + 1), new THREE.Color('#3f7a28'), list, { side: THREE.DoubleSide, roughness: 0.5, colorVar: 0.35, seed: 45 + i }));
+      }
       // 葦（水際）。季節で色を変える（秋冬は枯れ色）
       const reedCol = new THREE.Color({ spring: '#6f8a3c', autumn: '#a08a52', winter: '#9a8a68' }[s.terrain.season] ?? '#6a7d38');
       split(P.reeds ?? [], 2).forEach((list, i) => add(detailedReeds(i + 1), reedCol, list, { side: THREE.DoubleSide, roughness: 0.6, colorVar: 0.25, seed: 31 + i }));

@@ -153,6 +153,7 @@ const SECTIONS = [
       { path: 'vegetation.treeHeight', label: '木の高さ', min: 3, max: 60, step: 0.5, unit: 'm' },
       { path: 'vegetation.conifer', label: '針葉樹の割合', min: 0, max: 1, step: 0.01 },
       { path: 'vegetation.grass', label: '草（一枚絵）', min: 0, max: 1, step: 0.01 },
+      { path: 'vegetation.tropical', label: '熱帯（ヤシ・一枚絵）', min: 0, max: 1, step: 0.01 },
       { path: 'terrain.palette.forest', label: '森の地面の色', type: 'color' },
     ],
   },

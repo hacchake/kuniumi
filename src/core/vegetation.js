@@ -16,6 +16,7 @@ export function defaultVegetation() {
     treeHeight: 16, // 木の高さの目安 (m)
     conifer: 0.5, // 針葉樹の割合（標高が高いほど増える）
     grass: 0.6, // 足元の草の量（一枚絵で、カメラが地面に近いときだけ）
+    tropical: 0, // 熱帯の割合（一枚絵で、広葉樹のうちヤシになる割合。下草も大きな葉の熱帯の株が混ざる）
     seed: 77,
     paint: [], // 手で植えた・伐った跡：[{ x, z, r, v }]（v = 1 植える、-1 伐る）。リアルタイム表示と一枚絵の両方に効く
   };
@@ -82,7 +83,9 @@ export function createVegetationRules(ctx) {
     grass(H, slope, wv, x, z) {
       if (!(veg.grass > 0)) return 0;
       const open = 0.35 + 0.65 * smooth(0.3, 0.7, valueNoise(x / 8, z / 8, seed + 5));
-      return habitat(H, slope, wv, true) * open * Math.min(1, veg.grass * 1.4);
+      // 森の中は日陰で草が減る（下草はシダなどに）
+      const shade = 1 - 0.65 * smooth(0.3, 0.8, this.forest(H, slope, wv, x, z));
+      return habitat(H, slope, wv, true) * open * shade * Math.min(1, veg.grass * 1.4);
     },
     // シダ（森の下草）の密度（0..1）：木の多い所の、湿った緩い地面に
     fern(H, slope, wv, x, z) {

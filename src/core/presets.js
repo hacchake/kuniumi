@@ -113,7 +113,7 @@ export const PRESETS = [
         noise: { seed: 808, frequency: 1.5, octaves: 7, ridged: 0.1, warp: 0.9, valley: 1.2, falloff: 0.85, erosion: 0.2 },
         palette: { shore: '#f1e7c9', low: '#4f8a3a', high: '#6b9a44', rock: '#9a8a6a' },
       },
-      vegetation: { trees: 0.55, conifer: 0, treeHeight: 14 },
+      vegetation: { trees: 0.55, conifer: 0, treeHeight: 14, tropical: 0.75 },
       sun: { elevation: 62, azimuth: 150 },
       atmosphere: { turbidity: 2.5, rayleigh: 2.4, haze: 0.18, clouds: 0.35, cloudAltitude: 1200, exposure: 0.1 },
       water: { level: 0, color: '#13a0a6', distortion: 1.8, waveScale: 1.4 },

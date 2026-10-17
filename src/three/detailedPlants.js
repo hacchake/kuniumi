@@ -342,3 +342,87 @@ export function detailedFern(seed = 1) {
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   return g;
 }
+
+// ヤシ：しなって傾いた細い幹（節の輪の濃淡）と、先端から放射状に垂れる羽状の葉 14 枚ほど
+export function detailedPalm(seed = 1) {
+  const rand = mulberry32(seed * 389 + 41);
+  const wood = [];
+  const lean = 0.06 + rand() * 0.16, la = rand() * Math.PI * 2;
+  const at = (t) => new THREE.Vector3(Math.cos(la) * lean * t * t, t * 0.86, Math.sin(la) * lean * t * t);
+  const segs = 14;
+  for (let k = 0; k < segs; k++) {
+    const t0 = k / segs, t1 = (k + 1) / segs;
+    wood.push(tint(limb(at(t0), at(t1), 0.026 - t0 * 0.008, 0.026 - t1 * 0.008, 7), k % 2 ? 0.85 : 1.05));
+  }
+  const top = at(1);
+  const leaves = new Leaves();
+  const nF = 13 + Math.floor(rand() * 4);
+  for (let f = 0; f < nF; f++) {
+    const az = (f / nF) * Math.PI * 2 + rand() * 0.4;
+    const el = (rand() < 0.3 ? 0.7 : 0.25) + rand() * 0.35; // 若い葉は立ち、古い葉は垂れる
+    const L = 0.32 + rand() * 0.12;
+    const h = new THREE.Vector3(Math.cos(az), 0, Math.sin(az));
+    const side = new THREE.Vector3(-h.z, 0, h.x);
+    const pt = (t) => top.clone().addScaledVector(h, L * t * Math.cos(el)).add(new THREE.Vector3(0, L * (t * Math.sin(el) - t * t * 0.55), 0));
+    const nl = 26;
+    for (let i = 2; i < nl; i++) {
+      const t = i / nl;
+      const c = pt(t);
+      const tang = pt(Math.min(1, t + 0.02)).sub(pt(Math.max(0, t - 0.02))).normalize();
+      const ll = 0.085 * Math.sin(Math.PI * Math.min(1, t * 0.9 + 0.1)) + 0.015;
+      for (const sg of [-1, 1]) {
+        // 小葉は横へ出て、少し垂れる
+        const d = side.clone().multiplyScalar(sg).addScaledVector(tang, 0.5).add(new THREE.Vector3(0, -0.35, 0)).normalize();
+        const n = new THREE.Vector3().crossVectors(d, tang).normalize();
+        if (n.y < 0) n.negate();
+        const v = 0.7 + rand() * 0.35 - t * 0.1;
+        leaves.add(c.clone().addScaledVector(d, ll / 2), d, n, ll, 0.012, v, n, (rand() - 0.3) * 1.2);
+      }
+    }
+  }
+  return { trunk: mergeGeometries(wood), crown: leaves.geometry() };
+}
+
+// 熱帯の下草：根元から広がる幅広の葉の株（ブロメリアやクワズイモのような）。葉は先へ細り、外へ反る
+export function detailedTropicalPlant(seed = 1) {
+  const rand = mulberry32(seed * 211 + 7);
+  const pos = [], nrm = [], col = [];
+  const n = 9 + Math.floor(rand() * 6);
+  for (let i = 0; i < n; i++) {
+    const az = (i / n) * Math.PI * 2 + rand() * 0.6;
+    const el = 0.5 + rand() * 0.7;
+    const L = 0.55 + rand() * 0.45, W = 0.07 + rand() * 0.08;
+    const h = new THREE.Vector3(Math.cos(az), 0, Math.sin(az));
+    const side = new THREE.Vector3(-h.z, 0, h.x);
+    const pt = (t) => new THREE.Vector3().addScaledVector(h, L * t * Math.cos(el)).setY(L * (t * Math.sin(el) - t * t * 0.45));
+    const segs = 6;
+    const v = 0.75 + rand() * 0.4;
+    for (let k = 0; k < segs; k++) {
+      const t0 = k / segs, t1 = (k + 1) / segs;
+      const w0 = W * Math.sin(Math.PI * Math.min(1, t0 * 0.85 + 0.12)), w1 = W * Math.sin(Math.PI * Math.min(1, t1 * 0.85 + 0.12));
+      const a = pt(t0), b = pt(t1);
+      const tang = b.clone().sub(a).normalize();
+      const nn = new THREE.Vector3().crossVectors(side, tang).normalize();
+      if (nn.y < 0) nn.negate();
+      // 葉の中央の筋で少し折る
+      const fold = nn.clone().multiplyScalar(-0.25);
+      const quad = [
+        [a, 0], [a.clone().addScaledVector(side, w0).addScaledVector(fold, w0), 1], [b.clone().addScaledVector(side, w1).addScaledVector(fold, w1), 1],
+        [a, 0], [b.clone().addScaledVector(side, w1).addScaledVector(fold, w1), 1], [b, 0],
+        [a, 0], [b, 0], [b.clone().addScaledVector(side, -w1).addScaledVector(fold, w1), 1],
+        [a, 0], [b.clone().addScaledVector(side, -w1).addScaledVector(fold, w1), 1], [a.clone().addScaledVector(side, -w0).addScaledVector(fold, w0), 1],
+      ];
+      for (const [p, e] of quad) {
+        pos.push(p.x, p.y, p.z);
+        nrm.push(nn.x, nn.y, nn.z);
+        const c = v * (0.55 + 0.5 * (t0 + t1) / 2) * (1 - e * 0.08);
+        col.push(c * 0.95, c, c * 0.8);
+      }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  return g;
+}
