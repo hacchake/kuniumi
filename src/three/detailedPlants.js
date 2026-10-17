@@ -243,3 +243,55 @@ export function detailedRock(seed = 1) {
   g.computeVertexNormals();
   return g;
 }
+
+// 葦（ヨシ）の株：背の高い細い葉を 40 本ほど、まっすぐ上へ（先は風でしなる）。何本かは穂を付ける。根元は暗く、先は枯れ色寄り
+export function detailedReeds(seed = 1) {
+  const rand = mulberry32(seed * 53 + 11);
+  const pos = [], nrm = [], col = [];
+  const blade = (bx, bz, la, h, w, lean, v, head) => {
+    const segs = 6;
+    const pts = [];
+    for (let s = 0; s <= segs; s++) {
+      const t = s / segs;
+      const off = lean * t * t * t * h;
+      pts.push([bx + Math.cos(la) * off, t * h, bz + Math.sin(la) * off, w * (1 - t * (head ? 0.4 : 0.9)), t]);
+    }
+    const px = -Math.sin(la), pz = Math.cos(la);
+    for (let s = 0; s < segs; s++) {
+      const [x0, y0, z0, w0, t0] = pts[s], [x1, y1, z1, w1, t1] = pts[s + 1];
+      const quad = [
+        [x0 - px * w0, y0, z0 - pz * w0, t0], [x0 + px * w0, y0, z0 + pz * w0, t0], [x1 + px * w1, y1, z1 + pz * w1, t1],
+        [x0 - px * w0, y0, z0 - pz * w0, t0], [x1 + px * w1, y1, z1 + pz * w1, t1], [x1 - px * w1, y1, z1 - pz * w1, t1],
+      ];
+      for (const [x, y, z, t] of quad) {
+        pos.push(x, y, z);
+        nrm.push(Math.cos(la) * 0.4, 0.8, Math.sin(la) * 0.4);
+        const c = v * (0.4 + 0.75 * t);
+        col.push(c * (1 + t * 0.35), c * (1 + t * 0.1), c * (1 - t * 0.3));
+      }
+    }
+    // 穂：茎の先に、茶色い紡錘形を十字の 2 枚で
+    if (head) {
+      const [hx, hy, hz] = pts[segs];
+      for (const [ax, az] of [[1, 0], [0, 1]]) {
+        const hw = 0.022, hl = 0.16;
+        const q = [[-hw, 0], [hw, 0], [hw * 0.6, hl], [-hw, 0], [hw * 0.6, hl], [-hw * 0.6, hl]];
+        for (const [u, y] of q) {
+          pos.push(hx + ax * u, hy + y, hz + az * u);
+          nrm.push(az, 0.3, ax);
+          col.push(0.42 * v, 0.3 * v, 0.2 * v);
+        }
+      }
+    }
+  };
+  for (let i = 0; i < 40; i++) {
+    const a = rand() * Math.PI * 2;
+    const r0 = Math.sqrt(rand()) * 0.2;
+    blade(Math.cos(a) * r0, Math.sin(a) * r0, a + (rand() - 0.5) * 1.5, 0.9 + rand() * 0.8, 0.014 + rand() * 0.012, 0.1 + rand() * 0.35, 0.85 + rand() * 0.5, rand() < 0.07);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  return g;
+}

@@ -38,6 +38,7 @@ function valueNoise(x, y, seed) {
 // shade(H: 標高 m, slope: 勾配 tan, wv: 侵食で盛った(+)/削った(−)量, jitter: −0.5..0.5 のゆらぎ, out: [r,g,b], x, z, curv: くぼみ(+)・出っ張り(−)の度合い)
 export function createTerrainShader(opts) {
   const { heightScale, baseHeight, waterLevel, waterEnabled, palette } = opts;
+  const seed = opts.vegetation?.seed | 0;
   const P = {
     shore: lin(palette.shore),
     low: lin(palette.low),
@@ -56,6 +57,7 @@ export function createTerrainShader(opts) {
   const rules = createVegetationRules(opts);
   P.forest = lin(palette.forest ?? '#1f3018');
   const grassSoil = lin('#4a5a2c'); // 草むらの足元（草の葉と陰の混ざった色）
+  const bedCol = lin('#6e5f4a'); // 浅い水底の小石と砂の色
 
   // x, z（世界座標）を渡すと、森の所を森の色にする
   return function shade(H, slope, wv, jitter, col, x, z, curv = 0) {
@@ -112,6 +114,16 @@ export function createTerrainShader(opts) {
     if (waterEnabled) {
       const above = H - sea;
       mix(P.shore, (1 - smooth(shoreBand * 0.5, shoreBand * 1.6, above + jitter * shoreBand)) * (1 - smooth(0.4, 0.9, slope)));
+      // 近景：波打ち際の濡れて暗い土と、浅い水底の小石のまだら
+      if (opts.fine && x !== undefined && above < 1.2) {
+        mix(bedCol, (1 - smooth(-0.2, 1.2, above)) * 0.5);
+        const pb = valueNoise(x / 0.16, z / 0.16, seed + 77) * 0.65 + valueNoise(x / 0.05, z / 0.05, seed + 78) * 0.35;
+        const wet = 1 - smooth(0, 0.8, above + jitter * 0.4);
+        const k = (1 - wet * 0.35) * (1 + (pb - 0.5) * 0.7 * (1 - smooth(0.2, 1.2, above)));
+        col[0] *= k;
+        col[1] *= k;
+        col[2] *= k;
+      }
       if (above < 0) {
         const deep = smooth(0, shoreBand * 6, -above);
         col[0] *= 1 - deep * 0.55;

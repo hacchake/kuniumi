@@ -139,6 +139,7 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
     palette: terrain.palette,
     vegetation,
     realWorld: terrain.mode === 'heightmap' && !!terrain.heightmap?.geo,
+    fine: true, // 近景の細かい色（濡れた水際・水底の小石）
   });
   const col = [0, 0, 0];
   const G = N + 3; // 法線用に 1 マス外側も計算する
@@ -225,7 +226,7 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
     const rules = createVegetationRules({ heightScale, baseHeight, waterLevel: water.level, waterEnabled: water.enabled, palette: terrain.palette, vegetation, realWorld: terrain.mode === 'heightmap' && !!terrain.heightmap?.geo, photo, size });
     plants = placeVegetation(rules, size, surface.coarse, (x, z) => heightAt(x, z, 0.5), view);
     // 木・草・岩の根元の位置も同じように移して曲げる（幹の傾きは近くでは無視できる）
-    for (const list of [plants.conifer, plants.broadleaf, plants.grass, plants.rocks]) {
+    for (const list of [plants.conifer, plants.broadleaf, plants.grass, plants.rocks, plants.reeds]) {
       for (let k = 0; k < list.length; k += 5) {
         curvePoint(list[k] - P.ox, list[k + 1], list[k + 2] - P.oz, pcx, pcz, P.R, pp);
         list[k] = pp[0];
