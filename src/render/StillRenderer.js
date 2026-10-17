@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import { t } from '../i18n/index.js';
 import { ShaderMaterial, WebGLRenderTarget } from 'three';
 import { WebGPUPathTracer, OIDNDenoiser, TRANSMISSIVE_BACKGROUND_ENVIRONMENT } from 'three-gpu-pathtracer/webgpu';
+import { PhysicalCamera } from 'three-gpu-pathtracer/src/objects/PhysicalCamera.js';
 import { initUNetFromURL } from 'oidn-web';
 // OIDN の学習済み重み（HDR・アルベド・法線つき）。同梱してオフラインでも使えるようにする
 import OIDN_WEIGHTS from 'oidn-weights/rt_hdr_alb_nrm.tza?url';
@@ -702,12 +703,22 @@ export class StillJob {
     const above = Math.max(10, py - Math.max(s.water.enabled ? s.water.level : -Infinity, this.view.gpuTerrain.heightAt(px, pz)));
     const near = Math.min(2000, Math.max(0.3, above * 0.03));
     const far = Math.max(near * 1e5, 1e5);
-    const cam = new THREE.PerspectiveCamera(s.camera.fov, aspect, near, far);
+    // 被写界深度：ぼけの強さがあれば、レンズの口径の中から光線を出すカメラ。
+    // 景色は実寸 (m) なので、写真のレンズ（口径 数 cm）では数 km 先がほとんどぼけない。強さ 1 で口径 20 cm
+    const st = s.render.still;
+    const dof = (st.bokeh ?? 0) > 0;
+    const cam = dof ? new PhysicalCamera(s.camera.fov, aspect, near, far) : new THREE.PerspectiveCamera(s.camera.fov, aspect, near, far);
     const [x, y, z] = s.camera.position;
     const c = curvePoint(x - P.ox, y, z - P.oz, 0, 0, P.R);
     cam.position.set(c[0], c[1], c[2]);
     const tg = s.camera.target;
-    cam.lookAt(new THREE.Vector3(tg[0] - P.ox, tg[1], tg[2] - P.oz));
+    const look = new THREE.Vector3(tg[0] - P.ox, tg[1], tg[2] - P.oz);
+    cam.lookAt(look);
+    if (dof) {
+      cam.bokehSize = st.bokeh * 200; // 口径 (mm)
+      cam.focusDistance = st.focus > 0 ? st.focus : cam.position.distanceTo(look);
+      cam.apertureBlades = 6; // 六角形の絞り（玉ぼけの形）
+    }
     cam.updateMatrixWorld();
     return cam;
   }

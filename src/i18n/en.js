@@ -578,4 +578,8 @@ export const EN = {
   "点": "pts",
   "雲の少ない新しい衛星写真（2023 年・非商用ライセンス）": "Newer, nearly cloud-free satellite photo (2023, non-commercial licence)",
   "Sentinel-2 cloudless の 2023 年版（雲がほとんど無い）。ライセンスが CC BY-NC-SA 4.0（非商用・継承）になる。外すと 2016 年版（CC BY 4.0、ところどころ雲が残る）": "Sentinel-2 cloudless 2023 (almost no clouds), licensed CC BY-NC-SA 4.0 (non-commercial, share-alike). Unchecked uses the 2016 edition (CC BY 4.0, with some clouds left)",
+  "ぼけの強さ": "Blur strength",
+  "ピントの距離": "Focus distance",
+  "被写界深度。大きいほどピントの外（手前・奥）が大きくぼける（ミニチュア写真のような見え方にも）。0 はぼかさない。一枚絵だけ": "Depth of field. Larger values blur more outside the focus (also gives a miniature-photo look). 0 means no blur. Stills only",
+  "ピントを合わせる距離。0 にすると、カメラの注視点（見ている所）に合わせる": "Focus distance. 0 focuses on the camera target (where you are looking)",
 };
