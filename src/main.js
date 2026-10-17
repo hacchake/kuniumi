@@ -630,7 +630,7 @@ async function renderStill() {
       onStatus: (text) => (stillStatus.textContent = text),
       onProgress: (done, total, info) => {
         stillBar.style.width = `${(done / total) * 100}%`;
-        stillStatus.textContent = t(info.denoising ? 'AI でノイズを取り除いています…' : '光を追いかけています…');
+        stillStatus.textContent = t(info.denoising ? 'AI でノイズを取り除いています…' : '光を追いかけています…') + (info.label ? `（${info.label}）` : '');
         stillInfo.textContent = t('{done} / {total} サンプル　経過 {sec}', { done: Math.floor(done), total, sec: fmtSec(info.sec) }) + (info.denoising ? '' : t('　残り約 {left}', { left: fmtSec(info.left) }));
       },
     });

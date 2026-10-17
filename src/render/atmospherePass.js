@@ -55,6 +55,45 @@ function proxy(src, mat) {
   return c;
 }
 
+// 画素ごとに、最初に当たる物が targets のどれかなら 1、ほかの物や空なら 0（縦横 2 倍で描いて縁をなめらかに）。
+// 戻り値は Float32Array(W × H)、行 0 = 画像の上
+export function renderMask(gl, targets, others, camera, W, H) {
+  const on = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+  const off = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
+  const scene = new THREE.Scene();
+  for (const m of others) scene.add(proxy(m, off));
+  for (const m of targets) scene.add(proxy(m, on));
+  const W2 = W * 2, H2 = H * 2;
+  const rt = new THREE.WebGLRenderTarget(W2, H2);
+  const prev = gl.getRenderTarget();
+  const prevColor = gl.getClearColor(new THREE.Color());
+  const prevAlpha = gl.getClearAlpha();
+  const prevTone = gl.toneMapping;
+  gl.toneMapping = THREE.NoToneMapping;
+  gl.setRenderTarget(rt);
+  gl.setClearColor(0x000000, 1);
+  gl.clear();
+  gl.render(scene, camera);
+  const px = new Uint8Array(W2 * H2 * 4);
+  gl.readRenderTargetPixels(rt, 0, 0, W2, H2, px);
+  gl.setRenderTarget(prev);
+  gl.setClearColor(prevColor, prevAlpha);
+  gl.toneMapping = prevTone;
+  rt.dispose();
+  on.dispose();
+  off.dispose();
+  const out = new Float32Array(W * H);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      let a = 0;
+      for (let dy = 0; dy < 2; dy++)
+        for (let dx = 0; dx < 2; dx++) a += px[((H2 - 1 - (y * 2 + dy)) * W2 + x * 2 + dx) * 4]; // 読み出しは下の行から
+      out[y * W + x] = a / (4 * 255);
+    }
+  }
+  return out;
+}
+
 // 太陽からの影の地図を作る。objects: 影を落とす物（Mesh / InstancedMesh）
 // userData.shadowProxy(lightMatrix) を持つ物は、それが返す代わりの物を描く（GPU で形を作る地形など）
 // bounds: { center: Vector3, radius } 地図にする範囲（省略時は物全体を囲む）

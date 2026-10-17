@@ -11,7 +11,7 @@ import { skyParams, renderSkyEquirect } from '../core/skyModel.js';
 import { addAurora, addRainbow } from '../core/skyExtras.js';
 import { toneMapToRGBA8 } from '../core/tonemap.js';
 import { sunIrradiance, discScaleFor } from '../core/skyModel.js';
-import { computeAtmosphere } from './atmospherePass.js';
+import { computeAtmosphere, renderMask } from './atmospherePass.js';
 import { atmosphereParams } from './atmosphereParams.js';
 import { coniferGeometry, broadleafGeometry, grassGeometry, fillInstances } from '../three/vegetationMeshes.js';
 import { planetRadius } from '../core/schema.js';
@@ -309,57 +309,86 @@ export class StillJob {
     if (this.useMegakernel) pt.useMegakernel(true);
     this.#check();
 
-    const t0 = performance.now();
-    let counts = { min: 0, avg: 0 };
-    let doneAt = null;
-    let frame = 0;
-    // 画面の更新（requestAnimationFrame）に合わせると GPU が空回りするので、
-    // GPU の処理完了を待ちながら連続で積む（同時に積むのは 2 回分まで）
-    const device = renderer.backend?.device;
-    for (;;) {
-      this.#check();
-      if (this.gpuError) throw new Error(t('GPU でエラーが出ました（地形の細かさや解像度を下げてください）: {msg}', { msg: this.gpuError.split(/\r?\n/)[0] }));
-      pt.renderSample();
-      frame++;
-      if (frame === 1) {
-        if (device) await gpuWait(device.queue.onSubmittedWorkDone());
-        mark('firstSample');
-      }
-      if (device && frame % 2 === 0) await gpuWait(device.queue.onSubmittedWorkDone());
-      if (frame % 16 === 0) {
-        counts = await gpuWait(pt.getSampleCountsAsync());
-        if (this.gpuError || !counts) continue;
-        const sec = (performance.now() - t0) / 1000;
-        const left = counts.avg > 0 ? (sec / counts.avg) * Math.max(0, st.samples - counts.avg) : 0;
-        this.ui.onProgress(Math.min(counts.avg, st.samples), st.samples, { sec, left, denoising: counts.min >= st.samples });
-        if (counts.min >= st.samples) {
-          if (doneAt === null) {
-            doneAt = performance.now();
-            // ノイズ除去（oidn-web）は requestAnimationFrame で少しずつ進むので、画面が隠れていると止まる。
-            // 除去の間だけ時間で進む版に差し替える
-            const raf = window.requestAnimationFrame;
-            window.requestAnimationFrame = (cb) => setTimeout(() => cb(performance.now()), 4);
-            this.disposers.push(() => (window.requestAnimationFrame = raf));
-          }
-          if (!denoiser || denoiser.complete) break;
-          // ノイズ除去が 90 秒たっても終わらなければ諦め、除去前の画像で仕上げる
-          if (performance.now() - doneAt > 90000) {
-            pt.setDenoiser(null);
-            denoiser = null;
-            this.stats.denoiseTimeout = true;
-            break;
+    // 光を追いかける 1 回分（label：進み具合に添える「1/2」など）
+    const trace = async (label = '') => {
+      const t0 = performance.now();
+      let counts = { min: 0, avg: 0 };
+      let doneAt = null;
+      let frame = 0;
+      // 画面の更新（requestAnimationFrame）に合わせると GPU が空回りするので、
+      // GPU の処理完了を待ちながら連続で積む（同時に積むのは 2 回分まで）
+      const device = renderer.backend?.device;
+      for (;;) {
+        this.#check();
+        if (this.gpuError) throw new Error(t('GPU でエラーが出ました（地形の細かさや解像度を下げてください）: {msg}', { msg: this.gpuError.split(/\r?\n/)[0] }));
+        pt.renderSample();
+        frame++;
+        if (frame === 1) {
+          if (device) await gpuWait(device.queue.onSubmittedWorkDone());
+          mark('firstSample');
+        }
+        if (device && frame % 2 === 0) await gpuWait(device.queue.onSubmittedWorkDone());
+        if (frame % 16 === 0) {
+          counts = await gpuWait(pt.getSampleCountsAsync());
+          if (this.gpuError || !counts) continue;
+          const sec = (performance.now() - t0) / 1000;
+          const left = counts.avg > 0 ? (sec / counts.avg) * Math.max(0, st.samples - counts.avg) : 0;
+          this.ui.onProgress(Math.min(counts.avg, st.samples), st.samples, { sec, left, denoising: counts.min >= st.samples, label });
+          if (counts.min >= st.samples) {
+            if (doneAt === null) {
+              doneAt = performance.now();
+              // ノイズ除去（oidn-web）は requestAnimationFrame で少しずつ進むので、画面が隠れていると止まる。
+              // 除去の間だけ時間で進む版に差し替える
+              const raf = window.requestAnimationFrame;
+              window.requestAnimationFrame = (cb) => setTimeout(() => cb(performance.now()), 4);
+              this.disposers.push(() => (window.requestAnimationFrame = raf));
+            }
+            if (!denoiser || denoiser.complete) break;
+            // ノイズ除去が 90 秒たっても終わらなければ諦め、除去前の画像で仕上げる
+            if (performance.now() - doneAt > 90000) {
+              pt.setDenoiser(null);
+              denoiser = null;
+              this.stats.denoiseTimeout = true;
+              break;
+            }
           }
         }
+        if (!device || frame % 4 === 0) await new Promise((r) => setTimeout(r, 0)); // 画面の操作に応える隙間
       }
-      if (!device || frame % 4 === 0) await new Promise((r) => setTimeout(r, 0)); // 画面の操作に応える隙間
-    }
-    const traceSec = (performance.now() - t0) / 1000;
+      return { traceSec: (performance.now() - t0) / 1000, frame, counts };
+    };
+    let { traceSec, frame, counts } = await trace();
     Object.assign(this.stats, { traceSec, frames: frame, samplesPerSec: counts.samplesPerSecond });
 
     // ---- 4. HDR を読み出して仕上げる ----
     mark('trace');
     this.ui.onStatus(t('かすみと光を仕上げています…'));
     const hdr = await this.#readHDR(renderer, pt, W, H);
+    // 「水面に映す」を切った物体：その物体を抜いた絵をもう 1 枚描き、物体そのものが見えている画素だけ 1 枚目を使う
+    // （水面や地面の反射には出ない）。物体が見えている所は、画素ごとの最初に当たる物の印で決める
+    const noReflectIds = new Set(s.objects.filter((o) => o.reflect === false).map((o) => o.id));
+    const noReflect = objectMeshes.filter((m) => noReflectIds.has(m.userData.kuniumiId));
+    if (noReflect.length) {
+      const others = [built.terrainMesh, built.surroundMesh, built.water, ...built.plants, ...(built.buildingMeshes ?? []), ...objectMeshes.filter((m) => !noReflect.includes(m))].filter(Boolean);
+      const mask = renderMask(this.view.renderer, noReflect, others, camera, W, H);
+      for (const m of noReflect) built.scene.remove(m);
+      this.ui.onStatus(t('水面に映さない物体を抜いて、もう一度描いています…'));
+      if (st.denoise) {
+        denoiser = new OIDNDenoiser({ initUNetFromURL, auxWeightsUrl: OIDN_WEIGHTS });
+        pt.setDenoiser(denoiser);
+      }
+      await nextFrame();
+      pt.setScene(built.scene, camera);
+      const second = await trace('2/2');
+      traceSec += second.traceSec;
+      const hdr2 = await this.#readHDR(renderer, pt, W, H);
+      for (let i = 0, n = W * H; i < n; i++) {
+        const k = mask[i];
+        if (k >= 1) continue;
+        for (let c = 0; c < 4; c++) hdr[i * 4 + c] = hdr[i * 4 + c] * k + hdr2[i * 4 + c] * (1 - k);
+      }
+      this.stats.noReflectPass = true;
+    }
     this.#applyAtmosphere(hdr, s, built, objectMeshes, celestial, camera, W, H);
     mark('atmosphere');
     if (st.bloom > 0) applyBloom(hdr, W, H, st.bloom);

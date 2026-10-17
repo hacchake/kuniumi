@@ -617,4 +617,5 @@ export const EN = {
   "左ドラッグで木を植える（育つ土地ほど濃い森に。急斜面・雪・水辺は薄く）": "Left-drag to plant trees (denser where they grow well; sparse on steep slopes, snow and shores)",
   "左ドラッグで木を取り除く": "Left-drag to remove trees",
   "水面に映す": "Reflect in water",
+  "水面に映さない物体を抜いて、もう一度描いています…": "Rendering again without the objects that should not reflect in water…",
 };
