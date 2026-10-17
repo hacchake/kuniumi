@@ -48,6 +48,7 @@ const HINTS = {
   'sun.elevation': '地平線からの太陽の高さ。マイナスは日没後',
   'atmosphere.aurora': '夜の北の空（南半球の地形では南の空）に、ゆらめくオーロラを出す強さ。雲が多いと隠れる（リアルタイム表示）',
   'terrain.sculpt': '地形を手で盛る・削る・ならす筆。選んでから景観を左ドラッグ（見回しは右ドラッグ）。元に戻すはドラッグ 1 回ずつ。筆の跡はシーンに入り、地形の作り直しでも残る',
+  'terrain.noise.round': '尖った頂や尾根だけを丸める（谷はそのまま）。上げるほど、富士山のようななだらかな山になる',
   'render.still.bokeh': '被写界深度。大きいほどピントの外（手前・奥）が大きくぼける（ミニチュア写真のような見え方にも）。0 はぼかさない。一枚絵だけ',
   'render.still.focus': 'ピントを合わせる距離。0 にすると、カメラの注視点（見ている所）に合わせる',
   'sun.moonAge': '月の満ち欠け（0 = 新月、約 7 = 上弦、約 15 = 満月、約 22 = 下弦）。月の形と空の位置、夜の明るさが変わる。「日時から」で合わせるとその日の月齢になる',
@@ -120,6 +121,7 @@ const SECTIONS = [
       { path: 'terrain.noise.persistence', label: '粗さ', min: 0.2, max: 0.75, step: 0.01 },
       { path: 'terrain.noise.lacunarity', label: '細部の細かさ', min: 1.5, max: 3, step: 0.01 },
       { path: 'terrain.noise.ridged', label: '尾根の鋭さ', min: 0, max: 1, step: 0.01 },
+      { path: 'terrain.noise.round', label: '山の丸み', min: 0, max: 1, step: 0.01 },
       { path: 'terrain.noise.warp', label: 'うねり', min: 0, max: 2, step: 0.01 },
       { path: 'terrain.noise.valley', label: '谷の平らさ', min: 0.5, max: 4, step: 0.01 },
       { path: 'terrain.noise.falloff', label: '外周の沈み', min: 0, max: 1, step: 0.01 },
@@ -365,6 +367,7 @@ export class Panel {
         ['lower', t('削る'), t('左ドラッグで地面を削る（見回しは右ドラッグ）')],
         ['flat', t('ならす'), t('左ドラッグで、押した所の高さへならす（見回しは右ドラッグ）')],
         ['smooth', t('なめらかに'), t('左ドラッグで、尖った所や段差を丸める（見回しは右ドラッグ）')],
+        ['cone', t('富士山形の山'), t('クリックした所に、裾野の広い円錐の山（頂に火口）を置く。大きさは筆の半径、高さは半径の約 1/3')],
         ['plant', t('森を植える'), t('左ドラッグで木を植える（育つ土地ほど濃い森に。急斜面・雪・水辺は薄く）')],
         ['clear', t('森を伐る'), t('左ドラッグで木を取り除く')],
       ];

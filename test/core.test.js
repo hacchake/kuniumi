@@ -310,3 +310,27 @@ describe('星のひな形', () => {
     expect(ringed.scene.objects[0].id).not.toBe(ringed.scene.objects[0].id);
   });
 });
+
+describe('山の形', () => {
+  it('山の丸みは頂を下げ、谷は変えない。富士山形は頂が高く裾ほど低い', async () => {
+    const { roundPeaks, coneProfile } = await import('../src/core/sculpt.js');
+    const res = 129, f = new Float32Array(res * res);
+    for (let j = 0; j < res; j++) for (let i = 0; i < res; i++) f[j * res + i] = Math.max(0, 1 - Math.hypot(i - 64, j - 64) / 20); // 尖った円錐
+    const peak0 = f[64 * res + 64], valley0 = f[0];
+    roundPeaks(f, res, 8000, 1);
+    expect(f[64 * res + 64]).toBeLessThan(peak0 - 0.05);
+    expect(f[0]).toBe(valley0);
+    expect(coneProfile(0.1)).toBeGreaterThan(coneProfile(0.5));
+    expect(coneProfile(0.5)).toBeGreaterThan(coneProfile(0.9));
+    expect(coneProfile(1)).toBe(0);
+    expect(coneProfile(0)).toBeLessThan(coneProfile(0.06)); // 火口
+  });
+  it('一枚絵の地形にも手彫りが入る（リアルタイム表示と同じ所が盛られる）', async () => {
+    const { createTerrainSurface } = await import('../src/core/terrainSurface.js');
+    const { createDefaultScene } = await import('../src/core/schema.js');
+    const t = createDefaultScene().terrain;
+    const a = createTerrainSurface(t), b = createTerrainSurface({ ...t, sculpt: [{ x: 1000, z: -500, r: 600, cone: 900 }] });
+    expect(b.heightAt(1000, -500, 50) - a.heightAt(1000, -500, 50)).toBeGreaterThan(700);
+    expect(Math.abs(b.heightAt(-2000, 2000, 50) - a.heightAt(-2000, 2000, 50))).toBeLessThan(1);
+  });
+});

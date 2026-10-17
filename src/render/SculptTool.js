@@ -56,6 +56,7 @@ export class SculptTool {
     const r = this.radius;
     if (this.mode === 'flat') this.pending.push({ x: round(p.x), z: round(p.z), r: round(r), flat: round(this.flatTo), k: 0.35 });
     else if (this.mode === 'smooth') this.pending.push({ x: round(p.x), z: round(p.z), r: round(r), smooth: 0.6 });
+    else if (this.mode === 'cone') this.pending.push({ x: round(p.x), z: round(p.z), r: round(r), cone: round(r * 0.32) });
     else if (this.mode === 'plant' || this.mode === 'clear') this.pending.push({ x: round(p.x), z: round(p.z), r: round(r), v: this.mode === 'plant' ? 1 : -1 });
     else this.pending.push({ x: round(p.x), z: round(p.z), r: round(r), h: round(this.mode === 'lower' ? -this.strength : this.strength) });
     this.last = p;
@@ -90,7 +91,8 @@ export class SculptTool {
       const p = this.pick(this.#ndc(e));
       this.#showRing(p);
       // 筆の半径の 1/4 進むごとにひと押し
-      if (this.drawing && p && Math.hypot(p.x - this.last.x, p.z - this.last.z) > this.radius * 0.25) this.#stamp(p);
+      // 富士山形の山はクリック 1 回で 1 つ（ドラッグで重ねない）
+      if (this.drawing && p && this.mode !== 'cone' && Math.hypot(p.x - this.last.x, p.z - this.last.z) > this.radius * 0.25) this.#stamp(p);
     });
     const end = () => {
       if (!this.drawing) return;

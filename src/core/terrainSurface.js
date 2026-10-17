@@ -1,5 +1,6 @@
 import { createNoiseSampler, generateNoiseFieldWithRange, sampleField, edgeFade } from './heightfield.js';
 import { applyErosion } from './erosion.js';
+import { applySculpt, roundPeaks } from './sculpt.js';
 import { detailHeight, shoreFade } from './terrainDetail.js';
 
 // 地形の「任意の地点の高さ」を返す部品。一枚絵の細かい地形と、木・草の配置が使う。
@@ -29,10 +30,12 @@ export function createTerrainSurface(terrain, heightmapImage = null, sea = null)
     let h = (raw(u, v, nyq) - base.min) / span;
     h = Math.pow(Math.max(0, h), noise.valley) * edgeFade(u, v, noise.falloff);
     if (wear) h += sampleField(wear, BASE, u, v);
-    return baseHeight + Math.max(0, h) * heightScale;
+    return baseHeight + Math.max(0, h) * heightScale + deltaAt(u, v) * heightScale;
   };
   const wearAt = (x, z) => (wear ? sampleField(wear, BASE, x / size + 0.5, z / size + 0.5) : 0);
-  const gh = (u, v) => sampleField(base.field, BASE, u, v) + (wear ? sampleField(wear, BASE, u, v) : 0);
+  const gh0 = (u, v) => sampleField(base.field, BASE, u, v) + (wear ? sampleField(wear, BASE, u, v) : 0);
+  const deltaAt = editDelta(terrain, gh0, noise.round ?? 0);
+  const gh = (u, v) => gh0(u, v) + deltaAt(u, v);
   return { heightAt, wearAt, coarse: coarseFrom(gh, BASE, terrain, wearAt) };
 }
 
@@ -52,12 +55,29 @@ function heightmapSurface(terrain, img, sea) {
   const pixelM = size / Math.max(1, Math.max(W, H) - 1);
   const amount = terrain.detail ?? 1;
   const detailAt = (x, z, spacing) => detailHeight(x, z, pixelM, spacing, amount);
+  const deltaAt = editDelta(terrain, bicubic, 0);
   const heightAt = (x, z, spacing) => {
-    const h = baseHeight + bicubic(x / size + 0.5, z / size + 0.5) * heightScale;
+    const u = x / size + 0.5, v = z / size + 0.5;
+    const h = baseHeight + (bicubic(u, v) + deltaAt(u, v)) * heightScale;
     return h + detailAt(x, z, spacing) * shoreFade(h, sea);
   };
   const wearAt = () => 0;
-  return { heightAt, wearAt, coarse: coarseFrom((u, v) => bicubic(u, v), Math.max(W, H), terrain, wearAt) };
+  return { heightAt, wearAt, coarse: coarseFrom((u, v) => bicubic(u, v) + deltaAt(u, v), Math.max(W, H), terrain, wearAt) };
+}
+
+// 山の丸みと手彫り（terrain.sculpt）で変わった量（0..1 の高さの差）を、1025 格子に求めて補間する。
+// リアルタイム表示（terrainWorker）と同じ式を同じ世界座標に当てるので、同じ所が同じように変わる
+const EDIT_RES = 1025;
+function editDelta(terrain, gh, round) {
+  if (!(round > 0) && !terrain.sculpt?.length) return () => 0;
+  const N = EDIT_RES;
+  const orig = new Float32Array(N * N);
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) orig[j * N + i] = gh(i / (N - 1), j / (N - 1));
+  const mod = orig.slice();
+  if (round > 0) roundPeaks(mod, N, terrain.size, round);
+  applySculpt(mod, N, terrain);
+  for (let k = 0; k < mod.length; k++) mod[k] -= orig[k];
+  return (u, v) => sampleField(mod, N, u, v);
 }
 
 // 粗い格子の近似：高さ・勾配・侵食

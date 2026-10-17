@@ -164,13 +164,16 @@ export function generateMaterialMaps(p, width, height, image = null) {
       const o = (y * width + x) * 4;
       let r, g, b, h, glow;
       if (p.pattern === 'image' && image) {
-        // 画像を周期ぶん並べる（最近傍ではなく画素中心で拾う）
-        const iu = (((u * S * aspect) % 1) * image.width) | 0;
-        const iv = (((v * S) % 1) * image.height) | 0;
-        const io = (iv * image.width + iu) * 4;
-        r = image.data[io] / 255;
-        g = image.data[io + 1] / 255;
-        b = image.data[io + 2] / 255;
+        // 画像を「細かさ」の数だけ並べる（細かさ 1 で物体をひと回り 1 枚）。隣の 4 画素から補間してなめらかに
+        const fx = ((((u + 0.5 / width) * S) % 1) * image.width) - 0.5;
+        const fy = ((((v + 0.5 / height) * S) % 1) * image.height) - 0.5;
+        const x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+        const W = image.width, H = image.height;
+        const at = (xx, yy, k) => image.data[(((yy + H) % H) * W + ((xx + W) % W)) * 4 + k];
+        const bl = (k) => (at(x0, y0, k) * (1 - tx) + at(x0 + 1, y0, k) * tx) * (1 - ty) + (at(x0, y0 + 1, k) * (1 - tx) + at(x0 + 1, y0 + 1, k) * tx) * ty;
+        r = bl(0) / 255;
+        g = bl(1) / 255;
+        b = bl(2) / 255;
         h = (r + g + b) / 3;
         glow = 1;
       } else {

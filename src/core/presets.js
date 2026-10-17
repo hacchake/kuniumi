@@ -27,6 +27,29 @@ export const PRESETS = [
     },
   },
   {
+    id: 'fuji-lake',
+    name: '富士の見える湖',
+    scene: {
+      meta: { name: '富士の見える湖' },
+      terrain: {
+        size: 24000,
+        heightScale: 700,
+        baseHeight: -90,
+        // 丸みのある低い山並みに、手彫りの「富士山形の山」を 1 つ（半径 9 km・高さ 3.4 km）
+        noise: { seed: 2236, frequency: 2.4, ridged: 0.2, warp: 0.6, valley: 1.8, falloff: 0, erosion: 0.6, round: 0.8 },
+        // 手前は湖（手彫りで掘る）
+        sculpt: [{ x: 0, z: -4000, r: 9000, cone: 3400 }, { x: 1000, z: 8600, r: 3000, h: -380 }, { x: -1500, z: 9400, r: 2200, h: -300 }],
+        // 雪は上の 3 分の 1 ほど（雪線は「水面〜起伏の高さ」に対する割合なので、富士の高さに合わせて大きく）
+        palette: { snowLine: 4.1 },
+      },
+      vegetation: { trees: 0.8, conifer: 0.5 },
+      sun: { elevation: 24, azimuth: 135 },
+      atmosphere: { turbidity: 3, rayleigh: 2.4, haze: 0.3, clouds: 0.25, cloudAltitude: 2400, rays: 0.6, exposure: 0.11 },
+      water: { level: 0, color: '#123c4c', distortion: 1.2 },
+      camera: { position: [800, 90, 11200], target: [0, 1500, -4000], fov: 45 },
+    },
+  },
+  {
     id: 'misty-valley',
     name: '霧の朝の渓谷',
     scene: {

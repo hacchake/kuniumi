@@ -243,7 +243,7 @@ export class GpuTerrain {
               'float kRW = smoothstep( tRockSlope * 0.55, tRockSlope * 1.1, length( kG0 ) );\n' +
               // 平地の色むら：数百 m の斑で、乾いた所（黄み）と青々とした所（緑み）。岩肌・写真の地形には足さない
               'float kMn = tValueNoise( vTLocal, 512.0, 521 ) * 0.6 + tValueNoise( vTLocal, 128.0, 522 ) * 0.4;\n' +
-              'kTC *= mix( vec3( 1.0 ), mix( vec3( 1.12, 1.04, 0.82 ), vec3( 0.86, 1.04, 0.92 ), kMn ), 0.7 * ( 1.0 - kRW ) );\n' +
+              'kTC *= mix( vec3( 1.0 ), mix( vec3( 1.12, 1.04, 0.82 ), vec3( 0.86, 1.04, 0.92 ), kMn ), 0.4 * ( 1.0 - kRW ) );\n' +
               'if ( kRW > 0.0 ) { vec2 kQc = vTLocal + vec2( vTH * 0.6, - vTH * 0.45 ); float kRn = tValueNoise( kQc, 16.0, 511 ) * 0.6 + tValueNoise( kQc, 4.0, 512 ) * 0.4; kTC *= 1.0 + ( kRn - 0.5 ) * 0.45 * kRW; }\n' +
               // 衛星写真があれば、その色を地表の色にする（細かい色むらだけ手続きの色から少し残す）
               `if ( tHasPhoto > 0.5 ) kTC = texture2D( tPhoto, clamp( tUV( vTLocal ), 0.0, 1.0 ) ).rgb * ${PHOTO_ALBEDO.toFixed(3)} * ( 1.0 + kJ * 0.35 );\n` +

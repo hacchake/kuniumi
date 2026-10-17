@@ -109,6 +109,14 @@ export class ObjectPanel {
 
     // 素材
     add(sub('素材'));
+    // 自分の画像を貼る（いつでも見えるボタン。物体パネルへ画像ファイルを落としても貼れる）
+    const imgRow = add(div('row row-select mat-image-row'));
+    imgRow.append(
+      button(o.material.pattern === 'image' && o.material.image ? '🖼 別の画像を貼る…' : '🖼 画像を貼る…', async () => {
+        const f = await pickFile('image/*');
+        if (f) await this.#applyImage(f);
+      }),
+    );
     const grid = add(div('mat-grid'));
     for (const p of MATERIAL_PRESETS) {
       const b = document.createElement('button');
@@ -225,6 +233,18 @@ export class ObjectPanel {
     num.onchange = () => +num.value > 0 && apply(+num.value);
     row.append(range, num, unit);
     return row;
+  }
+
+  // 選んでいる物体に画像を貼る：模様を「画像」にし、物体をひと回り 1 枚で覆う（細かさ 1）。凹凸は控えめに
+  applyImage(file) {
+    return this.#applyImage(file);
+  }
+
+  async #applyImage(file) {
+    if (!this.#selected || !file?.type?.startsWith('image/')) return;
+    const image = await shrinkImage(file);
+    this.#update((x) => ({ ...x, material: { ...x.material, pattern: 'image', image, scale: 1, bump: Math.min(x.material.bump ?? 0, 0.15), preset: null } }));
+    this.#renderInspector();
   }
 
   #toggleRow(text, value, onSet) {

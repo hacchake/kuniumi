@@ -1,6 +1,7 @@
 // 手彫り：筆の跡（terrain.sculpt）を高さ場に重ねる。跡は世界座標 (m) で持つので、解像度を変えても同じ所が盛られる。
 // 跡 1 つ：{ x, z, r, h }（盛る・削る：中心で h m、半径 r m で滑らかに 0 へ）
 //          { x, z, r, flat, k }（ならす：高さ flat m へ、中心で k の割合だけ寄せる）
+//          { x, z, r, cone }（富士山形の山：高さ cone m、頂に浅い火口）
 //          { x, z, r, smooth }（なめらかに：周りの平均へ smooth の割合だけ寄せる。尖った所・段差を丸める）
 // 高さ場は 0..1（標高 = baseHeight + 値 × heightScale）、field[j * res + i]、i = 西→東、j = 北→南
 
@@ -33,6 +34,10 @@ export function applySculpt(field, res, terrain) {
         const w = falloff(x * x + z * z, r2);
         if (w <= 0) continue;
         const k = j * res + i;
+        if (s.cone != null) {
+          field[k] += (s.cone / hs) * coneProfile(Math.sqrt(x * x + z * z) / s.r);
+          continue;
+        }
         if (flat != null) field[k] += (flat - field[k]) * w * (s.k ?? 0.5);
         else field[k] += (s.h / hs) * w;
       }
@@ -81,7 +86,50 @@ export function sculptKey(strokes) {
   if (!strokes?.length) return '';
   let h = 0;
   for (const s of strokes) {
-    for (const v of [s.x, s.z, s.r, s.h ?? 0, s.flat ?? 0, s.k ?? 0, s.smooth ?? 0]) h = (Math.imul(h, 31) + Math.round(v * 100)) | 0;
+    for (const v of [s.x, s.z, s.r, s.h ?? 0, s.flat ?? 0, s.k ?? 0, s.smooth ?? 0, s.cone ?? 0]) h = (Math.imul(h, 31) + Math.round(v * 100)) | 0;
   }
   return `${strokes.length}:${h}`;
+}
+
+// 山の丸み：尖った頂や尾根（周りの平均より高い所）だけを、周りの平均へ向けて削る（谷はそのまま）。
+// amount 0..1。ぼかしの半径は大地の一辺の 1.5%（世界の大きさで決めるので、解像度を変えても同じ形）
+export function roundPeaks(field, res, size, amount) {
+  if (!(amount > 0)) return field;
+  const step = size / (res - 1);
+  const rad = Math.max(1, Math.round((size * 0.015 * (0.4 + amount)) / step));
+  const tmp = new Float32Array(field.length), blur = new Float32Array(field.length);
+  // 横・縦の移動平均を 2 回（ほぼガウスぼかし）
+  const pass = (src, dst, horiz) => {
+    for (let j = 0; j < res; j++) {
+      let acc = 0, n = 0;
+      const at = (k) => (horiz ? src[j * res + k] : src[k * res + j]);
+      for (let k = -rad; k <= rad; k++) if (k >= 0 && k < res) (acc += at(k)), n++;
+      for (let i = 0; i < res; i++) {
+        (horiz ? dst : dst)[horiz ? j * res + i : i * res + j] = acc / n;
+        const out = i - rad, inn = i + rad + 1;
+        if (out >= 0) (acc -= at(out)), n--;
+        if (inn < res) (acc += at(inn)), n++;
+      }
+    }
+  };
+  pass(field, tmp, true);
+  pass(tmp, blur, false);
+  pass(blur, tmp, true);
+  pass(tmp, blur, false);
+  for (let k = 0; k < field.length; k++) {
+    const over = field[k] - blur[k];
+    if (over > 0) field[k] -= over * amount * 0.85;
+  }
+  return field;
+}
+
+// 富士山形の山の高さの形（0..1）：d = 中心からの距離 / 半径。裾野は広く凹んだ斜面、頂に浅い火口
+export function coneProfile(d) {
+  if (d >= 1) return 0;
+  const s = Math.pow(1 - d, 1.9);
+  const top = Math.pow(1 - 0.05, 1.9); // 頂は少し平らに切る
+  let h = Math.min(s, top) / top;
+  const crater = 1 - Math.min(1, d / 0.045);
+  h -= crater * crater * (3 - 2 * crater) * 0.05; // 火口のくぼみ
+  return h;
 }

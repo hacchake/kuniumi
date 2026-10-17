@@ -76,7 +76,7 @@ const view = new RealtimeRenderer(document.getElementById('view'), store, {
   selection,
 });
 new Panel(document.getElementById('panel'), store);
-new ObjectPanel(document.getElementById('panel'), store, selection, {
+const objectPanel = new ObjectPanel(document.getElementById('panel'), store, selection, {
   onDelete: (id) => removeObject(id),
   onDuplicate: (id) => duplicateObject(id),
 });
@@ -588,6 +588,11 @@ window.addEventListener('drop', async (e) => {
   const file = e.dataTransfer?.files?.[0];
   if (!file) return;
   if (stillJob) return toast(t('一枚絵を描いている間は読み込めません'), 'error');
+  // 物体を選んでいて、物体パネルの上に画像を落としたら、その物体に貼る（ほかの所ならハイトマップとして読む）
+  if (selection.get().selected && file.type.startsWith('image/') && e.target instanceof Element && e.target.closest('.sec-objects')) {
+    await objectPanel.applyImage(file);
+    return toast(t('画像を物体に貼りました'));
+  }
   try {
     await openAny(file);
   } catch (err) {

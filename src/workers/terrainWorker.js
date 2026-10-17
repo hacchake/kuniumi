@@ -3,7 +3,7 @@ import { generateNoiseField, resampleImage } from '../core/heightfield.js';
 import { computeTerrainColors } from '../core/terrainColor.js';
 import { decodePng } from '../core/png16.js';
 import { applyErosion } from '../core/erosion.js';
-import { applySculpt } from '../core/sculpt.js';
+import { applySculpt, roundPeaks } from '../core/sculpt.js';
 
 let field = null;
 let wear = null; // 侵食で盛った(+)・削った(−)量
@@ -17,6 +17,7 @@ self.onmessage = async (e) => {
     let fieldChanged = false;
     if (key !== fieldKey) {
       ({ field, wear } = await buildField(terrain));
+      if (terrain.mode !== 'heightmap') roundPeaks(field, terrain.resolution, terrain.size, terrain.noise.round ?? 0); // 山の丸み
       applySculpt(field, terrain.resolution, terrain); // 手彫りの跡を重ねる
       fieldRes = terrain.resolution;
       fieldKey = key;
