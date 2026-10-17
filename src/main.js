@@ -147,7 +147,7 @@ store.subscribe((s, _c, meta) => meta.source !== 'ui' && (nameEl.value = s.meta.
 // ---- 星のひな形 ----
 const presetEl = document.getElementById('preset');
 presetEl.add(new Option('— 選ぶと差し替え —', ''));
-for (const p of PRESETS) presetEl.add(new Option(p.name, p.id));
+for (const p of PRESETS) presetEl.add(new Option(t(p.name), p.id));
 presetEl.onchange = () => {
   const p = PRESETS.find((x) => x.id === presetEl.value);
   presetEl.value = '';

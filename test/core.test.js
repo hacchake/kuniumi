@@ -286,3 +286,27 @@ describe('手彫り：なめらかに', () => {
     expect(f[50 * res + 90]).toBe(1);
   });
 });
+
+describe('星のひな形', () => {
+  it('どのひな形も既定シーンに重ねて正しく読め、名前・id が重ならない', async () => {
+    const { PRESETS } = await import('../src/core/presets.js');
+    const { createDefaultScene, normalizeScene } = await import('../src/core/schema.js');
+    const deepMerge = (a, b) => {
+      if (Array.isArray(b) || typeof b !== 'object' || b === null) return b;
+      const o = { ...a };
+      for (const [k, v] of Object.entries(b)) o[k] = deepMerge(a?.[k], v);
+      return o;
+    };
+    expect(PRESETS.length).toBeGreaterThanOrEqual(15);
+    expect(new Set(PRESETS.map((p) => p.id)).size).toBe(PRESETS.length);
+    expect(new Set(PRESETS.map((p) => p.name)).size).toBe(PRESETS.length);
+    for (const p of PRESETS) {
+      const s = normalizeScene(deepMerge(createDefaultScene(), p.scene));
+      expect(s.meta.name).toBeTruthy();
+      expect(Number.isFinite(s.terrain.heightScale)).toBe(true);
+    }
+    // 天体を含むひな形は、選ぶたびに新しい物体（id が違う）
+    const ringed = PRESETS.find((p) => p.id === 'ringed-sky');
+    expect(ringed.scene.objects[0].id).not.toBe(ringed.scene.objects[0].id);
+  });
+});
