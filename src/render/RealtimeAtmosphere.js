@@ -220,7 +220,7 @@ export class RealtimeAtmosphere {
           }
           vec3 col = c.rgb * ao * a.a + a.rgb;
           // 天体：手前の空気越しに見える（空の明るさを重ね、空気の厚みのぶん暗く）。昼は淡く、夜はくっきり
-          if ( c.a < 0.5 ) col = c.rgb * exp( - 0.12 / max( 0.06, dirV.y + 0.04 ) ) + ambient * 0.3;
+          if ( c.a < 0.5 ) col = c.rgb * exp( - 0.12 / max( 0.06, dirV.y + 0.04 ) ) + ambient * 0.2;
           // 太陽のまぶしさ（光のにじみ）：太陽が見えている（山に隠れていない）ときだけ
           if ( sunScreen.z > 0.5 ) {
             float vis = 0.0;

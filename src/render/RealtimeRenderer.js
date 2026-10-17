@@ -46,6 +46,26 @@ const R2D = 180 / Math.PI;
 //     GPU には原点からの相対座標しか渡らないので、カメラの近くは何千 km 離れても細かく正確に描ける
 //   ・深度は対数（logarithmicDepthBuffer）。足元 1 m から地平線の 1 万 km 先まで前後を取り違えない
 //   ・水面はカメラについて動く円盤（近くは細かく、遠くは粗い同心円）
+// 海岸：浅い所ほど明るい青緑に、波打ち際（深さ 1.5 m まで）に寄せては返す白い泡
+const SHORE_GLSL = /* glsl */ `
+if ( kShoreOn > 0.5 ) {
+  vec2 kSw = vKFlat.xz + kWaterOrigin;
+  float kIn;
+  float kDep = kWaterLevel - kShoreH( kSw - tOriginW, kIn );
+  if ( kIn > 0.5 && kDep < 12.0 ) {
+    float kNear = 1.0 - smoothstep( 300.0, 2500.0, length( eye - worldPosition.xyz ) );
+    // 浅いほど海底の砂が透けて明るい青緑に
+    float kSh = 1.0 - smoothstep( 0.0, 10.0, kDep );
+    albedo = mix( albedo, albedo * vec3( 0.75, 1.15, 1.1 ) + vec3( 0.02, 0.06, 0.055 ) * kWaterGain, kSh * 0.6 );
+    // 波打ち際の泡：深さに沿って寄せては返す縞と、まだらのむら
+    float kWave = sin( kDep * 4.0 - time * 2.2 + sin( kSw.x * 0.05 ) * 2.0 + sin( kSw.y * 0.043 ) * 2.0 ) * 0.5 + 0.5;
+    float kMot = sin( kSw.x * 0.31 + time * 0.7 ) * sin( kSw.y * 0.27 - time * 0.5 ) * 0.5 + 0.5;
+    float kFoam = ( 1.0 - smoothstep( 0.0, 1.5, kDep ) ) * smoothstep( 0.35, 0.85, kWave * 0.7 + kMot * 0.3 + ( 1.0 - kDep / 1.5 ) * 0.4 );
+    albedo = mix( albedo, vec3( 0.82, 0.86, 0.88 ) * kWaterGain * 0.75, clamp( kFoam, 0.0, 1.0 ) * 0.85 * kNear );
+  }
+}
+`;
+
 export class RealtimeRenderer {
   constructor(canvas, store, { onStatus, selection } = {}) {
     this.store = store;
@@ -132,7 +152,21 @@ export class RealtimeRenderer {
     this.water.material.uniforms.kWaterGain = { value: 1 };
     this.water.material.fragmentShader = this.water.material.fragmentShader
       .replace('uniform vec3 waterColor;', 'uniform vec3 waterColor;\nuniform float kWaterGain;')
-      .replace(/vec3 albedo = mix\([^;]*\);/, (m) => `${m}\nalbedo *= kWaterGain;`)
+      .replace(/vec3 albedo = mix\([^;]*\);/, (m) => `${m}\nalbedo *= kWaterGain;\n${SHORE_GLSL}`)
+      // 海岸：地形の高さ場を読んで、浅い所の水の色と波打ち際の泡を出す（uniform は地形ができてから結ぶ）
+      .replace('void main() {', `uniform sampler2D tHeightTex;
+uniform float tRes, tSize, tBase, tHeightScale, kShoreOn;
+uniform vec2 tOriginUV, tOriginW;
+float kShoreH( vec2 local, out float inside ) {
+  vec2 uv = tOriginUV + local / tSize;
+  inside = step( 0.0, uv.x ) * step( uv.x, 1.0 ) * step( 0.0, uv.y ) * step( uv.y, 1.0 );
+  vec2 g = clamp( uv, 0.0, 1.0 ) * ( tRes - 1.0 );
+  vec2 i = floor( g ); vec2 f = g - i; ivec2 c = ivec2( i ); int m = int( tRes ) - 1;
+  float a = texelFetch( tHeightTex, clamp( c, ivec2( 0 ), ivec2( m ) ), 0 ).r, b = texelFetch( tHeightTex, clamp( c + ivec2( 1, 0 ), ivec2( 0 ), ivec2( m ) ), 0 ).r;
+  float d = texelFetch( tHeightTex, clamp( c + ivec2( 0, 1 ), ivec2( 0 ), ivec2( m ) ), 0 ).r, e = texelFetch( tHeightTex, clamp( c + ivec2( 1, 1 ), ivec2( 0 ), ivec2( m ) ), 0 ).r;
+  return tBase + mix( mix( a, b, f.x ), mix( d, e, f.x ), f.y ) * tHeightScale;
+}
+void main() {`)
       // 雨の波紋：0.7 m と 1.1 m の升目ごとに 1 つ、広がって消える輪。近く（約 60 m まで）だけ
       .replace('void main() {', `uniform float kRain;
 vec2 kRipple( vec2 p, float cell, float t ) {
@@ -161,6 +195,17 @@ void main() {`)
         surfaceNormal = kCurveN( vKFlat, surfaceNormal );`,
       );
     this.water.material.uniforms.kRain = { value: 0 };
+    // 海岸の効果の uniform（地形ができたら地形の物を結ぶ。それまでは効かせない）
+    Object.assign(this.water.material.uniforms, {
+      kShoreOn: { value: 0 },
+      tHeightTex: { value: null },
+      tRes: { value: 2 },
+      tSize: { value: 1 },
+      tBase: { value: 0 },
+      tHeightScale: { value: 1 },
+      tOriginUV: { value: new THREE.Vector2() },
+      tOriginW: { value: new THREE.Vector2() },
+    });
     // Water シェーダは霧をトーンマップの「後」に混ぜる。霧の色は物理的な明るさ（1 を超える）なので、
     // そのままでは遠くの水面が白く飛ぶ。霧を先に混ぜてから、ほかの物体と同じようにトーンマップする
     const wfs = this.water.material.fragmentShader;
@@ -177,6 +222,11 @@ void main() {`)
       curveUniforms: this.curveUniforms,
       patchMaterial: (m) => patchStandardMaterial(m, this.shared),
     });
+    // 水面に地形の高さ場を結ぶ（海岸の浅い色と泡）
+    for (const k of ['tHeightTex', 'tRes', 'tSize', 'tBase', 'tHeightScale', 'tOriginUV', 'tOriginW']) {
+      if (this.gpuTerrain.uniforms[k]) this.water.material.uniforms[k] = this.gpuTerrain.uniforms[k];
+    }
+    this.water.material.uniforms.kShoreOn.value = 1;
     this.terrain = null; // 最初の高さ場が届いたら gpuTerrain.mesh
     this.colorTexture = null; // 書き出し用に焼いた地表の色
     this.colorKey = null;
