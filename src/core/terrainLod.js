@@ -213,8 +213,8 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
   if (vegetation) {
     const rules = createVegetationRules({ heightScale, baseHeight, waterLevel: water.level, waterEnabled: water.enabled, palette: terrain.palette, vegetation, realWorld: terrain.mode === 'heightmap' && !!terrain.heightmap?.geo, photo, size });
     plants = placeVegetation(rules, size, surface.coarse, (x, z) => heightAt(x, z, 0.5), view);
-    // 木と草の根元の位置も同じように移して曲げる（幹の傾きは近くでは無視できる）
-    for (const list of [plants.conifer, plants.broadleaf, plants.grass]) {
+    // 木・草・岩の根元の位置も同じように移して曲げる（幹の傾きは近くでは無視できる）
+    for (const list of [plants.conifer, plants.broadleaf, plants.grass, plants.rocks]) {
       for (let k = 0; k < list.length; k += 5) {
         curvePoint(list[k] - P.ox, list[k + 1], list[k + 2] - P.oz, pcx, pcz, P.R, pp);
         list[k] = pp[0];

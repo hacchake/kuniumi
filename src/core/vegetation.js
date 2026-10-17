@@ -83,6 +83,16 @@ export function createVegetationRules(ctx) {
       const open = 0.35 + 0.65 * smooth(0.3, 0.7, valueNoise(x / 8, z / 8, seed + 5));
       return habitat(H, slope, wv) * open * Math.min(1, veg.grass * 1.4);
     },
+    // 岩・石の密度（0..1）：斜面ほど多く、岩肌の手前・水際（石の河原・磯）にも。急な崖そのものと雪の上には置かない
+    rocks(H, slope, wv, x, z) {
+      const above = H - sea;
+      if (above < -0.8) return 0; // 水の底には置かない（浅瀬の石は置く）
+      const n = valueNoise(x / 40, z / 40, seed + 9);
+      let d = 0.03 + 0.4 * smooth(rs * 0.35, rs * 0.9, slope) * (1 - smooth(rs * 1.3, rs * 2, slope));
+      d += 0.55 * (1 - smooth(shoreBand * 0.3, shoreBand * 1.2, Math.abs(above))); // 水際
+      d += 0.25 * smooth(0.004, 0.03, -wv); // 侵食で削られた谷筋
+      return Math.min(1, d * (0.4 + 1.2 * n * n));
+    },
     // 針葉樹になる確率：標高が高いほど増える
     coniferChance(H) {
       const alt = (H - sea) / Math.max(1, top - sea);
@@ -115,7 +125,7 @@ export function placeVegetation(rules, size, sample, heightAt, view, { maxTrees 
     return cos > Math.cos(Math.min(Math.PI, halfH * 1.25 + r / d));
   };
 
-  const out = { conifer: [], broadleaf: [], grass: [] };
+  const out = { conifer: [], broadleaf: [], grass: [], rocks: [] };
 
   // ---- 木：カメラの周りの見えている範囲に、格子＋ゆらぎで候補を置き、森の密度で間引く ----
   // 候補の位置は格子ごとのハッシュで決める（視点を変えても同じ所に同じ木が立つ）。
@@ -180,10 +190,39 @@ export function placeVegetation(rules, size, sample, heightAt, view, { maxTrees 
       }
     }
   }
+  // ---- 岩と石：カメラの周り 300 m まで（近いほど細かく、小石まで） ----
+  {
+    const ground = heightAt(C[0], C[2]);
+    const radius = Math.min(300, Math.max(0, 260 - (C[1] - ground) * 0.8));
+    const bands = [
+      [0, 40, 1.5, 0.15, 1.3],
+      [40, 120, 4, 0.4, 2.6],
+      [120, radius, 9, 0.8, 4.0],
+    ];
+    for (const [r0, r1, cell, smin, smax] of bands) {
+      if (r0 >= radius) break;
+      const n = Math.ceil(Math.min(r1, radius) / cell);
+      for (let j = -n; j <= n; j++) {
+        for (let i = -n; i <= n; i++) {
+          const x = C[0] + (i + rand()) * cell, z = C[2] + (j + rand()) * cell;
+          const a = rand(), b = rand(), c = rand();
+          const d = Math.hypot(x - C[0], z - C[2]);
+          if (d < r0 || d > Math.min(r1, radius) || Math.abs(x) > size / 2 || Math.abs(z) > size / 2) continue;
+          if (!inView(x, z, smax)) continue;
+          const sm = sample(x, z);
+          if (a > rules.rocks(sm.h, sm.slope, sm.wv, x, z)) continue;
+          // 大きさは小さいものほど多く（大岩はまれ）
+          const s = smin + (smax - smin) * b * b;
+          out.rocks.push(x, heightAt(x, z) - s * 0.06, z, s, c * Math.PI * 2);
+        }
+      }
+    }
+  }
   return {
     conifer: new Float32Array(out.conifer),
     broadleaf: new Float32Array(out.broadleaf),
     grass: new Float32Array(out.grass),
+    rocks: new Float32Array(out.rocks),
   };
 }
 

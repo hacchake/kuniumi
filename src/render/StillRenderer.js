@@ -14,7 +14,7 @@ import { sunIrradiance, discScaleFor } from '../core/skyModel.js';
 import { computeAtmosphere, renderMask } from './atmospherePass.js';
 import { atmosphereParams } from './atmosphereParams.js';
 import { fillInstances } from '../three/vegetationMeshes.js';
-import { detailedBroadleaf, detailedConifer, detailedGrass, detailedFlowers } from '../three/detailedPlants.js';
+import { detailedBroadleaf, detailedConifer, detailedGrass, detailedFlowers, detailedRock } from '../three/detailedPlants.js';
 import { planetRadius } from '../core/schema.js';
 import { curvePoint, DISC_RATIO, DISC_SEG } from '../core/curvature.js';
 import { buildSurroundMesh } from '../core/surroundMesh.js';
@@ -629,6 +629,9 @@ export class StillJob {
       const grassCol = new THREE.Color(s.terrain.palette.low).lerp(new THREE.Color('#9fa84a'), 0.25);
       const grassLists = split(P.grass, 3);
       grassLists.forEach((list, i) => add(detailedGrass(i + 1), grassCol, list, { side: THREE.DoubleSide, roughness: 0.6, colorVar: 0.35, seed: 9 + i }));
+      // 岩と石（形の違う 4 種）。色は大地の岩の色を明るめに
+      const rockCol = new THREE.Color(s.terrain.palette.rock).lerp(new THREE.Color('#b4afa6'), 0.6);
+      split(P.rocks ?? [], 4).forEach((list, i) => add(detailedRock(i + 1), rockCol, list, { roughness: 0.9, colorVar: 0.25, seed: 21 + i }));
       // 野の花：草の株の 4 つに 1 つ（冬は咲かない）
       if (s.terrain.season !== 'winter') {
         const fl = [];

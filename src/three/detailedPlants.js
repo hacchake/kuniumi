@@ -211,3 +211,35 @@ export function detailedFlowers(seed = 1) {
   }
   return leaves.geometry();
 }
+
+// 岩：細かい多面体を、大きなうねりと細かい凹凸でゆがめ、底を平らに（地面に埋まる）。くぼみは暗く、上面は少し苔むした色
+export function detailedRock(seed = 1) {
+  const rand = mulberry32(seed * 7331 + 17);
+  const g = new THREE.IcosahedronGeometry(0.5, 4);
+  const p = g.attributes.position;
+  // 方向ごとの凹凸：ランダムな方向の波を重ねる
+  const waves = Array.from({ length: 9 }, (_, k) => ({ d: randDir(rand), f: 2 + k * 1.6 + rand() * 2, a: 0.16 / (1 + k * 0.7), ph: rand() * 6.28 }));
+  const sx = 0.8 + rand() * 0.6, sy = 0.6 + rand() * 0.4, sz = 0.7 + rand() * 0.5;
+  const col = new Float32Array(p.count * 3);
+  const v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i);
+    const dir = v.clone().normalize();
+    let disp = 0;
+    for (const w of waves) disp += Math.sin(dir.dot(w.d) * w.f + w.ph) * w.a;
+    // 角張らせる：値を段に寄せる
+    const r = 0.5 * (1 + disp);
+    v.copy(dir).multiplyScalar(r);
+    v.set(v.x * sx, Math.max(-0.15, v.y * sy), v.z * sz);
+    p.setXYZ(i, v.x, v.y, v.z);
+    const cav = Math.max(0, Math.min(1, 0.6 + disp * 2.2)); // くぼみほど小さい
+    const moss = Math.max(0, dir.y - 0.5) * 0.6;
+    const k = 0.7 + 0.3 * cav;
+    col[i * 3] = k * (1 - moss * 0.35);
+    col[i * 3 + 1] = k * (1 + moss * 0.15);
+    col[i * 3 + 2] = k * (1 - moss * 0.5);
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.computeVertexNormals();
+  return g;
+}
