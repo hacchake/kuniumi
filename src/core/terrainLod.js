@@ -20,13 +20,13 @@ const N = 64; // 区画 1 枚あたりの分割数
 // place: { ox, oz, cx, cz, R } 書き出す座標の原点 (ox, oz) と、星の丸みの中心 (cx, cz)・半径 R（どれも世界座標）。
 //   数千 km の大地でも Float32 の精度を落とさないよう、原点を注視点へずらしてから丸みで曲げる
 // photo: 地表の衛星写真の画素 { data, width, height }（あれば色と木の広がりに使う）
-export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000, onProgress, vegetation, heightmapImage = null, place = null, photo = null } = {}) {
+export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000, onProgress, vegetation, heightmapImage = null, place = null, photo = null, refField = null } = {}) {
   const P = place ?? { ox: 0, oz: 0, cx: 0, cz: 0, R: 0 };
   const pcx = P.cx - P.ox, pcz = P.cz - P.oz;
   const pp = [0, 0, 0], pn = [0, 0, 0];
   const { size, heightScale, baseHeight } = terrain;
 
-  const surface = createTerrainSurface(terrain, heightmapImage, water?.enabled ? water.level : null);
+  const surface = createTerrainSurface(terrain, heightmapImage, water?.enabled ? water.level : null, refField);
   const { heightAt, wearAt } = surface;
 
   // ---- 四分木で区画を決める ----

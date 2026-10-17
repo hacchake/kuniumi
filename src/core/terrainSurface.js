@@ -14,9 +14,12 @@ const BASE = 513; // ノイズ地形の侵食と正規化の基準格子（リ�
 
 // heightmapImage: { data: Float32Array(0..1), width, height }（ハイトマップ地形のとき）
 // sea: 水面の高さ（水が無ければ null）。海面の近くでは細部の起伏を弱める
-export function createTerrainSurface(terrain, heightmapImage = null, sea = null) {
+// ref: { field, res }（リアルタイム表示の高さ場。侵食・山の丸み・手彫りまで入ったもの）。渡すと大きな形はそれに合わせ、
+// ここでは格子より細かい起伏だけを足す（一枚絵の地面がリアルタイム表示とずれて、カメラが浮いたり埋まったりしないように）
+export function createTerrainSurface(terrain, heightmapImage = null, sea = null, ref = null) {
   const { size, heightScale, baseHeight } = terrain;
   if (terrain.mode === 'heightmap' && heightmapImage) return heightmapSurface(terrain, heightmapImage, sea);
+  if (ref?.field && ref.res > 1) return refSurface(terrain, ref);
 
   const noise = terrain.noise;
   const base = generateNoiseFieldWithRange(noise, BASE);
@@ -37,6 +40,21 @@ export function createTerrainSurface(terrain, heightmapImage = null, sea = null)
   const deltaAt = editDelta(terrain, gh0, noise.round ?? 0);
   const gh = (u, v) => gh0(u, v) + deltaAt(u, v);
   return { heightAt, wearAt, coarse: coarseFrom(gh, BASE, terrain, wearAt) };
+}
+
+function refSurface(terrain, ref) {
+  const own = createTerrainSurface(terrain); // 細かい起伏を取り出すための、ノイズから作り直した地形
+  const { size, heightScale, baseHeight } = terrain;
+  const { field, res } = ref;
+  const cell = size / (res - 1);
+  const refH = (x, z) => baseHeight + sampleField(field, res, x / size + 0.5, z / size + 0.5) * heightScale;
+  const heightAt = (x, z, spacing) => {
+    // 格子 1.5 マスより細かい起伏だけ（ノイズの細かい段の差）を、リアルタイム表示の地形に足す
+    const fine = spacing < cell * 1.5 ? own.heightAt(x, z, spacing) - own.heightAt(x, z, cell * 1.5) : 0;
+    return refH(x, z) + fine;
+  };
+  const gh = (u, v) => sampleField(field, res, u, v);
+  return { heightAt, wearAt: own.wearAt, coarse: coarseFrom(gh, res, terrain, own.wearAt) };
 }
 
 function heightmapSurface(terrain, img, sea) {

@@ -55,6 +55,7 @@ export function createTerrainShader(opts) {
   const rockCol = [0, 0, 0];
   const rules = createVegetationRules(opts);
   P.forest = lin(palette.forest ?? '#1f3018');
+  const grassSoil = lin('#4a5a2c'); // 草むらの足元（草の葉と陰の混ざった色）
 
   // x, z（世界座標）を渡すと、森の所を森の色にする
   return function shade(H, slope, wv, jitter, col, x, z) {
@@ -79,7 +80,11 @@ export function createTerrainShader(opts) {
       mix(P.rock, smooth(0.004, 0.04, -wv) * 0.45);
     }
     // 森：木の密度ぶん、遠くから見た森の色（暗い緑）へ
-    if (x !== undefined) mix(P.forest, rules.forest(H, slope, wv, x, z) * 0.85);
+    if (x !== undefined) {
+      // 草むら：草の生える所は、すき間の地面も草と陰の暗い緑に（砂色が透けて見えないように）
+      mix(grassSoil, smooth(0.04, 0.3, rules.grass(H, slope, wv, x, z)) * 0.85);
+      mix(P.forest, rules.forest(H, slope, wv, x, z) * 0.85);
+    }
     // 岩肌：明るさにむらと地層の縞を付ける（一様な灰色だと作り物に見える）
     // 地層：周期の違う 2 つの縞を重ねて弱く（リアルタイム表示の terrainShadingGLSL と同じ）
     const sPh = H / Math.max(8, heightScale * 0.03) + jitter * 2.5;

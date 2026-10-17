@@ -13,7 +13,8 @@ import { toneMapToRGBA8 } from '../core/tonemap.js';
 import { sunIrradiance, discScaleFor } from '../core/skyModel.js';
 import { computeAtmosphere, renderMask } from './atmospherePass.js';
 import { atmosphereParams } from './atmosphereParams.js';
-import { coniferGeometry, broadleafGeometry, grassGeometry, fillInstances } from '../three/vegetationMeshes.js';
+import { fillInstances } from '../three/vegetationMeshes.js';
+import { detailedBroadleaf, detailedConifer, detailedGrass, detailedFlowers } from '../three/detailedPlants.js';
 import { planetRadius } from '../core/schema.js';
 import { curvePoint, DISC_RATIO, DISC_SEG } from '../core/curvature.js';
 import { buildSurroundMesh } from '../core/surroundMesh.js';
@@ -419,6 +420,8 @@ export class StillJob {
         maxTriangles,
         vegetation: s.vegetation,
         place: this.place,
+        // リアルタイム表示の高さ場（同じ地形のときだけ）。一枚絵の地面をそれに合わせる
+        refField: s.terrain.mode !== 'heightmap' && this.view.terrainService?.field ? { field: this.view.terrainService.field.slice(), res: this.view.terrainService.res } : null,
       });
     });
   }
@@ -475,7 +478,7 @@ export class StillJob {
     if (lightsTex) this.disposers.push(() => lightsTex.dispose());
     const terrainMesh = new THREE.Mesh(
       geo,
-      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: inlandWater ? 1 : 0.95, metalness: 0, map: innerPhoto, roughnessMap: inlandWater?.rough ?? null, emissiveMap: lightsTex, emissive: lightsTex ? new THREE.Color(1, 0.8, 0.55) : new THREE.Color(0), emissiveIntensity: lightsTex ? nf * 4 : 0 }),
+      new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 1, specularIntensity: inlandWater ? 1 : 0.15, metalness: 0, map: innerPhoto, roughnessMap: inlandWater?.rough ?? null, emissiveMap: lightsTex, emissive: lightsTex ? new THREE.Color(1, 0.8, 0.55) : new THREE.Color(0), emissiveIntensity: lightsTex ? nf * 4 : 0 }),
     );
     terrainMesh.name = 'Terrain';
     scene.add(terrainMesh);
@@ -489,7 +492,7 @@ export class StillJob {
       sg.setAttribute('color', new THREE.BufferAttribute(sr.colors, 3));
       sg.setAttribute('uv', new THREE.BufferAttribute(sr.uvs, 2));
       sg.setIndex(new THREE.BufferAttribute(sr.index, 1));
-      const smat = outerPhoto ? new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, map: outerPhoto }) : terrainMesh.material;
+      const smat = outerPhoto ? new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 1, specularIntensity: 0.15, metalness: 0, map: outerPhoto }) : terrainMesh.material;
       if (outerPhoto) this.disposers.push(() => smat.dispose());
       surroundMesh = new THREE.Mesh(sg, smat);
       surroundMesh.name = 'Surround';
@@ -594,21 +597,44 @@ export class StillJob {
       const P = terrain.lod.plants;
       const add = (geo, color, list, opts = {}) => {
         if (!list.length) return;
-        const mat = new THREE.MeshStandardMaterial({ color, roughness: opts.roughness ?? 0.85, metalness: 0, side: opts.side ?? THREE.FrontSide });
+        const mat = new THREE.MeshStandardMaterial({ color, roughness: opts.roughness ?? 0.85, metalness: 0, side: opts.side ?? THREE.FrontSide, vertexColors: !!geo.attributes.color });
         const mesh = new THREE.InstancedMesh(geo, mat, list.length / 5);
         fillInstances(mesh, list, opts.colorVar ?? 0, opts.seed ?? 1);
         scene.add(mesh);
         plants.push(mesh);
         this.disposers.push(() => (geo.dispose(), mat.dispose()));
       };
-      const con = coniferGeometry(), brd = broadleafGeometry();
-      const trunk = new THREE.Color('#3a2b20');
-      add(con.trunk, trunk, P.conifer);
-      add(con.crown, new THREE.Color(s.terrain.season === 'winter' ? '#3b4a42' : '#1b3317'), P.conifer, { colorVar: 0.35, seed: 3 });
-      add(brd.trunk, trunk, P.broadleaf);
-      add(brd.crown, new THREE.Color({ spring: '#4c7a26', autumn: '#9a4614', winter: '#4d4136' }[s.terrain.season] ?? '#2e4d1f'), P.broadleaf, { colorVar: 0.4, seed: 5 });
-      const grassCol = new THREE.Color(s.terrain.palette.low).lerp(new THREE.Color('#b7b05a'), 0.15);
-      add(grassGeometry(), grassCol, P.grass, { side: THREE.DoubleSide, roughness: 0.7, colorVar: 0.45, seed: 9 });
+      // 置き場所の一覧を、形の違う 3 本へ振り分ける（同じ木が並ばないように）
+      const split = (list, n) => {
+        const out = Array.from({ length: n }, () => []);
+        for (let k = 0; k < list.length; k += 5) {
+          const h = Math.abs(Math.sin(list[k] * 12.9898 + list[k + 2] * 78.233) * 43758.5453) % 1;
+          out[Math.min(n - 1, Math.floor(h * n))].push(list[k], list[k + 1], list[k + 2], list[k + 3], list[k + 4]);
+        }
+        return out;
+      };
+      const trunk = new THREE.Color('#4a3a2c');
+      const conCol = new THREE.Color(s.terrain.season === 'winter' ? '#33433a' : '#1d3519');
+      const brdCol = new THREE.Color({ spring: '#4f8028', autumn: '#a04c16', winter: '#4d4136' }[s.terrain.season] ?? '#325a22');
+      split(P.conifer, 3).forEach((list, i) => {
+        const g = detailedConifer(i + 1);
+        add(g.trunk, trunk, list);
+        add(g.crown, conCol, list, { side: THREE.DoubleSide, colorVar: 0.25, seed: 3 + i });
+      });
+      split(P.broadleaf, 3).forEach((list, i) => {
+        const g = detailedBroadleaf(i + 1);
+        add(g.trunk, trunk, list);
+        add(g.crown, brdCol, list, { side: THREE.DoubleSide, colorVar: 0.3, seed: 5 + i, roughness: 0.7 });
+      });
+      const grassCol = new THREE.Color(s.terrain.palette.low).lerp(new THREE.Color('#9fa84a'), 0.25);
+      const grassLists = split(P.grass, 3);
+      grassLists.forEach((list, i) => add(detailedGrass(i + 1), grassCol, list, { side: THREE.DoubleSide, roughness: 0.6, colorVar: 0.35, seed: 9 + i }));
+      // 野の花：草の株の 4 つに 1 つ（冬は咲かない）
+      if (s.terrain.season !== 'winter') {
+        const fl = [];
+        for (let k = 0; k < P.grass.length; k += 20) fl.push(P.grass[k], P.grass[k + 1], P.grass[k + 2], P.grass[k + 3], P.grass[k + 4]);
+        add(detailedFlowers(1), new THREE.Color(1, 1, 1), fl, { side: THREE.DoubleSide, roughness: 0.6, colorVar: 0.1, seed: 13 });
+      }
       this.stats.trees = (P.conifer.length + P.broadleaf.length) / 5;
       this.stats.grass = P.grass.length / 5;
     }

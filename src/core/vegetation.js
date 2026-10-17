@@ -96,7 +96,7 @@ export function createVegetationRules(ctx) {
 // heightAt(x, z): 足元の正確な高さ（細かい地形と同じ）
 // view: { position, target, fov, aspect }
 // 戻り値: { conifer: Float32Array(n*5), broadleaf: …, grass: … }  各要素 [x, y, z, 大きさ, 向き(rad)] と色ゆらぎ
-export function placeVegetation(rules, size, sample, heightAt, view, { maxTrees = 160_000, maxGrass = 60_000 } = {}) {
+export function placeVegetation(rules, size, sample, heightAt, view, { maxTrees = 160_000, maxGrass = 450_000 } = {}) {
   const veg = rules.veg;
   const rand = mulberry32(veg.seed + 4242);
   const C = view.position;
@@ -152,21 +152,30 @@ export function placeVegetation(rules, size, sample, heightAt, view, { maxTrees 
     const above = C[1] - ground;
     const radius = Math.min(260, Math.max(0, 200 - above * 1.2)); // 高い所から見下ろすときは置かない
     if (radius > 5) {
-      const cell = 0.9;
-      const n = Math.ceil(radius / cell);
+      // 足元ほど細かく：30 m までは 0.32 m に 1 株、90 m までは 0.8 m、その先は 2 m。近い帯から順に置くので、上限で削られるのは遠く
+      const bands = [
+        [0, 30, 0.32],
+        [30, 90, 0.6],
+        [90, radius, 2.0],
+      ];
       let count = 0;
-      for (let j = -n; j <= n && count < maxGrass; j++) {
-        for (let i = -n; i <= n && count < maxGrass; i++) {
-          const x = C[0] + (i + rand()) * cell, z = C[2] + (j + rand()) * cell;
-          const r1 = rand(), r2 = rand(), r3 = rand();
-          const d = Math.hypot(x - C[0], z - C[2]);
-          if (d > radius || Math.abs(x) > size / 2 || Math.abs(z) > size / 2) continue;
-          if (!inView(x, z, 2)) continue;
-          const s = sample(x, z);
-          // 遠いほど間引く（画面上の密度をそろえる）
-          if (r1 > rules.grass(s.h, s.slope, s.wv, x, z) * (1 - smooth(radius * 0.6, radius, d) * 0.7)) continue;
-          out.grass.push(x, heightAt(x, z) - 0.02, z, 0.35 + r2 * 0.45, r3 * Math.PI * 2);
-          count++;
+      for (const [r0, r1, cell] of bands) {
+        if (r0 >= radius) break;
+        const n = Math.ceil(Math.min(r1, radius) / cell);
+        for (let j = -n; j <= n && count < maxGrass; j++) {
+          for (let i = -n; i <= n && count < maxGrass; i++) {
+            const x = C[0] + (i + rand()) * cell, z = C[2] + (j + rand()) * cell;
+            const r1r = rand(), r2 = rand(), r3 = rand();
+            const d = Math.hypot(x - C[0], z - C[2]);
+            if (d < r0 || d > Math.min(r1, radius) || Math.abs(x) > size / 2 || Math.abs(z) > size / 2) continue;
+            if (!inView(x, z, 2)) continue;
+            const sm = sample(x, z);
+            // 草むらをすき間なく（生える確率を上げる）
+            const pg = rules.grass(sm.h, sm.slope, sm.wv, x, z);
+            if (r1r > Math.sqrt(pg) * (1 - smooth(radius * 0.6, radius, d) * 0.7)) continue;
+            out.grass.push(x, heightAt(x, z) - 0.02, z, 0.35 + r2 * 0.45, r3 * Math.PI * 2);
+            count++;
+          }
         }
       }
     }
