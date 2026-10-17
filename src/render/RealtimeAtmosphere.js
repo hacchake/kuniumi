@@ -35,6 +35,8 @@ export class RealtimeAtmosphere {
       maxDist: { value: 60000 },
       frame: { value: 0 },
       atmTexel: { value: new THREE.Vector2(1, 1) },
+      sunScreen: { value: new THREE.Vector3(0, 0, 0) }, // 太陽の画面上の位置（uv）と、カメラの前にあるか（1/0）
+      pixel: { value: new THREE.Vector2(1, 1) }, // 1 画素の uv の大きさ
       shadowMap: { value: null },
       shadowMatrix: { value: new THREE.Matrix4() },
       shadowBias: { value: 0 },
@@ -142,8 +144,11 @@ export class RealtimeAtmosphere {
         uniform sampler2D sceneTex, atmTex, depthTex;
         uniform vec2 atmTexel;
         uniform mat4 invProj, camWorld;
-        uniform float starI;
-        uniform vec3 nightSky;
+        uniform float starI, logDepthK;
+        uniform vec3 nightSky, sunDir, sunE, ambient, sunScreen;
+        uniform vec2 pixel;
+        // 視線方向の距離（対数の深度から）
+        float viewDist( vec2 uv ) { return exp2( texture2D( depthTex, uv ).r * logDepthK ) - 1.0; }
         float sHash( vec3 p ) { p = fract( p * 0.3183099 + 0.1 ); p *= 17.0; return fract( p.x * p.y * p.z * ( p.x + p.y + p.z ) ); }
         // 天の川：天球の大円（極 MW_POLE）に沿った淡い光の帯。銀河の中心（MW_CENTER）の側ほど明るく太い
         const vec3 MW_POLE = vec3( 0.42, 0.55, -0.72 );
@@ -194,7 +199,40 @@ export class RealtimeAtmosphere {
           vec4 a = texture2D( atmTex, vUv ) * 0.4
             + texture2D( atmTex, vUv + vec2( atmTexel.x, 0.0 ) ) * 0.15 + texture2D( atmTex, vUv - vec2( atmTexel.x, 0.0 ) ) * 0.15
             + texture2D( atmTex, vUv + vec2( 0.0, atmTexel.y ) ) * 0.15 + texture2D( atmTex, vUv - vec2( 0.0, atmTexel.y ) ) * 0.15;
-          vec3 col = c.rgb * a.a + a.rgb;
+          vec4 vv = invProj * vec4( vUv * 2.0 - 1.0, -1.0, 1.0 ); vv /= vv.w;
+          vec3 dirV = normalize( ( camWorld * vec4( vv.xyz, 0.0 ) ).xyz );
+          float dC = texture2D( depthTex, vUv ).r;
+          // くぼみの陰：周りの画素が手前にあるほど（谷・岩の割れ目・木の根もと）少し暗く。
+          // 遠すぎる差（物の輪郭の向こう側）は数えない
+          float ao = 1.0;
+          if ( dC < 0.99999 && c.a > 0.5 ) {
+            float w0 = viewDist( vUv ), occ = 0.0;
+            for ( int i = 0; i < 8; i ++ ) {
+              float ang = float( i ) * 0.7853982 + 0.39;
+              for ( int r = 0; r < 2; r ++ ) {
+                vec2 o = vec2( cos( ang ), sin( ang ) ) * ( r == 0 ? 5.0 : 14.0 ) * pixel;
+                float wn = viewDist( vUv + o );
+                float dd = ( w0 - wn ) / w0;
+                occ += clamp( dd * 6.0, 0.0, 1.0 ) * ( 1.0 - smoothstep( 0.06, 0.15, dd ) );
+              }
+            }
+            ao = 1.0 - clamp( occ / 16.0 * 1.3, 0.0, 0.45 );
+          }
+          vec3 col = c.rgb * ao * a.a + a.rgb;
+          // 天体：手前の空気越しに見える（空の明るさを重ね、空気の厚みのぶん暗く）。昼は淡く、夜はくっきり
+          if ( c.a < 0.5 ) col = c.rgb * exp( - 0.12 / max( 0.06, dirV.y + 0.04 ) ) + ambient * 0.3;
+          // 太陽のまぶしさ（光のにじみ）：太陽が見えている（山に隠れていない）ときだけ
+          if ( sunScreen.z > 0.5 ) {
+            float vis = 0.0;
+            for ( int i = 0; i < 5; i ++ ) {
+              vec2 o = i == 0 ? vec2( 0.0 ) : vec2( cos( float( i ) * 1.5708 ), sin( float( i ) * 1.5708 ) ) * 6.0 * pixel;
+              vis += texture2D( depthTex, sunScreen.xy + o ).r >= 0.99999 ? 0.2 : 0.0;
+            }
+            // 雲や霧に隠れているほど弱く（太陽の向きの光の通りやすさ）
+            vis *= texture2D( atmTex, sunScreen.xy ).a;
+            float cs = max( dot( dirV, sunDir ), 0.0 );
+            col += sunE * vis * ( 0.01 * pow( cs, 1500.0 ) + 0.0012 * pow( cs, 90.0 ) + 0.00015 * pow( cs, 8.0 ) );
+          }
           // 空が暗いとき（夜・宇宙）だけ星が見える
           if ( starI > 0.0 && texture2D( depthTex, vUv ).r >= 0.99999 && c.a > 0.5 ) {
             vec4 v = invProj * vec4( vUv * 2.0 - 1.0, -1.0, 1.0 ); v /= v.w;
@@ -277,6 +315,13 @@ export class RealtimeAtmosphere {
     u.camWorld.value.copy(camera.matrixWorld);
     u.camPos.value.copy(camera.position);
     u.frame.value = (u.frame.value + 1) % 64;
+    // 太陽の画面上の位置（まぶしさを出す・山に隠れているか見る）
+    const sv = u.sunDir.value.clone().transformDirection(camera.matrixWorldInverse);
+    if (sv.z < 0) {
+      const p = u.sunDir.value.clone().multiplyScalar(1e6).add(camera.position).project(camera);
+      u.sunScreen.value.set(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5, Math.abs(p.x) < 1.3 && Math.abs(p.y) < 1.3 ? 1 : 0);
+    } else u.sunScreen.value.z = 0;
+    u.pixel.value.set(1 / Math.max(1, this.size.x), 1 / Math.max(1, this.size.y));
 
     gl.setRenderTarget(this.sceneRT);
     gl.render(scene, camera);
