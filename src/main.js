@@ -324,6 +324,8 @@ function applyRoute() {
   routeProfile.show(view.walking);
   return route;
 }
+// 操作盤の「経路（GPX）」の読み込むボタン
+window.addEventListener('kuniumi:route', (e) => e.detail === 'open' && runAction('import-gpx'));
 // 地形の高さ場ができたら、経路を地面に置き直す
 view.onTerrainField = () => routeShown && applyRoute();
 // 経路・地形が変わったら描き直す（自動保存からの復元・シーンを開いたとき・元に戻すも）。地形の高さが入ってから

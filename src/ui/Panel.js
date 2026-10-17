@@ -101,6 +101,7 @@ const SECTIONS = [
       { path: 'terrain.photo', label: '衛星写真の色', type: 'toggle' },
       { path: 'terrain.labels', label: '地名を表示', type: 'toggle' },
       { path: 'terrain.buildings', label: '建物（3D）', type: 'toggle' },
+      { path: 'terrain.route', label: '経路（GPX）', type: 'route' },
     ],
   },
   {
@@ -256,7 +257,7 @@ export class Panel {
     this.sections = [];
     for (const sec of SECTIONS) this.#buildSection(sec);
     store.subscribe((s, changed, meta) => {
-      if (meta.source !== 'ui') this.sync(s);
+      if (meta.source !== 'ui') this.sync(s); // ボタンで変えたとき（'ui-btn'）は表示を合わせ直す
       else this.#syncState(s);
     });
     this.sync(store.get());
@@ -286,7 +287,7 @@ export class Panel {
     const changes = {};
     for (const f of sec.fields) {
       // 種と生成方法は作品の中身そのものなので戻さない
-      if (f.type === 'seed' || f.type === 'sizePreset' || f.type === 'sunTime' || f.type === 'weather' || f.type === 'cameraPath' || f.path === 'terrain.mode') continue;
+      if (f.type === 'seed' || f.type === 'sizePreset' || f.type === 'sunTime' || f.type === 'weather' || f.type === 'cameraPath' || f.type === 'route' || f.path === 'terrain.mode') continue;
       changes[f.path] = getIn(def, f.path);
     }
     this.store.patch(changes, { source: 'ui-reset' });
@@ -347,6 +348,39 @@ export class Panel {
     row.appendChild(name);
     const set = (v) => this.store.set(f.path, v, { source: 'ui' });
 
+    if (f.type === 'route') {
+      // 読み込んだ経路：名前と長さ、読み込む・消す（読み込みと長さの計算は main.js が受け持つ）
+      const box = document.createElement('div');
+      box.className = 'path-btns';
+      const info = document.createElement('span');
+      info.className = 'path-count route-info';
+      const btn = (label, title, fn) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = label;
+        b.title = title;
+        b.onclick = (e) => {
+          e.preventDefault();
+          fn();
+        };
+        box.appendChild(b);
+        return b;
+      };
+      btn(t('読み込む…'), t('GPX ファイルを選ぶ（その場所の地形が無ければ、経路のまわりを取り込む）'), () => window.dispatchEvent(new CustomEvent('kuniumi:route', { detail: 'open' })));
+      const clear = btn('✕', t('経路を消す'), () => this.store.set('terrain.route', null, { source: 'ui-btn' }));
+      box.appendChild(info);
+      row.appendChild(box);
+      this.bindings.push({
+        f,
+        read: (v) => {
+          info.textContent = v ? `${v.name ?? t('経路')}・${v.pts.length} ${t('点')}` : t('なし');
+          info.title = info.textContent;
+          clear.disabled = !v;
+        },
+        el: box,
+      });
+      return row;
+    }
     if (f.type === 'cameraPath') {
       // いまの視点を足す・再生・再生して録画・全部消す（再生と録画は main.js が受け持つ）
       const box = document.createElement('div');
@@ -367,11 +401,11 @@ export class Panel {
       };
       btn(t('＋ 視点'), t('いまの視点を道すじの最後に足す'), () => {
         const c = this.store.get().camera;
-        this.store.set('camera.path', [...(c.path ?? []), { position: [...c.position], target: [...c.target] }], { source: 'ui' });
+        this.store.set('camera.path', [...(c.path ?? []), { position: [...c.position], target: [...c.target] }], { source: 'ui-btn' });
       });
       btn('▶', t('道すじを再生する（画面を触ると止まる）'), () => window.dispatchEvent(new CustomEvent('kuniumi:path', { detail: 'play' })));
       btn('●', t('道すじを再生しながら録画して、終わったら動画を保存する'), () => window.dispatchEvent(new CustomEvent('kuniumi:path', { detail: 'record' })));
-      btn('✕', t('道すじを全部消す'), () => this.store.set('camera.path', [], { source: 'ui' }));
+      btn('✕', t('道すじを全部消す'), () => this.store.set('camera.path', [], { source: 'ui-btn' }));
       box.appendChild(count);
       row.appendChild(box);
       this.bindings.push({ f, read: (v) => (count.textContent = t('{n} か所', { n: v?.length ?? 0 })), el: box });

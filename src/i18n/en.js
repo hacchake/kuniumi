@@ -570,4 +570,10 @@ export const EN = {
   "最高": "Max",
   "経路のまわり（{km} km 四方）を地球から取り込んでいます…": "Importing the terrain around the route ({km} km square) from the Earth…",
   "経路のまわりの地形を取り込めませんでした": "Could not import the terrain around the route",
+  "経路（GPX）": "Route (GPX)",
+  "読み込む…": "Open…",
+  "GPX ファイルを選ぶ（その場所の地形が無ければ、経路のまわりを取り込む）": "Choose a GPX file (imports the area around the route if there is no terrain there)",
+  "経路を消す": "Remove the route",
+  "経路": "Route",
+  "点": "pts",
 };
