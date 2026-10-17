@@ -238,6 +238,8 @@ export class GpuTerrain {
               'float kJ = vTJit + tJitterFine( vTLocal, kPix );\n' +
               'if ( tHasPaint > 0.5 ) { vec2 kPn = texture2D( tPaint, clamp( tUV( vTLocal ), 0.0, 1.0 ) ).rg; tPaintAdd = kPn.r; tPaintCut = kPn.g; }\n' +
               'tStrataAA = fwidth( vTH );\n' +
+              // くぼみの度合い：高さ場の格子 1.5 マスの幅で、周り 4 点の平均と比べる（一枚絵と同じ）
+              '{ float kCe = tSize / ( tRes - 1.0 ) * 1.5; float kH0 = tCoarseH( vTLocal ); tCurv = ( ( tCoarseH( vTLocal + vec2( kCe, 0.0 ) ) + tCoarseH( vTLocal - vec2( kCe, 0.0 ) ) + tCoarseH( vTLocal + vec2( 0.0, kCe ) ) + tCoarseH( vTLocal - vec2( 0.0, kCe ) ) ) * 0.25 - kH0 ) / kCe; tSnowN = tValueNoise( vTLocal, 800.0, 591 ) * 0.6 + tValueNoise( vTLocal, 260.0, 592 ) * 0.4 - 0.5; }\n' +
               'vec3 kTC = terrainColor( vTH, length( kG0 ), vTWear, kJ, vTClump );\n' +
               // 岩肌の色むら（凹凸と同じ模様で、くぼみを少し暗く）
               'float kRW = smoothstep( tRockSlope * 0.55, tRockSlope * 1.1, length( kG0 ) );\n' +

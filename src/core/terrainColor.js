@@ -108,8 +108,12 @@ export function createTerrainShader(opts) {
       col[2] *= 1 + (g - 1) * t;
     }
     // 雪（急斜面には積もりにくい）。ただし岩場でも、くぼみ（沢筋・ルンゼ）や削られた谷筋には吹きだまって残る
-    // 沢筋（くぼみ）では雪が雪線より下まで降りてくる
-    const snowAlt = smooth(sl - 0.04, sl + 0.06, alt + jitter * 0.08 + Math.max(0, Math.min(0.3, curv)) * 0.5);
+    // 沢筋（くぼみ）では雪が雪線より下まで降りてくる。境目の幅・ゆらぎ・沢筋で下がる量は、起伏が小さい地形に大きな山を
+    // 盛ったときにも数百 m の規模になるよう、少なくとも 1500 m の起伏とみなして決める
+    const sk = Math.max(1, 1500 / Math.max(1, top - sea));
+    // 雪線そのものも数百 m の斑で波打たせる（一直線の境目にしない）
+    const snowN = x !== undefined ? valueNoise(x / 800, z / 800, 591) * 0.6 + valueNoise(x / 260, z / 260, 592) * 0.4 - 0.5 : 0;
+    const snowAlt = smooth(sl - 0.04 * sk, sl + 0.06 * sk, alt + (jitter * 0.08 + snowN * 0.14 + Math.max(0, Math.min(0.3, curv)) * 0.8) * sk);
     const lodge = Math.max(1 - smooth(rs * 1.1, rs * 1.9, slope), smooth(0.03, 0.12, curv + jitter * 0.05) * (1 - smooth(rs * 2.2, rs * 3.2, slope)), smooth(0.006, 0.03, -wv) * 0.8);
     mix(P.snow, snowAlt * lodge);
     // 水際の砂浜と水中

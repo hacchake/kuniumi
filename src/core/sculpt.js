@@ -35,7 +35,8 @@ export function applySculpt(field, res, terrain) {
         if (w <= 0) continue;
         const k = j * res + i;
         if (s.cone != null) {
-          field[k] += (s.cone / hs) * coneProfile(Math.sqrt(x * x + z * z) / s.r);
+          const d = Math.sqrt(x * x + z * z) / s.r;
+          field[k] += (s.cone / hs) * (coneProfile(d) - coneGullies(x, z, d));
           continue;
         }
         if (flat != null) field[k] += (flat - field[k]) * w * (s.k ?? 0.5);
@@ -121,6 +122,26 @@ export function roundPeaks(field, res, size, amount) {
     if (over > 0) field[k] -= over * amount * 0.85;
   }
   return field;
+}
+
+// 富士山形の山の放射状の沢（中腹に刻まれた谷。山頂付近と裾野では消える）。円錐の高さに対する深さ（0..）
+// 間隔の違う 3 組の谷を、半径方向に少し蛇行させて重ねる（等間隔に見えないように）
+export function coneGullies(x, z, d) {
+  if (d >= 1 || d < 0.05) return 0;
+  const w = smoothstep01(0.06, 0.22, d) * (1 - smoothstep01(0.5, 0.95, d));
+  if (w <= 0) return 0;
+  const a = Math.atan2(z, x);
+  let g = 0;
+  for (const [N, amp, ph] of [[18, 1, 0.4], [29, 0.6, 1.9], [11, 0.7, 3.1]]) {
+    const wob = 0.9 * Math.sin(d * 13 + ph * 2.3) + 0.5 * Math.sin(d * 29 + ph);
+    const s = Math.abs(Math.sin(0.5 * N * a + wob + ph));
+    g += Math.pow(1 - s, 3) * amp;
+  }
+  return 0.045 * w * g;
+}
+function smoothstep01(a, b, x) {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
 }
 
 // 富士山形の山の高さの形（0..1）：d = 中心からの距離 / 半径。裾野は広く凹んだ斜面、頂に浅い火口

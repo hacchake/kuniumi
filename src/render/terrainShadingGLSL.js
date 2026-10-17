@@ -97,6 +97,10 @@ export const TERRAIN_SHADING_GLSL = /* glsl */ `
     float n = mix( 0.5, tValueNoise( xz, 256.0, s ), w1 ) * 0.7 + mix( 0.5, tValueNoise( xz, 64.0, s + 1 ), w2 ) * 0.3;
     return tSmooth( 0.4, 0.62, n );
   }
+  // くぼみ(+)・出っ張り(−)の度合い（描く側が高さ場から入れる。core/terrainColor.js の curv と同じ）
+  float tCurv = 0.0;
+  // 雪線を波打たせる斑（−0.5..0.5。描く側が入れる）
+  float tSnowN = 0.0;
   // 地層の縞の細かさ（1 画素あたりの標高の変化。描く側が fwidth から入れる。0 なら縞を消さない）
   float tStrataAA = 0.0;
   // 手で植えた・伐った量（森の筆。描く側がその点のマスクから入れる）
@@ -130,7 +134,13 @@ export const TERRAIN_SHADING_GLSL = /* glsl */ `
     float tone = max( 0.35, 1.0 + jitter * 0.9 + strata );
     vec3 rockCol = tRock * tone * vec3( 1.0 + strata * 0.4, 1.0, 1.0 - strata * 0.3 );
     col = mix( col, rockCol, tSmooth( tRockSlope * 0.7, tRockSlope * 1.25, slope + jitter * 0.15 ) );
-    col = mix( col, tSnow, tSmooth( tSnowLine - 0.04, tSnowLine + 0.06, alt + jitter * 0.08 ) * ( 1.0 - tSmooth( tRockSlope * 1.1, tRockSlope * 1.9, slope ) ) );
+    // 雪：くぼみ（沢筋）では雪線より下まで降り、急な岩場でもくぼみには残る（core/terrainColor.js と同じ式）
+    float sk = max( 1.0, 1500.0 / max( 1.0, tTop - tSea ) );
+    float snowAlt = tSmooth( tSnowLine - 0.04 * sk, tSnowLine + 0.06 * sk, alt + ( jitter * 0.08 + tSnowN * 0.14 + clamp( tCurv, 0.0, 0.3 ) * 0.8 ) * sk );
+    float lodge = max( max( 1.0 - tSmooth( tRockSlope * 1.1, tRockSlope * 1.9, slope ),
+      tSmooth( 0.03, 0.12, tCurv + jitter * 0.05 ) * ( 1.0 - tSmooth( tRockSlope * 2.2, tRockSlope * 3.2, slope ) ) ),
+      tSmooth( 0.006, 0.03, - wv ) * 0.8 );
+    col = mix( col, tSnow, snowAlt * lodge );
     if ( tWater > 0.5 ) {
       float above = H - tSea;
       col = mix( col, tShore, ( 1.0 - tSmooth( tShoreBand * 0.5, tShoreBand * 1.6, above + jitter * tShoreBand ) ) * ( 1.0 - tSmooth( 0.4, 0.9, slope ) ) );
