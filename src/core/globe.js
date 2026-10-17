@@ -20,6 +20,14 @@ export const IMAGERY_NEAR_URL = 'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudles
 export const IMAGERY_RECENT_URL = 'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2023_3857/default/g/{z}/{y}/{x}.jpg';
 export const IMAGERY_RECENT_ATTRIBUTION =
   'NASA Blue Marble Next Generation（NASA GIBS）、Sentinel-2 cloudless 2023 – https://s2maps.eu by EOX IT Services GmbH（Contains modified Copernicus Sentinel data 2023、CC BY-NC-SA 4.0）';
+// 取り込み画面で「雲の少ない新しい衛星写真」を選んでいるか（地球モードの地表もそれに合わせる）
+export function prefersRecentPhoto() {
+  try {
+    return localStorage.getItem('kuniumi.photo.recent') === '1';
+  } catch {
+    return false;
+  }
+}
 export const IMAGERY_ATTRIBUTION =
   'NASA Blue Marble Next Generation（NASA GIBS）、Sentinel-2 cloudless – https://s2maps.eu by EOX IT Services GmbH（Contains modified Copernicus Sentinel data 2016）';
 // 夜の街の明かり：NASA Black Marble（VIIRS、2016 年。GIBS で公開、パブリックドメイン）

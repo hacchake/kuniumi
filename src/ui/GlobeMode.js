@@ -1,6 +1,6 @@
 import { t } from '../i18n/index.js';
 import { ELEVATION_ATTRIBUTION } from '../core/geo.js';
-import { importSizeFor, IMAGERY_ATTRIBUTION, LIGHTS_ATTRIBUTION } from '../core/globe.js';
+import { importSizeFor, IMAGERY_ATTRIBUTION, IMAGERY_RECENT_ATTRIBUTION, LIGHTS_ATTRIBUTION, prefersRecentPhoto } from '../core/globe.js';
 
 // 地球モードの画面：地球全体を眺め、地名で飛び、気に入った所を景観として取り込む。
 // 描く本体（GlobeRenderer）は初めて開いたときに読み込む。視点は自動保存（シーンには入れない：実在の地球を眺める道具なので）
@@ -126,7 +126,7 @@ export class GlobeMode {
       </div>
       <div class="globe-info"></div>
       <div class="globe-hint">${matchMedia('(pointer: coarse)').matches ? t('1 本指で移動・2 本指でつまんで寄る／ひねって向き／上下で傾き・2 回たたいてそこへ寄る') : t('ドラッグで移動・ホイールで寄る（カーソルの先へ）・右ドラッグで向きと傾き・ダブルクリックでそこへ寄る・W/A/S/D・Q/E・R/F')}</div>
-      <div class="globe-credit">${t('標高')}: ${ELEVATION_ATTRIBUTION} ・ ${t('地表の色')}: ${IMAGERY_ATTRIBUTION} ・ ${t('夜の明かり')}: ${LIGHTS_ATTRIBUTION} ・ ${t('地名')}: © OpenStreetMap</div>`;
+      <div class="globe-credit">${t('標高')}: ${ELEVATION_ATTRIBUTION} ・ ${t('地表の色')}: ${prefersRecentPhoto() ? IMAGERY_RECENT_ATTRIBUTION : IMAGERY_ATTRIBUTION} ・ ${t('夜の明かり')}: ${LIGHTS_ATTRIBUTION} ・ ${t('地名')}: © OpenStreetMap</div>`;
     this.stage.appendChild(el);
     this.el = el;
     this.info = el.querySelector('.globe-info');

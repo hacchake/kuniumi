@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import {
   GLOBE_R, GLOBE_MAX_ZOOM, GRID, MERC_MAX_LAT, ecef, toLatLon, enu, tileLatLon, tileInfo, tileBounds,
-  behindHorizon, orbitCamera, subsolarPoint, gridAt, locateTile, IMAGERY_MAX_ZOOM, LIGHTS_MAX_ZOOM, imageryUrl, lightsUrl, ancestorXf,
+  behindHorizon, orbitCamera, subsolarPoint, gridAt, locateTile, IMAGERY_MAX_ZOOM, LIGHTS_MAX_ZOOM, imageryUrl, lightsUrl, ancestorXf, prefersRecentPhoto,
 } from '../core/globe.js';
 import { sunDirection } from '../core/sun.js';
 import { GLOBE_ATMO_GLSL, GLOBE_SURFACE_GLSL, GLOBE_CLOUD_GLSL } from './globeGLSL.js';
@@ -42,6 +42,9 @@ export class GlobeRenderer {
     this.view = { lat: 30, lon: 135, range: 2.2e7, heading: 0, tilt: 0 };
     this.targetH = 0;
     this.exag = 1; // 高さの誇張
+    // 地表の写真：取り込み画面で新しい版を選んでいれば 2023 年版（作ったときに決める。途中で混ざらないように）
+    this.recentPhoto = prefersRecentPhoto();
+    this.imgUrl = (a, x, y) => imageryUrl(a, x, y, this.recentPhoto);
     this.sunMode = 'follow'; // 'follow' = 見ている所の時刻はシーンの太陽、'real' = 実際の日時、'lapse' = いまから早送り（1 日を 40 秒で）
     this.sceneSun = { elevation: 40, azimuth: 150 };
     this.camEcef = [0, 0, GLOBE_R * 3];
@@ -323,7 +326,7 @@ export class GlobeRenderer {
   // まだ届いていなければ、届いているいちばん細かい祖先の写真で代える
   #bindImagery(t) {
     const u = t.mesh.material.uniforms;
-    if (this.shared.imgOn.value) this.#bindLayer(t, 'c', IMAGERY_MAX_ZOOM, imageryUrl, u.img, u.imgXf, u.imgHas);
+    if (this.shared.imgOn.value) this.#bindLayer(t, 'c', IMAGERY_MAX_ZOOM, this.imgUrl, u.img, u.imgXf, u.imgHas);
     // 街の明かりは夜の側のタイルだけ取り寄せる
     const c = t.center, r = Math.hypot(...c), s = this.shared.sunDir.value;
     const night = (c[0] * s.x + c[1] * s.y + c[2] * s.z) / r < 0.25;
