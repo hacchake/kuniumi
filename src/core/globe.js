@@ -16,17 +16,24 @@ export const IMAGERY_MAX_ZOOM = 14;
 export const IMAGERY_FAR_MAX_ZOOM = 7;
 export const IMAGERY_FAR_URL = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/BlueMarble_NextGeneration/default/GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpeg';
 export const IMAGERY_NEAR_URL = 'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless_3857/default/g/{z}/{y}/{x}.jpg';
-// 雲の少ない新しい版（2023 年）。ライセンスは CC BY-NC-SA 4.0（非商用・継承）なので、選んだときだけ使う
+// 雲の少ない新しい版（2023 年、既定）。ライセンスは CC BY-NC-SA 4.0（非商用・継承）
 export const IMAGERY_RECENT_URL = 'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2023_3857/default/g/{z}/{y}/{x}.jpg';
 export const IMAGERY_RECENT_ATTRIBUTION =
   'NASA Blue Marble Next Generation（NASA GIBS）、Sentinel-2 cloudless 2023 – https://s2maps.eu by EOX IT Services GmbH（Contains modified Copernicus Sentinel data 2023、CC BY-NC-SA 4.0）';
-// 取り込み画面で「雲の少ない新しい衛星写真」を選んでいるか（地球モードの地表もそれに合わせる）
+// 衛星写真の年：既定は雲の少ない 2023 年版。取り込み画面で「古い衛星写真（2016 年）」を選んだときだけ 2016 年版
+// （地球モードの地表もそれに合わせる）。選んだ年は kuniumi.photo.year に覚える
+export const PHOTO_YEAR_KEY = 'kuniumi.photo.year';
 export function prefersRecentPhoto() {
   try {
-    return localStorage.getItem('kuniumi.photo.recent') === '1';
+    return localStorage.getItem(PHOTO_YEAR_KEY) !== '2016';
   } catch {
-    return false;
+    return true;
   }
+}
+export function setPhotoYear(year) {
+  try {
+    localStorage.setItem(PHOTO_YEAR_KEY, String(year));
+  } catch {}
 }
 export const IMAGERY_ATTRIBUTION =
   'NASA Blue Marble Next Generation（NASA GIBS）、Sentinel-2 cloudless – https://s2maps.eu by EOX IT Services GmbH（Contains modified Copernicus Sentinel data 2016）';

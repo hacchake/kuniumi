@@ -2,7 +2,7 @@ import { t } from '../i18n/index.js';
 import { GEO_PRESETS, ELEVATION_ATTRIBUTION, EARTH_R, aeqdInverse, sizeFromBBox, chooseZoom, tilesFor, fillSeaFloor, featherToSurround } from '../core/geo.js';
 import { fieldToHeightmap } from '../io/heightmap.js';
 import { SIZE_MAX } from '../core/schema.js';
-import { IMAGERY_ATTRIBUTION, IMAGERY_RECENT_ATTRIBUTION } from '../core/globe.js';
+import { IMAGERY_ATTRIBUTION, IMAGERY_RECENT_ATTRIBUTION, prefersRecentPhoto, setPhotoYear } from '../core/globe.js';
 import { decodePhoto, photoWater } from '../io/photo.js';
 import { fetchOsmWater, rasterizeOsmWater, maskToDataUrl, labelsFrom, OSM_MAX_SIZE, OSM_ATTRIBUTION } from '../core/osmWater.js';
 
@@ -239,7 +239,7 @@ export class GeoDialog {
               <option value="2049">2049 × 2049</option>
               <option value="4097">4097 × 4097（大陸向け・重い）</option>
             </select></label>
-            <label class="geo-row geo-check" title="Sentinel-2 cloudless の 2023 年版（雲がほとんど無い）。ライセンスが CC BY-NC-SA 4.0（非商用・継承）になる。外すと 2016 年版（CC BY 4.0、ところどころ雲が残る）"><input type="checkbox" class="geo-recent" /> <span>雲の少ない新しい衛星写真（2023 年・非商用ライセンス）</span></label>
+            <label class="geo-row geo-check" title="既定は Sentinel-2 cloudless の 2023 年版（雲がほとんど無い。CC BY-NC-SA 4.0：非商用・継承）。印をつけると 2016 年版（CC BY 4.0：商用でも使える。ところどころ雲が残る）"><input type="checkbox" class="geo-old" /> <span>古い衛星写真（2016 年・商用でも使えるライセンス）</span></label>
             <div class="geo-info"></div>
             <div class="geo-actions"><button type="button" class="geo-import primary">取り込む</button></div>
             <div class="geo-progress" hidden><div class="geo-bar"><i></i></div><span class="geo-ptext"></span></div>
@@ -300,17 +300,13 @@ export class GeoDialog {
       }
     });
     this.importBtn.onclick = () => this.importRegion({ ...this.region }, this.res, this.name);
-    // 衛星写真の年（選んだものは覚えておく）
-    const recent = $('.geo-recent');
-    try {
-      this.recentPhoto = localStorage.getItem('kuniumi.photo.recent') === '1';
-    } catch {}
-    recent.checked = !!this.recentPhoto;
-    recent.onchange = () => {
-      this.recentPhoto = recent.checked;
-      try {
-        localStorage.setItem('kuniumi.photo.recent', recent.checked ? '1' : '0');
-      } catch {}
+    // 衛星写真の年（既定は 2023 年版。選んだものは覚えておく）
+    const old = $('.geo-old');
+    this.recentPhoto = prefersRecentPhoto();
+    old.checked = !this.recentPhoto;
+    old.onchange = () => {
+      this.recentPhoto = !old.checked;
+      setPhotoYear(old.checked ? 2016 : 2023);
     };
     this.#mapControls();
   }
