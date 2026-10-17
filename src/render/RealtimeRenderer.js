@@ -22,6 +22,7 @@ import { Moon } from './Moon.js';
 import { Footprints } from './Footprints.js';
 import { Boat } from './Boat.js';
 import { Route } from './Route.js';
+import { SculptTool } from './SculptTool.js';
 import { Wake } from './Wake.js';
 import { Aurora } from './Aurora.js';
 import { ShootingStars } from './ShootingStars.js';
@@ -285,9 +286,9 @@ void main() {`)
 
   // 画面中央の先にある地面（地形か水面）の点。無ければ視線の先 size*6 の点
   // offset を渡すと、視線を平行にずらした先で探す
-  groundPoint(offset = null) {
+  groundPoint(offset = null, ndc = null) {
     const ray = new THREE.Raycaster();
-    ray.setFromCamera(new THREE.Vector2(0, 0), this.camera);
+    ray.setFromCamera(ndc ?? new THREE.Vector2(0, 0), this.camera);
     if (offset) ray.ray.origin.add(offset);
     const s = this.store.get();
     const { origin, direction } = ray.ray;
@@ -479,6 +480,22 @@ void main() {`)
       this.selection?.set('selected', hit ? hit.object.userData.kuniumiId : null);
     });
     this.selection?.subscribe(() => this.#attachGizmo());
+    // 手彫りの筆（操作盤の「手彫り」で選ぶ）
+    this.sculpt = new SculptTool({
+      canvas,
+      store: this.store,
+      controls: this.controls,
+      camera: this.camera,
+      world: this.world,
+      pick: (ndc) => {
+        // 地形に当たったときだけ（空や遠くの点では盛らない）
+        const s = this.store.get();
+        const ray = new THREE.Raycaster();
+        ray.setFromCamera(ndc, this.camera);
+        return this.gpuTerrain.raycast(ray.ray.origin, ray.ray.direction, Math.max(s.terrain.size * 3, 100000)) ?? null;
+      },
+      groundAt: (x, z) => this.gpuTerrain.groundAt(x, z),
+    });
   }
 
   #attachGizmo() {
@@ -1057,7 +1074,7 @@ void main() {`)
       };
       const hm = t.mode === 'heightmap' ? t.heightmap : null;
       // 取り込んだ地形の地名に、読み込んだ経路の地点（GPX のウェイポイント）を足す
-      if (this.lblSrc !== hm?.labels || this.lblWpt !== this.routeWpts) {
+      if (!this.lblMerged || this.lblSrc !== hm?.labels || this.lblWpt !== this.routeWpts) {
         this.lblSrc = hm?.labels;
         this.lblWpt = this.routeWpts;
         this.lblMerged = [...(hm?.labels ?? []), ...(this.routeWpts ?? [])];

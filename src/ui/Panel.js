@@ -47,6 +47,7 @@ const HINTS = {
   'vegetation.grass': '一枚絵で、カメラが地面に近いときに足元へ草を置く',
   'sun.elevation': '地平線からの太陽の高さ。マイナスは日没後',
   'atmosphere.aurora': '夜の北の空（南半球の地形では南の空）に、ゆらめくオーロラを出す強さ。雲が多いと隠れる（リアルタイム表示）',
+  'terrain.sculpt': '地形を手で盛る・削る・ならす筆。選んでから景観を左ドラッグ（見回しは右ドラッグ）。元に戻すはドラッグ 1 回ずつ。筆の跡はシーンに入り、地形の作り直しでも残る',
   'render.still.bokeh': '被写界深度。大きいほどピントの外（手前・奥）が大きくぼける（ミニチュア写真のような見え方にも）。0 はぼかさない。一枚絵だけ',
   'render.still.focus': 'ピントを合わせる距離。0 にすると、カメラの注視点（見ている所）に合わせる',
   'sun.moonAge': '月の満ち欠け（0 = 新月、約 7 = 上弦、約 15 = 満月、約 22 = 下弦）。月の形と空の位置、夜の明るさが変わる。「日時から」で合わせるとその日の月齢になる',
@@ -92,6 +93,7 @@ const SECTIONS = [
       { path: 'terrain.baseHeight', label: '基準の標高', min: -12000, max: 5000, step: 10, unit: 'm' },
       { path: 'terrain.resolution', label: '解像度', type: 'select', options: RESOLUTIONS.map((r) => [r, `${r} × ${r}`]), number: true },
       { path: 'terrain.detail', label: '細部の起伏', min: 0, max: 3, step: 0.05 },
+      { path: 'terrain.sculpt', label: '手彫り', type: 'sculpt' },
     ],
   },
   {
@@ -291,7 +293,7 @@ export class Panel {
     const changes = {};
     for (const f of sec.fields) {
       // 種と生成方法は作品の中身そのものなので戻さない
-      if (f.type === 'seed' || f.type === 'sizePreset' || f.type === 'sunTime' || f.type === 'weather' || f.type === 'cameraPath' || f.type === 'route' || f.path === 'terrain.mode') continue;
+      if (f.type === 'seed' || f.type === 'sizePreset' || f.type === 'sunTime' || f.type === 'weather' || f.type === 'cameraPath' || f.type === 'route' || f.type === 'sculpt' || f.path === 'terrain.mode') continue;
       changes[f.path] = getIn(def, f.path);
     }
     this.store.patch(changes, { source: 'ui-reset' });
@@ -352,6 +354,71 @@ export class Panel {
     row.appendChild(name);
     const set = (v) => this.store.set(f.path, v, { source: 'ui' });
 
+    if (f.type === 'sculpt') {
+      // 手彫りの筆：盛る・削る・ならすを選ぶ（もう一度押すと筆をしまう）、筆の半径と強さ、全部戻す
+      const box = document.createElement('div');
+      box.className = 'path-btns sculpt-btns';
+      const st = { mode: null, radius: 150, strength: 8 };
+      const send = () => window.dispatchEvent(new CustomEvent('kuniumi:sculpt', { detail: { ...st } }));
+      const modes = [
+        ['raise', t('盛る'), t('左ドラッグで地面を盛る（見回しは右ドラッグ）')],
+        ['lower', t('削る'), t('左ドラッグで地面を削る（見回しは右ドラッグ）')],
+        ['flat', t('ならす'), t('左ドラッグで、押した所の高さへならす（見回しは右ドラッグ）')],
+      ];
+      const btns = modes.map(([m, label, title]) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = label;
+        b.title = title;
+        b.onclick = (e) => {
+          e.preventDefault();
+          st.mode = st.mode === m ? null : m;
+          for (const x of btns) x.classList.toggle('active', x === b && !!st.mode);
+          send();
+        };
+        box.appendChild(b);
+        return b;
+      });
+      const num = (label, key, min, max, step, title) => {
+        const l = document.createElement('label');
+        l.className = 'sculpt-num';
+        l.title = title;
+        l.textContent = label;
+        const i = document.createElement('input');
+        i.type = 'number';
+        Object.assign(i, { min, max, step, value: st[key] });
+        i.onchange = () => {
+          st[key] = Math.min(max, Math.max(min, Number(i.value) || st[key]));
+          i.value = st[key];
+          send();
+        };
+        l.appendChild(i);
+        box.appendChild(l);
+      };
+      num(t('半径'), 'radius', 5, 20000, 5, t('筆の半径 (m)'));
+      num(t('強さ'), 'strength', 0.5, 2000, 0.5, t('ひと押しで盛る・削る高さ (m)'));
+      const count = document.createElement('span');
+      count.className = 'path-count';
+      const clear = document.createElement('button');
+      clear.type = 'button';
+      clear.textContent = '✕';
+      clear.title = t('手彫りを全部戻す');
+      clear.onclick = (e) => {
+        e.preventDefault();
+        this.store.set('terrain.sculpt', [], { source: 'ui-btn' });
+      };
+      box.append(clear, count);
+      row.appendChild(box);
+      this.bindings.push({
+        f,
+        read: (v) => {
+          count.textContent = t('{n} 筆', { n: v?.length ?? 0 });
+          clear.disabled = !v?.length;
+        },
+        el: box,
+      });
+      return row;
+    }
     if (f.type === 'route') {
       // 読み込んだ経路：名前と長さ、読み込む・消す（読み込みと長さの計算は main.js が受け持つ）
       const box = document.createElement('div');

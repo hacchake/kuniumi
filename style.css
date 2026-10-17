@@ -502,3 +502,9 @@ body.walking #create { display: none; }
 /* 取り込み画面のチェック（衛星写真の年） */
 .geo-check { display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
 .geo-check input { margin: 0; }
+
+/* 手彫りの筆 */
+.sculpt-btns { flex-wrap: wrap; row-gap: 4px; }
+.sculpt-btns button.active { background: rgba(212, 175, 95, 0.45); border-color: #d4af5f; }
+.sculpt-num { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; opacity: 0.85; }
+.sculpt-num input { width: 56px; }

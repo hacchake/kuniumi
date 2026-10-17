@@ -252,3 +252,23 @@ describe('EXR', () => {
     expect(px(2, 1)).toEqual([2.5, 2, 15]);
   });
 });
+
+describe('手彫り', () => {
+  it('盛る・削る・ならすが、世界座標の所に効く', async () => {
+    const { applySculpt, sculptKey } = await import('../src/core/sculpt.js');
+    const res = 101, size = 1000;
+    const terrain = { size, heightScale: 100, baseHeight: 0, sculpt: [{ x: 0, z: 0, r: 100, h: 50 }] };
+    const f = applySculpt(new Float32Array(res * res), res, terrain);
+    expect(f[50 * res + 50]).toBeCloseTo(0.5, 5); // 中心で +50 m
+    expect(f[50 * res + 62]).toBe(0); // 半径の外（120 m 東）は変わらない
+    expect(f[50 * res + 55]).toBeGreaterThan(0.2); // 50 m 東は途中
+    // 東へ 200 m・北へ 100 m（z = -100）を削る
+    const g = applySculpt(new Float32Array(res * res).fill(0.5), res, { ...terrain, sculpt: [{ x: 200, z: -100, r: 60, h: -20 }] });
+    expect(g[40 * res + 70]).toBeCloseTo(0.3, 5);
+    // ならす：高さ 30 m へ全部寄せる
+    const n = applySculpt(new Float32Array(res * res).fill(0.9), res, { ...terrain, sculpt: [{ x: 0, z: 0, r: 80, flat: 30, k: 1 }] });
+    expect(n[50 * res + 50]).toBeCloseTo(0.3, 5);
+    expect(sculptKey([])).toBe('');
+    expect(sculptKey(terrain.sculpt)).not.toBe(sculptKey([{ x: 0, z: 0, r: 100, h: 51 }]));
+  });
+});

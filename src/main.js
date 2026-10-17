@@ -326,6 +326,8 @@ function applyRoute() {
   routeProfile.show(view.walking);
   return route;
 }
+// 操作盤の「手彫り」の筆
+window.addEventListener('kuniumi:sculpt', (e) => view.sculpt?.set(e.detail.mode, e.detail));
 // 操作盤の「経路（GPX）」の読み込むボタン
 window.addEventListener('kuniumi:route', (e) => e.detail === 'open' && runAction('import-gpx'));
 // 地形の高さ場ができたら、経路を地面に置き直す
@@ -370,7 +372,7 @@ const geo = new GeoDialog({
         'water.level': 0,
         'planet.curvature': true,
         'planet.radius': EARTH_RADIUS,
-        ...(restore ? {} : { 'meta.name': name, 'terrain.route': null }), // 別の所を取り込んだら古い経路は消す
+        ...(restore ? {} : { 'meta.name': name, 'terrain.route': null, 'terrain.sculpt': [] }), // 別の所を取り込んだら古い経路・手彫りは消す
       },
       { source: 'io' },
     );
