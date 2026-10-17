@@ -65,4 +65,28 @@ export class Labels {
       it.d.hidden = !show;
     }
   }
+
+  // 画面に出ている地名を、保存する画像にも描き込む（ctx の画素 = 画面の CSS 画素 × scale）
+  drawTo(ctx, scale) {
+    if (this.el.hidden) return;
+    for (const it of this.items) {
+      if (it.d.hidden) continue;
+      const m = /translate\(([-\d.]+)px, ([-\d.]+)px\)/.exec(it.d.style.transform);
+      if (!m) continue;
+      const cs = getComputedStyle(it.d);
+      const size = parseFloat(cs.fontSize) * scale;
+      ctx.save();
+      ctx.globalAlpha = parseFloat(it.d.style.opacity || '1');
+      ctx.font = `${cs.fontWeight} ${size}px ${cs.fontFamily}`;
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = cs.color;
+      ctx.shadowColor = '#000';
+      ctx.shadowBlur = 3 * scale;
+      ctx.shadowOffsetY = scale;
+      const x = parseFloat(m[1]) * scale, y = parseFloat(m[2]) * scale;
+      ctx.fillText(it.d.textContent, x, y);
+      ctx.fillText(it.d.textContent, x, y); // 影を濃く
+      ctx.restore();
+    }
+  }
 }

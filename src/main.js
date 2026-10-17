@@ -301,7 +301,7 @@ function applyRoute() {
   const s = store.get();
   const r = s.terrain.route;
   const geo = s.terrain.mode === 'heightmap' ? s.terrain.heightmap?.geo : null;
-  routeShown = r && geo ? `${s.terrain.heightmap?.id}|${r.pts.length}|${r.pts[0]}` : null;
+  routeShown = r && geo ? { r, id: s.terrain.heightmap?.id } : null;
   if (!routeShown) {
     view.setRoute(null);
     view.setWaypoints(null);
@@ -332,8 +332,9 @@ view.onTerrainField = () => routeShown && applyRoute();
 // 経路・地形が変わったら描き直す（自動保存からの復元・シーンを開いたとき・元に戻すも）。地形の高さが入ってから
 store.subscribe((s) => {
   const r = s.terrain.route;
-  const key = r && s.terrain.mode === 'heightmap' && s.terrain.heightmap?.geo ? `${s.terrain.heightmap?.id}|${r.pts.length}|${r.pts[0]}` : null;
-  if (key !== routeShown) setTimeout(applyRoute, 300);
+  const on = !!(r && s.terrain.mode === 'heightmap' && s.terrain.heightmap?.geo);
+  // 経路（地点だけの変更も）か地形が変わったら
+  if (on !== !!routeShown || (on && (routeShown.r !== r || routeShown.id !== s.terrain.heightmap?.id))) setTimeout(applyRoute, 300);
 });
 // GPX から呼ぶ取り込み（取り込み画面で進み具合を見せながら）
 const geo_dialog_import = (region, res, name) => {
@@ -474,7 +475,18 @@ const actions = {
     toast(t('歩いた道すじ（{km} km）を GPX で保存しました', { km: (miniMap.dist / 1000).toFixed(2) }));
   },
   'export-view': async () => {
-    const blob = await view.captureHiRes();
+    let blob = await view.captureHiRes();
+    // 画面に出ている地名・経路の地点も画像に描き込む
+    if (view.labels && !view.labels.el.hidden) {
+      const bm = await createImageBitmap(blob);
+      const cv = document.createElement('canvas');
+      cv.width = bm.width;
+      cv.height = bm.height;
+      const ctx = cv.getContext('2d');
+      ctx.drawImage(bm, 0, 0);
+      view.labels.drawTo(ctx, bm.width / Math.max(1, view.labels.el.clientWidth));
+      blob = await new Promise((r) => cv.toBlob(r, 'image/png'));
+    }
     downloadBlob(blob, `${baseName()}_view.png`);
     toast(t('表示中の画面を保存しました'));
   },
