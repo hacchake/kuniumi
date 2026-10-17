@@ -474,7 +474,7 @@ const actions = {
     toast(t('歩いた道すじ（{km} km）を GPX で保存しました', { km: (miniMap.dist / 1000).toFixed(2) }));
   },
   'export-view': async () => {
-    const blob = await view.capture();
+    const blob = await view.captureHiRes();
     downloadBlob(blob, `${baseName()}_view.png`);
     toast(t('表示中の画面を保存しました'));
   },

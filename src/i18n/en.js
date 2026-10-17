@@ -25,7 +25,7 @@ export const EN = {
   '表示言語：English': 'Language: 日本語',
   '地形・水・太陽・カメラ・物体を .glb で書き出す': 'Export terrain, water, sun, camera and objects as .glb',
   '地形を 16bit グレースケール PNG で書き出す': 'Export the terrain as a 16-bit grayscale PNG',
-  'いまリアルタイム表示に映っている画面をそのまま保存': 'Save the current realtime view as is',
+  "いまリアルタイム表示に映っている画面を、画面の 2 倍の細かさ（長い辺 4096 画素まで）で保存": "Save the current realtime view at twice the screen resolution (up to 4096 px on the long side)",
   'glb を読み込んで空・カメラ・レンダー設定まで整える Blender 用スクリプト': 'Blender script that imports the .glb and sets up sky, camera and render settings',
   '.glb / .gltf を読み込む（地形はメッシュの形から取り込み）': 'Import .glb / .gltf (terrain is taken from the mesh shape)',
   'ハイトマップ画像（16bit PNG 推奨）を読み込む': 'Import a heightmap image (16-bit PNG recommended)',

@@ -857,7 +857,6 @@ void main() {`)
     }
   }
 
-  // 表示中の画面を PNG にする（同じ処理の中で描いてすぐ読み出す）
   // 歩き回るモードの出入り（mode: 'walk' | 'fly' | null）
   get walking() {
     return this.walk.active;
@@ -956,10 +955,27 @@ void main() {`)
     this.audio.update(dt, { above, speed: Math.min(speed, 2000), nearSea, day, inForest: (s.vegetation?.trees ?? 0) > 0.3, rain: s.atmosphere.precip === 'rain' || s.atmosphere.precip === 'storm' });
   }
 
+  // 表示中の画面を PNG にする（同じ処理の中で描いてすぐ読み出す）
   capture() {
     if (!this.walk.active) this.controls.update();
     this.#draw();
     return new Promise((r) => this.renderer.domElement.toBlob(r, 'image/png'));
+  }
+
+  // 保存用に、表示より細かく描いて PNG にする（重いときに下げている解像度に関係なく、画面の 2 倍まで・長い辺 4096 画素まで）
+  async captureHiRes(scale = 2) {
+    const el = this.renderer.domElement.parentElement;
+    const prev = this.renderer.getPixelRatio();
+    const ratio = Math.min((window.devicePixelRatio || 1) * scale, 4096 / Math.max(1, el.clientWidth, el.clientHeight));
+    this.renderer.setPixelRatio(ratio);
+    this.#resize();
+    this.shadowDirty = true;
+    try {
+      return await this.capture();
+    } finally {
+      this.renderer.setPixelRatio(prev);
+      this.#resize();
+    }
   }
 
   // 原点を注視点の近くへずらし、星の丸みに合わせてカメラを置き直して描く。終わったら戻す
