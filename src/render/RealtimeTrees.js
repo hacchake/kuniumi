@@ -173,7 +173,7 @@ if ( kTreeSnow > 0.0 ) diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.8, 0.83
     else this.fwd.normalize();
     const veg = s.vegetation;
     const t = s.terrain;
-    const enabled = veg && veg.trees > 0 && terrain;
+    const enabled = veg && (veg.trees > 0 || veg.paint?.length) && terrain; // 木の量が 0 でも、手で植えた所には立てる
     this.group.visible = !!enabled;
     if (!enabled) return;
     // シーン（地形・植生・水）が変わったら作り直す

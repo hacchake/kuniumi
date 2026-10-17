@@ -17,6 +17,7 @@ export function defaultVegetation() {
     conifer: 0.5, // 針葉樹の割合（標高が高いほど増える）
     grass: 0.6, // 足元の草の量（一枚絵で、カメラが地面に近いときだけ）
     seed: 77,
+    paint: [], // 手で植えた・伐った跡：[{ x, z, r, v }]（v = 1 植える、-1 伐る）。リアルタイム表示と一枚絵の両方に効く
   };
 }
 
@@ -58,12 +59,23 @@ export function createVegetationRules(ctx) {
     ? (x, z) => photoForest(photo, x / psize + 0.5, z / psize + 0.5) * (0.75 + 0.25 * valueNoise(x / 64, z / 64, seed + 1))
     : (x, z) => smooth(0.4, 0.62, valueNoise(x / 256, z / 256, seed) * 0.7 + valueNoise(x / 64, z / 64, seed + 1) * 0.3);
 
+  const paint = paintIndex(veg.paint);
   return {
     veg,
-    // 木の密度（0..1）。地表の色づけにも使う
+    // 木の密度（0..1）。地表の色づけにも使う。手で植えた・伐った所（veg.paint）はそれを重ねる
     forest(H, slope, wv, x, z) {
-      if (!(veg.trees > 0)) return 0;
-      return habitat(H, slope, wv) * clump(x, z) * Math.min(1, veg.trees * 1.6);
+      const hab = habitat(H, slope, wv);
+      let d = veg.trees > 0 ? hab * clump(x, z) * Math.min(1, veg.trees * 1.6) : 0;
+      if (paint) {
+        for (const p of paint(x, z)) {
+          const dx = x - p.x, dz = z - p.z, r2 = p.r * p.r, d2 = dx * dx + dz * dz;
+          if (d2 >= r2) continue;
+          const t = 1 - d2 / r2, w = t * t * (3 - 2 * t);
+          // 植える：育つ土地（急斜面・雪・水辺でない）ほど濃い森へ。伐る：0 へ
+          d = p.v > 0 ? d + (Math.max(d, 0.15 + 0.8 * hab) - d) * w : d * (1 - w);
+        }
+      }
+      return d;
     },
     // 草の密度（0..1）
     grass(H, slope, wv, x, z) {
@@ -168,6 +180,23 @@ export function placeVegetation(rules, size, sample, heightAt, view, { maxTrees 
 
 // 木の格子 1 マス（番号 i, j）に木が立つか。立つなら { x, y, z, h, rot, kind }（y は根元を少し埋めた高さ）。
 // 一枚絵とリアルタイム表示で同じ木が同じ所に立つよう、乱数は格子ごとのハッシュで決める
+// 手で植えた・伐った跡を 250 m 四方ごとに仕分けて、その点に効く跡だけをすぐ引けるようにする
+function paintIndex(strokes) {
+  if (!strokes?.length) return null;
+  const C = 250;
+  const grid = new Map();
+  for (const p of strokes) {
+    for (let gi = Math.floor((p.x - p.r) / C); gi <= Math.floor((p.x + p.r) / C); gi++)
+      for (let gj = Math.floor((p.z - p.r) / C); gj <= Math.floor((p.z + p.r) / C); gj++) {
+        const k = `${gi},${gj}`;
+        if (!grid.has(k)) grid.set(k, []);
+        grid.get(k).push(p);
+      }
+  }
+  const none = [];
+  return (x, z) => grid.get(`${Math.floor(x / C)},${Math.floor(z / C)}`) ?? none;
+}
+
 export function treeCellSize(veg) {
   return Math.max(5, veg.treeHeight * 0.55);
 }

@@ -123,3 +123,20 @@ describe('GPU 地形（CPU 側の計算）', () => {
     expect(maxSize).toBeGreaterThan(100e3); // 遠くは 100 km 以上の区画
   });
 });
+
+describe('森の筆', () => {
+  it('植えた所は木の量 0 でも森になり、伐った所は森が消える', () => {
+    const s = createDefaultScene();
+    const t = s.terrain;
+    const base = { heightScale: t.heightScale, baseHeight: t.baseHeight, waterLevel: 0, waterEnabled: true, palette: t.palette };
+    const H = 200, slope = 0.1, wv = 0; // 平らで育ちやすい所
+    const none = createVegetationRules({ ...base, vegetation: { ...s.vegetation, trees: 0, paint: [{ x: 0, z: 0, r: 100, v: 1 }] } });
+    expect(none.forest(H, slope, wv, 0, 0)).toBeGreaterThan(0.6);
+    expect(none.forest(H, slope, wv, 300, 0)).toBe(0);
+    const full = createVegetationRules({ ...base, vegetation: { ...s.vegetation, trees: 1, paint: [{ x: 500, z: 500, r: 100, v: -1 }] } });
+    expect(full.forest(H, slope, wv, 500, 500)).toBe(0);
+    // 仕分けの境目（250 m）をまたぐ筆でも効く
+    const edge = createVegetationRules({ ...base, vegetation: { ...s.vegetation, trees: 0, paint: [{ x: 240, z: 0, r: 60, v: 1 }] } });
+    expect(edge.forest(H, slope, wv, 280, 0)).toBeGreaterThan(0.2);
+  });
+});

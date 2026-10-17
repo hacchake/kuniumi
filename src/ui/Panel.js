@@ -365,6 +365,8 @@ export class Panel {
         ['lower', t('削る'), t('左ドラッグで地面を削る（見回しは右ドラッグ）')],
         ['flat', t('ならす'), t('左ドラッグで、押した所の高さへならす（見回しは右ドラッグ）')],
         ['smooth', t('なめらかに'), t('左ドラッグで、尖った所や段差を丸める（見回しは右ドラッグ）')],
+        ['plant', t('森を植える'), t('左ドラッグで木を植える（育つ土地ほど濃い森に。急斜面・雪・水辺は薄く）')],
+        ['clear', t('森を伐る'), t('左ドラッグで木を取り除く')],
       ];
       const btns = modes.map(([m, label, title]) => {
         const b = document.createElement('button');
@@ -406,15 +408,16 @@ export class Panel {
       clear.title = t('手彫りを全部戻す');
       clear.onclick = (e) => {
         e.preventDefault();
-        this.store.set('terrain.sculpt', [], { source: 'ui-btn' });
+        this.store.patch({ 'terrain.sculpt': [], 'vegetation.paint': [] }, { source: 'ui-btn' });
       };
       box.append(clear, count);
       row.appendChild(box);
       this.bindings.push({
         f,
         read: (v) => {
-          count.textContent = t('{n} 筆', { n: v?.length ?? 0 });
-          clear.disabled = !v?.length;
+          const n = (v?.length ?? 0) + (this.store.get().vegetation?.paint?.length ?? 0);
+          count.textContent = t('{n} 筆', { n });
+          clear.disabled = !n;
         },
         el: box,
       });

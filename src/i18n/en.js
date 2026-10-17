@@ -598,4 +598,8 @@ export const EN = {
   "地形を手で盛る・削る・ならす筆。選んでから景観を左ドラッグ（見回しは右ドラッグ）。元に戻すはドラッグ 1 回ずつ。筆の跡はシーンに入り、地形の作り直しでも残る": "A brush to raise, lower and flatten the terrain by hand. Choose one, then left-drag on the view (right-drag to look around). Undo works per drag. Strokes are stored in the scene and survive terrain rebuilds",
   "なめらかに": "Smooth",
   "左ドラッグで、尖った所や段差を丸める（見回しは右ドラッグ）": "Left-drag to round off peaks and steps (right-drag to look around)",
+  "森を植える": "Plant forest",
+  "森を伐る": "Clear forest",
+  "左ドラッグで木を植える（育つ土地ほど濃い森に。急斜面・雪・水辺は薄く）": "Left-drag to plant trees (denser where they grow well; sparse on steep slopes, snow and shores)",
+  "左ドラッグで木を取り除く": "Left-drag to remove trees",
 };
