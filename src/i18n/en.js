@@ -576,4 +576,6 @@ export const EN = {
   "経路を消す": "Remove the route",
   "経路": "Route",
   "点": "pts",
+  "雲の少ない新しい衛星写真（2023 年・非商用ライセンス）": "Newer, nearly cloud-free satellite photo (2023, non-commercial licence)",
+  "Sentinel-2 cloudless の 2023 年版（雲がほとんど無い）。ライセンスが CC BY-NC-SA 4.0（非商用・継承）になる。外すと 2016 年版（CC BY 4.0、ところどころ雲が残る）": "Sentinel-2 cloudless 2023 (almost no clouds), licensed CC BY-NC-SA 4.0 (non-commercial, share-alike). Unchecked uses the 2016 edition (CC BY 4.0, with some clouds left)",
 };

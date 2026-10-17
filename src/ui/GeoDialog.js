@@ -2,7 +2,7 @@ import { t } from '../i18n/index.js';
 import { GEO_PRESETS, ELEVATION_ATTRIBUTION, EARTH_R, aeqdInverse, sizeFromBBox, chooseZoom, tilesFor, fillSeaFloor, featherToSurround } from '../core/geo.js';
 import { fieldToHeightmap } from '../io/heightmap.js';
 import { SIZE_MAX } from '../core/schema.js';
-import { IMAGERY_ATTRIBUTION } from '../core/globe.js';
+import { IMAGERY_ATTRIBUTION, IMAGERY_RECENT_ATTRIBUTION } from '../core/globe.js';
 import { decodePhoto, photoWater } from '../io/photo.js';
 import { fetchOsmWater, rasterizeOsmWater, maskToDataUrl, labelsFrom, OSM_MAX_SIZE, OSM_ATTRIBUTION } from '../core/osmWater.js';
 
@@ -97,8 +97,9 @@ export class GeoDialog {
       const outerSize = Math.min(Math.PI * EARTH_R * 0.9, Math.max(region.size * 6, region.size + 400e3));
       // 地表の色の衛星写真は、標高と同時に別のワーカーで取り寄せ始める（取り寄せられなくても地形はそのまま使う）
       const photos = (async () => {
-        const inner = await this.#runPhoto(region, photoSizeFor(region.size), 360, null);
-        const outer = outerSize > region.size * 1.3 ? await this.#runPhoto({ ...region, size: outerSize }, 2048, 200, null) : null;
+        const src = this.recentPhoto ? 'photoRecent' : 'photo';
+        const inner = await this.#runPhoto(region, photoSizeFor(region.size), 360, null, src);
+        const outer = outerSize > region.size * 1.3 ? await this.#runPhoto({ ...region, size: outerSize }, 2048, 200, null, src) : null;
         // 夜の街の明かり（NASA Black Marble。粗いので小さくてよい）。取れなくても写真は使う
         const lights = await this.#runPhoto(region, 512, 64, null, 'lights').catch(() => null);
         const outerLights = outer ? await this.#runPhoto({ ...region, size: outerSize }, 1024, 64, null, 'lights').catch(() => null) : null;
@@ -195,7 +196,7 @@ export class GeoDialog {
         if (hm.surround && ph.outer) hm.surround.photo = ph.outer;
         if (ph.lights) hm.lights = ph.lights; // 夜の街の明かり（JPEG、行 0 = 北）
         if (hm.surround && ph.outerLights) hm.surround.lights = ph.outerLights;
-        hm.geo.photo = IMAGERY_ATTRIBUTION;
+        hm.geo.photo = this.recentPhoto ? IMAGERY_RECENT_ATTRIBUTION : IMAGERY_ATTRIBUTION;
       }
       this.apply({ heightmap: hm, region, res, min, max, name }, { restore, after });
       if (!quiet) this.toast(t('{name} の地形を取り込みました（{km} km 四方・{res}×{res}・タイル {n} 枚）', { name, km: Math.round(region.size / 1000), res, n: r.tiles }));
@@ -238,6 +239,7 @@ export class GeoDialog {
               <option value="2049">2049 × 2049</option>
               <option value="4097">4097 × 4097（大陸向け・重い）</option>
             </select></label>
+            <label class="geo-row geo-check" title="Sentinel-2 cloudless の 2023 年版（雲がほとんど無い）。ライセンスが CC BY-NC-SA 4.0（非商用・継承）になる。外すと 2016 年版（CC BY 4.0、ところどころ雲が残る）"><input type="checkbox" class="geo-recent" /> <span>雲の少ない新しい衛星写真（2023 年・非商用ライセンス）</span></label>
             <div class="geo-info"></div>
             <div class="geo-actions"><button type="button" class="geo-import primary">取り込む</button></div>
             <div class="geo-progress" hidden><div class="geo-bar"><i></i></div><span class="geo-ptext"></span></div>
@@ -298,6 +300,18 @@ export class GeoDialog {
       }
     });
     this.importBtn.onclick = () => this.importRegion({ ...this.region }, this.res, this.name);
+    // 衛星写真の年（選んだものは覚えておく）
+    const recent = $('.geo-recent');
+    try {
+      this.recentPhoto = localStorage.getItem('kuniumi.photo.recent') === '1';
+    } catch {}
+    recent.checked = !!this.recentPhoto;
+    recent.onchange = () => {
+      this.recentPhoto = recent.checked;
+      try {
+        localStorage.setItem('kuniumi.photo.recent', recent.checked ? '1' : '0');
+      } catch {}
+    };
     this.#mapControls();
   }
 

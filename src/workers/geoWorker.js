@@ -210,7 +210,7 @@ async function photoJob({ id, region, px, maxTiles = 300, concurrency = 8, sourc
 }
 
 async function fetchPhotoTile(t, source = 'photo') {
-  const url = source === 'lights' ? lightsUrl(t.z, t.x, t.y) : imageryUrl(t.z, t.x, t.y);
+  const url = source === 'lights' ? lightsUrl(t.z, t.x, t.y) : imageryUrl(t.z, t.x, t.y, source === 'photoRecent');
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const r = await fetch(url);
