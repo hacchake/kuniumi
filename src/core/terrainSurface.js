@@ -2,6 +2,7 @@ import { createNoiseSampler, generateNoiseFieldWithRange, sampleField, edgeFade 
 import { applyErosion } from './erosion.js';
 import { applySculpt, roundPeaks } from './sculpt.js';
 import { detailHeight, shoreFade } from './terrainDetail.js';
+import { hash2 } from './noise.js';
 
 // 地形の「任意の地点の高さ」を返す部品。一枚絵の細かい地形と、木・草の配置が使う。
 //   heightAt(x, z, spacing): 標高 (m)。spacing (m) より細かい起伏は描かない
@@ -48,13 +49,57 @@ function refSurface(terrain, ref) {
   const { field, res } = ref;
   const cell = size / (res - 1);
   const refH = (x, z) => baseHeight + sampleField(field, res, x / size + 0.5, z / size + 0.5) * heightScale;
+  const rs = terrain.palette?.rockSlope ?? 0.95;
+  const seed = (terrain.noise?.seed ?? 0) + 101;
   const heightAt = (x, z, spacing) => {
     // 格子 1.5 マスより細かい起伏だけ（ノイズの細かい段の差）を、リアルタイム表示の地形に足す
     const fine = spacing < cell * 1.5 ? own.heightAt(x, z, spacing) - own.heightAt(x, z, cell * 1.5) : 0;
-    return refH(x, z) + fine;
+    const h = refH(x, z);
+    return h + fine + cragAt(x, z, h, spacing);
+  };
+  // 岩場：急斜面にだけ、尾根の立った割れ目と岩棚（段）を刻む。頂点の間隔より細かい段は足さない（遠景はちらつかないように）
+  const cragAt = (x, z, h, spacing) => {
+    const e = Math.max(cell * 0.5, 2);
+    const gx = (refH(x + e, z) - refH(x - e, z)) / (2 * e);
+    const gz = (refH(x, z + e) - refH(x, z - e)) / (2 * e);
+    const sl = Math.hypot(gx, gz);
+    const m = smoothstep(rs * 0.55, rs * 1.15, sl);
+    if (m <= 0) return 0;
+    let d = 0;
+    for (const [lam, amp, k] of CRAG_OCTAVES) {
+      const fade = smoothstep(spacing * 2, spacing * 5, lam);
+      if (fade <= 0) break;
+      const n = valueNoise2(x / lam, z / lam, seed + k);
+      d += (1 - Math.abs(2 * n - 1) - 0.5) * amp * lam * fade; // 尾根型（折れた稜線）
+    }
+    // 岩棚：段の高さを場所ごとにゆらし、段の縁だけ急に（段の上は平らで雪が残る）
+    const step = 9 + 6 * valueNoise2(x / 90, z / 90, seed + 50);
+    const fadeT = smoothstep(spacing * 2, spacing * 6, step);
+    const t = (h + d) / step + valueNoise2(x / 50, z / 50, seed + 51) * 1.5;
+    const f = t - Math.floor(t);
+    // 段は本当に急な岩壁だけ（中くらいの斜面に段を付けると、等高線のような波模様に見える）
+    const terr = (Math.floor(t) + Math.pow(f, 4) - t) * step * 0.3 * fadeT * smoothstep(rs * 1.1, rs * 1.8, sl);
+    return m * (d + terr);
   };
   const gh = (u, v) => sampleField(field, res, u, v);
-  return { heightAt, wearAt: own.wearAt, coarse: coarseFrom(gh, res, terrain, own.wearAt) };
+  // baseAt: 細かい起伏を足す前の高さ（安い。くぼみの判定に使う）
+  return { heightAt, baseAt: refH, baseCell: cell, wearAt: own.wearAt, coarse: coarseFrom(gh, res, terrain, own.wearAt) };
+}
+
+// 岩場の起伏のオクターブ：[波長 m, 振幅（波長に対する比）, 種のずらし]
+const CRAG_OCTAVES = [[380, 0.07, 7], [160, 0.1, 8], [70, 0.14, 1], [28, 0.12, 2], [11, 0.1, 3], [4.5, 0.08, 4], [1.8, 0.06, 5], [0.7, 0.05, 6]];
+const smoothstep = (a, b, x) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+function valueNoise2(x, y, seed) {
+  const xi = Math.floor(x), yi = Math.floor(y);
+  let fx = x - xi, fy = y - yi;
+  fx = fx * fx * (3 - 2 * fx);
+  fy = fy * fy * (3 - 2 * fy);
+  const a = hash2(xi, yi, seed), b = hash2(xi + 1, yi, seed);
+  const c = hash2(xi, yi + 1, seed), d = hash2(xi + 1, yi + 1, seed);
+  return (a + (b - a) * fx) * (1 - fy) + (c + (d - c) * fx) * fy;
 }
 
 function heightmapSurface(terrain, img, sea) {

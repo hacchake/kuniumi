@@ -27,7 +27,8 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
   const { size, heightScale, baseHeight } = terrain;
 
   const surface = createTerrainSurface(terrain, heightmapImage, water?.enabled ? water.level : null, refField);
-  const { heightAt, wearAt } = surface;
+  const { heightAt, wearAt, baseAt } = surface;
+  const ce = (surface.baseCell ?? 30) * 1.5;
 
   // ---- 四分木で区画を決める ----
   const C = view.position;
@@ -183,11 +184,21 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
         uvs.set([x / size + 0.5, 0.5 - z / size], vo * 2);
         // 色のゆらぎ：大きな斑から足元の細かいムラまで（世界座標の値ノイズ）
         const jitter =
-          (valueNoise(x / 64, z / 64, 11) - 0.5) * 0.6 +
+          (valueNoise(x / 400, z / 400, 4) - 0.5) * 0.35 +
+          (valueNoise(x / 64, z / 64, 11) - 0.5) * 0.5 +
           (valueNoise(x / 8, z / 8, 18) - 0.5) * 0.22 +
           (valueNoise(x / 2, z / 2, 25) - 0.5) * 0.12 +
           (valueNoise(x / 0.5, z / 0.5, 32) - 0.5) * 0.06;
-        shade(y, Math.hypot(gx, gz), wearAt(x, z), jitter, col, x, z);
+        // くぼみの度合い：細かい起伏を足す前の地形で、周り 4 点の平均と比べる（区画の細かさによらず同じ値）
+        let curv = 0;
+        if (baseAt) {
+          const b0 = baseAt(x, z);
+          curv = ((baseAt(x + ce, z) + baseAt(x - ce, z) + baseAt(x, z + ce) + baseAt(x, z - ce)) / 4 - b0) / ce;
+        }
+        // 岩の割れ目の細かいくぼみ（頂点の隣どうし）も足す。見えている細かさのくぼみに雪がたまって、まだらになる
+        const fineC = ((hg[k + 1] + hg[k - 1] + hg[k + G] + hg[k - G]) / 4 - hg[k]) / Math.max(s, 0.5);
+        curv += Math.max(-0.3, Math.min(0.3, fineC)) * 0.8;
+        shade(y, Math.hypot(gx, gz), wearAt(x, z), jitter, col, x, z, curv);
         // 衛星写真があれば、色は写真のテクスチャ（一枚絵の材質の map。uv で貼る）から。
         // 頂点の色は明るさの倍率と細かい色むらだけ（頂点ごとに写真を拾うと、遠くの粗い区画で写真がぼやけるため）
         if (photo && !(water.enabled && y < water.level)) {

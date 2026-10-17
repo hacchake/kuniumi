@@ -35,7 +35,7 @@ function valueNoise(x, y, seed) {
 }
 
 // 1 点の地表の色（線形 RGB）を決める関数を作る。テクスチャを焼くときも、静止画の近景で頂点ごとに塗るときも同じ規則。
-// shade(H: 標高 m, slope: 勾配 tan, wv: 侵食で盛った(+)/削った(−)量, jitter: −0.5..0.5 のゆらぎ, out: [r,g,b])
+// shade(H: 標高 m, slope: 勾配 tan, wv: 侵食で盛った(+)/削った(−)量, jitter: −0.5..0.5 のゆらぎ, out: [r,g,b], x, z, curv: くぼみ(+)・出っ張り(−)の度合い)
 export function createTerrainShader(opts) {
   const { heightScale, baseHeight, waterLevel, waterEnabled, palette } = opts;
   const P = {
@@ -58,7 +58,7 @@ export function createTerrainShader(opts) {
   const grassSoil = lin('#4a5a2c'); // 草むらの足元（草の葉と陰の混ざった色）
 
   // x, z（世界座標）を渡すと、森の所を森の色にする
-  return function shade(H, slope, wv, jitter, col, x, z) {
+  return function shade(H, slope, wv, jitter, col, x, z, curv = 0) {
     const mix = (c, t) => {
       col[0] += (c[0] - col[0]) * t;
       col[1] += (c[1] - col[1]) * t;
@@ -93,9 +93,21 @@ export function createTerrainShader(opts) {
     rockCol[0] = P.rock[0] * tone * (1 + strata * 0.4);
     rockCol[1] = P.rock[1] * tone;
     rockCol[2] = P.rock[2] * tone * (1 - strata * 0.3);
-    mix(rockCol, smooth(rs * 0.7, rs * 1.25, slope + jitter * 0.15));
-    // 雪（急斜面には積もりにくい）
-    mix(P.snow, smooth(sl - 0.04, sl + 0.06, alt + jitter * 0.08) * (1 - smooth(rs * 1.1, rs * 1.9, slope)));
+    const rockT = smooth(rs * 0.7, rs * 1.25, slope + jitter * 0.15);
+    mix(rockCol, rockT);
+    // 岩場の陰影：くぼみ（沢筋）は暗く、出っ張り（尾根）は明るく。遠目にも岩の彫りが見えるように
+    if (curv) {
+      const g = 1 - 0.4 * smooth(0, 0.15, curv) + 0.18 * smooth(0, 0.15, -curv);
+      const t = 0.35 + 0.65 * rockT;
+      col[0] *= 1 + (g - 1) * t;
+      col[1] *= 1 + (g - 1) * t;
+      col[2] *= 1 + (g - 1) * t;
+    }
+    // 雪（急斜面には積もりにくい）。ただし岩場でも、くぼみ（沢筋・ルンゼ）や削られた谷筋には吹きだまって残る
+    // 沢筋（くぼみ）では雪が雪線より下まで降りてくる
+    const snowAlt = smooth(sl - 0.04, sl + 0.06, alt + jitter * 0.08 + Math.max(0, Math.min(0.3, curv)) * 0.5);
+    const lodge = Math.max(1 - smooth(rs * 1.1, rs * 1.9, slope), smooth(0.03, 0.12, curv + jitter * 0.05) * (1 - smooth(rs * 2.2, rs * 3.2, slope)), smooth(0.006, 0.03, -wv) * 0.8);
+    mix(P.snow, snowAlt * lodge);
     // 水際の砂浜と水中
     if (waterEnabled) {
       const above = H - sea;
