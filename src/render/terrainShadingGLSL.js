@@ -97,6 +97,8 @@ export const TERRAIN_SHADING_GLSL = /* glsl */ `
     float n = mix( 0.5, tValueNoise( xz, 256.0, s ), w1 ) * 0.7 + mix( 0.5, tValueNoise( xz, 64.0, s + 1 ), w2 ) * 0.3;
     return tSmooth( 0.4, 0.62, n );
   }
+  // 地層の縞の細かさ（1 画素あたりの標高の変化。描く側が fwidth から入れる。0 なら縞を消さない）
+  float tStrataAA = 0.0;
   // 手で植えた・伐った量（森の筆。描く側がその点のマスクから入れる）
   float tPaintAdd = 0.0;
   float tPaintCut = 0.0;
@@ -120,7 +122,11 @@ export const TERRAIN_SHADING_GLSL = /* glsl */ `
     col = mix( col, tSoil, tSmooth( 0.002, 0.02, wv ) * 0.7 );
     col = mix( col, tRock, tSmooth( 0.004, 0.04, - wv ) * 0.45 );
     col = mix( col, tForest, tForestAt( H, slope, wv, clump ) * 0.85 );
-    float strata = sin( ( H / max( 8.0, tHeightScale * 0.03 ) + jitter * 2.5 ) * 6.2831853 ) * 0.16;
+    // 地層：周期の違う 2 つの縞を重ね、色むらで揺らす。画面で 1 本が 3 画素より細くなる所では消す
+    float sPer = max( 8.0, tHeightScale * 0.03 );
+    float sPh = H / sPer + jitter * 2.5;
+    float sFade = 1.0 - tSmooth( 0.12, 0.35, tStrataAA / sPer );
+    float strata = ( sin( sPh * 6.2831853 ) * 0.6 + sin( sPh * 14.45 + 1.7 ) * 0.4 ) * 0.09 * sFade;
     float tone = max( 0.35, 1.0 + jitter * 0.9 + strata );
     vec3 rockCol = tRock * tone * vec3( 1.0 + strata * 0.4, 1.0, 1.0 - strata * 0.3 );
     col = mix( col, rockCol, tSmooth( tRockSlope * 0.7, tRockSlope * 1.25, slope + jitter * 0.15 ) );

@@ -205,6 +205,9 @@ export class RealtimeAtmosphere {
           }
           gl_FragColor = vec4( col, 1.0 );
           #include <tonemapping_fragment>
+          // 仕上げ：彩りを少し強め、四隅をわずかに暗く（写真のレンズの周辺減光の近似）
+          gl_FragColor.rgb = max( mix( vec3( dot( gl_FragColor.rgb, vec3( 0.2126, 0.7152, 0.0722 ) ) ), gl_FragColor.rgb, 1.1 ), 0.0 );
+          gl_FragColor.rgb *= 1.0 - 0.2 * smoothstep( 0.4, 1.0, length( ( vUv - 0.5 ) * vec2( 1.3, 1.0 ) ) * 1.4 );
           #include <colorspace_fragment>
         }`,
     });

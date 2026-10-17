@@ -211,6 +211,17 @@ export class GpuTerrain {
             `#include <normal_fragment_begin>
             vec2 kG = tCoarseGrad( vTLocal ) + vTDetGrad;
             float kSlope = length( kG );
+            // 岩肌：急な斜面に細かい凹凸を足す（崖の上下でも模様が変わるよう、高さで斜めにずらした模様）。
+            // 画面で細かすぎる段は足さない（ちらつかないように）
+            float kRockW = smoothstep( tRockSlope * 0.55, tRockSlope * 1.1, kSlope );
+            if ( kRockW > 0.0 ) {
+              float kPxN = length( vViewPosition ) * 0.0015;
+              vec2 kQ = vTLocal + vec2( vTH * 0.6, - vTH * 0.45 );
+              vec3 kN1 = tGradNoiseD( kQ, 32.0, 501 ), kN2 = tGradNoiseD( kQ, 8.0, 502 ), kN3 = tGradNoiseD( kQ, 2.0, 503 );
+              kG += ( kN1.yz * ( 6.0 / 32.0 ) * ( 1.0 - tSmooth( 4.0, 8.0, kPxN ) )
+                    + kN2.yz * ( 1.6 / 8.0 ) * ( 1.0 - tSmooth( 1.0, 2.0, kPxN ) )
+                    + kN3.yz * ( 0.4 / 2.0 ) * ( 1.0 - tSmooth( 0.25, 0.5, kPxN ) ) ) * kRockW;
+            }
             normal = normalize( ( viewMatrix * vec4( kCurveN( vec3( vTLocal.x, vTH, vTLocal.y ), normalize( vec3( - kG.x, 1.0, - kG.y ) ) ), 0.0 ) ).xyz );
             // 川・湖の水面は平らに（空を映す）
             normal = normalize( mix( normal, normalize( ( viewMatrix * vec4( kCurveN( vec3( vTLocal.x, vTH, vTLocal.y ), vec3( 0.0, 1.0, 0.0 ) ), 0.0 ) ).xyz ), kWm ) );`,
@@ -226,7 +237,14 @@ export class GpuTerrain {
               'vec2 kG0 = tCoarseGrad( vTLocal ) + vTDetGrad;\n' +
               'float kJ = vTJit + tJitterFine( vTLocal, kPix );\n' +
               'if ( tHasPaint > 0.5 ) { vec2 kPn = texture2D( tPaint, clamp( tUV( vTLocal ), 0.0, 1.0 ) ).rg; tPaintAdd = kPn.r; tPaintCut = kPn.g; }\n' +
+              'tStrataAA = fwidth( vTH );\n' +
               'vec3 kTC = terrainColor( vTH, length( kG0 ), vTWear, kJ, vTClump );\n' +
+              // 岩肌の色むら（凹凸と同じ模様で、くぼみを少し暗く）
+              'float kRW = smoothstep( tRockSlope * 0.55, tRockSlope * 1.1, length( kG0 ) );\n' +
+              // 平地の色むら：数百 m の斑で、乾いた所（黄み）と青々とした所（緑み）。岩肌・写真の地形には足さない
+              'float kMn = tValueNoise( vTLocal, 512.0, 521 ) * 0.6 + tValueNoise( vTLocal, 128.0, 522 ) * 0.4;\n' +
+              'kTC *= mix( vec3( 1.0 ), mix( vec3( 1.12, 1.04, 0.82 ), vec3( 0.86, 1.04, 0.92 ), kMn ), 0.7 * ( 1.0 - kRW ) );\n' +
+              'if ( kRW > 0.0 ) { vec2 kQc = vTLocal + vec2( vTH * 0.6, - vTH * 0.45 ); float kRn = tValueNoise( kQc, 16.0, 511 ) * 0.6 + tValueNoise( kQc, 4.0, 512 ) * 0.4; kTC *= 1.0 + ( kRn - 0.5 ) * 0.45 * kRW; }\n' +
               // 衛星写真があれば、その色を地表の色にする（細かい色むらだけ手続きの色から少し残す）
               `if ( tHasPhoto > 0.5 ) kTC = texture2D( tPhoto, clamp( tUV( vTLocal ), 0.0, 1.0 ) ).rgb * ${PHOTO_ALBEDO.toFixed(3)} * ( 1.0 + kJ * 0.35 );\n` +
 

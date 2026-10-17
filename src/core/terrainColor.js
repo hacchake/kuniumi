@@ -81,7 +81,9 @@ export function createTerrainShader(opts) {
     // 森：木の密度ぶん、遠くから見た森の色（暗い緑）へ
     if (x !== undefined) mix(P.forest, rules.forest(H, slope, wv, x, z) * 0.85);
     // 岩肌：明るさにむらと地層の縞を付ける（一様な灰色だと作り物に見える）
-    const strata = Math.sin((H / Math.max(8, heightScale * 0.03) + jitter * 2.5) * Math.PI * 2) * 0.16;
+    // 地層：周期の違う 2 つの縞を重ねて弱く（リアルタイム表示の terrainShadingGLSL と同じ）
+    const sPh = H / Math.max(8, heightScale * 0.03) + jitter * 2.5;
+    const strata = (Math.sin(sPh * Math.PI * 2) * 0.6 + Math.sin(sPh * 14.45 + 1.7) * 0.4) * 0.09;
     const tone = Math.max(0.35, 1 + jitter * 0.9 + strata);
     rockCol[0] = P.rock[0] * tone * (1 + strata * 0.4);
     rockCol[1] = P.rock[1] * tone;
