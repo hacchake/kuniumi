@@ -248,6 +248,7 @@ async function openHeightmap(file) {
 
 // 経路（GPX）を、地球から取り込んだ地形の上に描く（右上の地図にも水色の線で）
 async function openGpx(file) {
+  if (globe.isOpen) globe.close(); // 地球モードの上で開いたら、景観へ戻ってから
   const text = await file.text();
   const pts = parseGpx(text);
   if (pts.length < 2) throw new Error(t('GPX に経路の点が見つかりません'));
@@ -334,8 +335,11 @@ store.subscribe((s) => {
   const key = r && s.terrain.mode === 'heightmap' && s.terrain.heightmap?.geo ? `${s.terrain.heightmap?.id}|${r.pts.length}|${r.pts[0]}` : null;
   if (key !== routeShown) setTimeout(applyRoute, 300);
 });
-// GPX から呼ぶ取り込み（ダイアログを開かずに）
-const geo_dialog_import = (region, res, name) => geo.importRegion(region, res, name);
+// GPX から呼ぶ取り込み（取り込み画面で進み具合を見せながら）
+const geo_dialog_import = (region, res, name) => {
+  geo.openAt(region, name); // 取り込み画面で進み具合を見せる
+  return geo.importRegion(region, res, name);
+};
 
 async function openAny(file) {
   const ext = extOf(file);
