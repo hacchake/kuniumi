@@ -272,3 +272,17 @@ describe('手彫り', () => {
     expect(sculptKey(terrain.sculpt)).not.toBe(sculptKey([{ x: 0, z: 0, r: 100, h: 51 }]));
   });
 });
+
+describe('手彫り：なめらかに', () => {
+  it('尖った所が低くなり、範囲の外は変わらない', async () => {
+    const { applySculpt } = await import('../src/core/sculpt.js');
+    const res = 101;
+    const f = new Float32Array(res * res);
+    f[50 * res + 50] = 1; // 1 格子だけの尖り
+    f[50 * res + 90] = 1; // 範囲の外
+    applySculpt(f, res, { size: 1000, heightScale: 100, baseHeight: 0, sculpt: [{ x: 0, z: 0, r: 200, smooth: 1 }] });
+    expect(f[50 * res + 50]).toBeLessThan(0.5);
+    expect(f[50 * res + 51]).toBeGreaterThan(0);
+    expect(f[50 * res + 90]).toBe(1);
+  });
+});

@@ -7,7 +7,7 @@ export class SculptTool {
   // pick(ndc) → 地面の点（平らな地図の座標）| null、world: 輪を置く親、controls: OrbitControls
   constructor({ canvas, store, controls, camera, world, pick, groundAt }) {
     Object.assign(this, { canvas, store, controls, camera, pick, groundAt });
-    this.mode = null; // 'raise' | 'lower' | 'flat' | null
+    this.mode = null; // 'raise' | 'lower' | 'flat' | 'smooth' | null
     this.radius = 150; // m
     this.strength = 8; // 1 回のひと押しの高さ (m)
     this.pending = [];
@@ -48,13 +48,14 @@ export class SculptTool {
     if (!p) return (this.ring.visible = false);
     this.ring.position.set(p.x, this.groundAt(p.x, p.z) + 2, p.z);
     this.ring.scale.setScalar(this.radius);
-    this.ring.material.color.set(this.mode === 'lower' ? 0x8ad0ff : this.mode === 'flat' ? 0xb8f0a0 : 0xffd27a);
+    this.ring.material.color.set(this.mode === 'lower' ? 0x8ad0ff : this.mode === 'flat' ? 0xb8f0a0 : this.mode === 'smooth' ? 0xe0b8ff : 0xffd27a);
     this.ring.visible = true;
   }
 
   #stamp(p) {
     const r = this.radius;
     if (this.mode === 'flat') this.pending.push({ x: round(p.x), z: round(p.z), r: round(r), flat: round(this.flatTo), k: 0.35 });
+    else if (this.mode === 'smooth') this.pending.push({ x: round(p.x), z: round(p.z), r: round(r), smooth: 0.6 });
     else this.pending.push({ x: round(p.x), z: round(p.z), r: round(r), h: round(this.mode === 'lower' ? -this.strength : this.strength) });
     this.last = p;
   }

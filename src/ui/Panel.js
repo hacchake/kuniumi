@@ -364,6 +364,7 @@ export class Panel {
         ['raise', t('盛る'), t('左ドラッグで地面を盛る（見回しは右ドラッグ）')],
         ['lower', t('削る'), t('左ドラッグで地面を削る（見回しは右ドラッグ）')],
         ['flat', t('ならす'), t('左ドラッグで、押した所の高さへならす（見回しは右ドラッグ）')],
+        ['smooth', t('なめらかに'), t('左ドラッグで、尖った所や段差を丸める（見回しは右ドラッグ）')],
       ];
       const btns = modes.map(([m, label, title]) => {
         const b = document.createElement('button');

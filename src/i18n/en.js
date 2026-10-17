@@ -596,4 +596,6 @@ export const EN = {
   "手彫りを全部戻す": "Undo all sculpting",
   "{n} 筆": "{n} dabs",
   "地形を手で盛る・削る・ならす筆。選んでから景観を左ドラッグ（見回しは右ドラッグ）。元に戻すはドラッグ 1 回ずつ。筆の跡はシーンに入り、地形の作り直しでも残る": "A brush to raise, lower and flatten the terrain by hand. Choose one, then left-drag on the view (right-drag to look around). Undo works per drag. Strokes are stored in the scene and survive terrain rebuilds",
+  "なめらかに": "Smooth",
+  "左ドラッグで、尖った所や段差を丸める（見回しは右ドラッグ）": "Left-drag to round off peaks and steps (right-drag to look around)",
 };
