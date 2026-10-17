@@ -633,10 +633,11 @@ export class StillJob {
     };
     // 夜は月明かり・星明かり程度の青い光を空に足す（リアルタイム表示の夜の光と同じ明るさ）
     const night = nightFactor(s.sun.elevation);
-    const addNight = (data) => {
+    // withBow：虹も描くか（背景だけ。水面に映る周りの光には入れない）
+    const addNight = (data, withBow = false) => {
       if (night <= 0) {
         addMoon(data);
-        addExtras(data);
+        addExtras(data, withBow);
         return data;
       }
       for (let r = 0; r < eh; r++) {
@@ -647,18 +648,18 @@ export class StillJob {
         }
       }
       addMoon(data);
-      addExtras(data);
+      addExtras(data, withBow);
       return data;
     };
     // オーロラと虹：リアルタイム表示と同じ式・同じ強さで空に描き込む（core/skyExtras.js）
-    function addExtras(data) {
+    function addExtras(data, withBow) {
       const a = s.atmosphere;
       const exposure = Math.max(0.02, a.exposure);
       const geo = s.terrain.mode === 'heightmap' ? s.terrain.heightmap?.geo : null;
       const aur = (a.aurora ?? 0) * (1 - 0.85 * (a.clouds ?? 0)) * night * (0.35 / exposure);
       const rainy = a.precip === 'rain' || a.precip === 'storm';
       const el = s.sun.elevation;
-      const bow = rainy ? THREE.MathUtils.smoothstep(el, 1, 5) * (1 - THREE.MathUtils.smoothstep(el, 34, 42)) * (1 - 0.6 * (a.clouds ?? 0)) * (0.15 / exposure) : 0;
+      const bow = rainy && withBow ? THREE.MathUtils.smoothstep(el, 1, 5) * (1 - THREE.MathUtils.smoothstep(el, 34, 42)) * (1 - 0.6 * (a.clouds ?? 0)) * (0.15 / exposure) : 0;
       if (aur <= 0.001 && bow <= 0.001) return;
       const S = sunDirection(el, s.sun.azimuth);
       const anti = [-S[0], -S[1], -S[2]];
@@ -716,12 +717,13 @@ export class StillJob {
     }
     scene.environment = mkEnv(addNight(renderSkyEquirect(p, ew, eh, { ...opts, discScale })));
     // 背景は見た目だけなので、半精度に収まるよう太陽の芯だけ頭打ちにする（眩しさは変わらない）
-    const bg = addNight(renderSkyEquirect(p, ew, eh, opts));
+    const bg = addNight(renderSkyEquirect(p, ew, eh, opts), true);
     for (let i = 0; i < bg.length; i++) if (bg[i] > 65000) bg[i] = 65000;
-    scene.background = discScale > 1 ? mkEnv(bg) : scene.environment;
+    const rainy = s.atmosphere.precip === 'rain' || s.atmosphere.precip === 'storm';
+    scene.background = discScale > 1 || rainy ? mkEnv(bg) : scene.environment;
 
     scene.updateMatrixWorld(true);
-    return { scene, terrainMesh, surroundMesh, water, plants, buildingMeshes, textures, skyP: p };
+    return { scene, terrainMesh, surroundMesh, water, plants, buildingMeshes, textures, skyP: p, skyBG: { data: bg, w: ew, h: eh } };
   }
 
   #camera(s, aspect) {
@@ -794,6 +796,32 @@ export class StillJob {
     const tg = new THREE.Vector3(0, s.camera.target[1], 0);
     const radius = Math.min(Math.max(3000, camera.position.distanceTo(tg) * 3), Math.max(3000, Math.min(s.terrain.size * 0.75, 200000)));
     const shadowBounds = s.terrain.size > 60000 ? { center: tg, radius } : null;
+    // 天体は空気の向こうにある：その向きの空の明るさ（手前の空気が散らす光）を重ね、空気の厚みのぶん少し暗くする。
+    // 昼や夕方は昼の月のように淡くかすみ、夜はくっきり見える
+    const celMeshes = objectMeshes.filter((m) => celestial.has(m.userData.kuniumiId));
+    if (celMeshes.length && built.skyBG) {
+      const others = [built.terrainMesh, built.surroundMesh, built.water, ...built.plants, ...(built.buildingMeshes ?? []), ...objectMeshes.filter((m) => !celestial.has(m.userData.kuniumiId))].filter(Boolean);
+      const mask = renderMask(this.view.renderer, celMeshes, others, camera, W, H);
+      const { data: bg, w: ew, h: eh } = built.skyBG;
+      const ip = camera.projectionMatrixInverse, cw = camera.matrixWorld;
+      const v = new THREE.Vector3();
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          const k = mask[y * W + x];
+          if (k <= 0) continue;
+          v.set(((x + 0.5) / W) * 2 - 1, 1 - ((y + 0.5) / H) * 2, 0.5).applyMatrix4(ip).transformDirection(cw);
+          // 空の画像（正距円筒、行 0 = 真下）から、その向きの空の明るさ
+          const lat = Math.asin(Math.max(-1, Math.min(1, v.y))), phi = Math.atan2(v.z, v.x);
+          const r = Math.min(eh - 1, Math.max(0, Math.floor((lat / Math.PI + 0.5) * eh)));
+          const c = Math.min(ew - 1, Math.max(0, Math.floor((phi / (2 * Math.PI) + 0.5) * ew)));
+          const so = (r * ew + c) * 4;
+          // 空気の厚み（低いほど厚い）で天体の光が弱まる
+          const T = Math.exp(-0.12 / Math.max(0.06, v.y + 0.04));
+          const o = (y * W + x) * 4;
+          for (let ch = 0; ch < 3; ch++) hdr[o + ch] = hdr[o + ch] * (1 - k) + (hdr[o + ch] * T + bg[so + ch]) * k;
+        }
+      }
+    }
     const res = computeAtmosphere(this.view.renderer, meshes, camera, W, H, { ...atmosphereParams(s), skyE, view, shadowBounds });
     for (let i = 0, n = W * H; i < n; i++) {
       const o = i * 4, m = res.surface[i], T = res.inscatter[o + 3];

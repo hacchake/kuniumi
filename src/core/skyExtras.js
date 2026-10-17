@@ -68,6 +68,15 @@ export function addRainbow(d, antiSun, out, k = 1) {
   const inner = (1 - smooth(30, 40.5, ang)) * smooth(15, 30, ang) * 0.06;
   const s1 = spectrum(Math.min(1, Math.max(0, t1)), [0, 0, 0]);
   const s2 = spectrum(Math.min(1, Math.max(0, t2)), [0, 0, 0]);
-  const hz = smooth(-0.01, 0.03, d[1]);
-  for (let i = 0; i < 3; i++) out[i] += (s1[i] * b1 + s2[i] * b2 + inner) * hz * k;
+  const hz = smooth(-0.01, 0.06, d[1]);
+  // 弧に沿った明るさのむら（雨の濃さの違い）：反太陽点のまわりの角度で
+  const ax = Math.abs(antiSun[1]) < 0.99 ? [antiSun[2], 0, -antiSun[0]] : [1, 0, 0];
+  const az = Math.atan2(d[0] * ax[0] + d[1] * ax[1] + d[2] * ax[2], d[1] - antiSun[1] * c);
+  const vary = 0.55 + 0.45 * noise1(az * 3 + 11) * (0.6 + 0.4 * noise1(az * 9 + 3));
+  for (let i = 0; i < 3; i++) {
+    // 実際の虹は淡い：純色を白へ 35% 寄せる
+    const p1 = s1[i] * 0.65 + 0.35 * (s1[0] + s1[1] + s1[2]) / 3;
+    const p2 = s2[i] * 0.65 + 0.35 * (s2[0] + s2[1] + s2[2]) / 3;
+    out[i] += (p1 * b1 + p2 * b2 * 0.6 + inner) * hz * vary * k;
+  }
 }

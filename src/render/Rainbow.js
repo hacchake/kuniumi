@@ -53,9 +53,17 @@ export class Rainbow {
             float b2 = smoothstep( -0.15, 0.1, t2 ) * ( 1.0 - smoothstep( 0.9, 1.15, t2 ) ) * 0.35;
             // 主虹の内側はほんのり明るく、主虹と副虹の間（アレキサンダーの暗帯）は暗いまま
             float inner = ( 1.0 - smoothstep( 30.0, 40.5, ang ) ) * smoothstep( 15.0, 30.0, ang ) * 0.06;
-            vec3 c = spectrum( clamp( t1, 0.0, 1.0 ) ) * b1 + spectrum( clamp( t2, 0.0, 1.0 ) ) * b2 + vec3( inner );
+            // 実際の虹は淡い：純色を白へ 35% 寄せる。副虹は控えめに
+            vec3 s1 = spectrum( clamp( t1, 0.0, 1.0 ) ), s2 = spectrum( clamp( t2, 0.0, 1.0 ) );
+            s1 = mix( s1, vec3( dot( s1, vec3( 1.0 / 3.0 ) ) ), 0.35 );
+            s2 = mix( s2, vec3( dot( s2, vec3( 1.0 / 3.0 ) ) ), 0.35 );
+            vec3 c = s1 * b1 + s2 * b2 * 0.6 + vec3( inner );
+            // 弧に沿った明るさのむら（雨の濃さの違い）
+            vec3 ax = abs( antiSun.y ) < 0.99 ? normalize( vec3( antiSun.z, 0.0, - antiSun.x ) ) : vec3( 1.0, 0.0, 0.0 );
+            float az = atan( dot( d, ax ), dot( d, cross( antiSun, ax ) ) );
+            c *= 0.55 + 0.45 * ( 0.5 + 0.5 * sin( az * 3.0 + 1.3 ) * sin( az * 7.0 + 0.4 ) );
             // 地平線の下には出さない
-            c *= smoothstep( -0.01, 0.03, d.y );
+            c *= smoothstep( -0.01, 0.06, d.y );
             gl_FragColor = vec4( c * strength, 1.0 );
           }`,
       }),
