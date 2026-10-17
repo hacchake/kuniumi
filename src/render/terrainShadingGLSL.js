@@ -97,15 +97,19 @@ export const TERRAIN_SHADING_GLSL = /* glsl */ `
     float n = mix( 0.5, tValueNoise( xz, 256.0, s ), w1 ) * 0.7 + mix( 0.5, tValueNoise( xz, 64.0, s + 1 ), w2 ) * 0.3;
     return tSmooth( 0.4, 0.62, n );
   }
+  // 手で植えた・伐った量（森の筆。描く側がその点のマスクから入れる）
+  float tPaintAdd = 0.0;
+  float tPaintCut = 0.0;
   // 木の密度（core/vegetation.js の forest と同じ）
   float tForestAt( float H, float slope, float wv, float clump ) {
-    if ( tTrees <= 0.0 ) return 0.0;
     float alt = ( H - tSea ) / max( 1.0, tTop - tSea );
     float habitat = ( 1.0 - tSmooth( tRockSlope * 0.45, tRockSlope * 0.85, slope ) )
       * ( 1.0 - tSmooth( tSnowLine - 0.28, tSnowLine - 0.1, alt ) )
       * tSmooth( tShoreBand * 1.2, tShoreBand * 3.0, H - tSea )
       * ( 1.0 - tSmooth( 0.006, 0.03, wv ) );
-    return habitat * clump * min( 1.0, tTrees * 1.6 );
+    float d = tTrees > 0.0 ? habitat * clump * min( 1.0, tTrees * 1.6 ) : 0.0;
+    d += ( max( d, 0.15 + 0.8 * habitat ) - d ) * tPaintAdd;
+    return d * ( 1.0 - tPaintCut );
   }
   // 地面の色（線形 RGB）
   vec3 terrainColor( float H, float slope, float wv, float jitter, float clump ) {

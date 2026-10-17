@@ -160,6 +160,8 @@ export class GpuTerrain {
       tSnowCover: { value: 0 }, // 降っている雪の積もり具合（0..1）。季節に関係なく、平らな所からまだらに白くなる
       tSnowFloor: { value: 0 }, // これより低い所（水面）には積もらない
       tHasWaterMask: { value: 0 },
+      tPaint: { value: null }, // 森の筆のマスク（R = 植えた量、G = 伐った量。大地の範囲、行 0 = 北）
+      tHasPaint: { value: 0 },
       tHasPhoto: { value: 0 },
       tOriginUV: { value: new THREE.Vector2() },
       tOriginW: { value: new THREE.Vector2() }, // 原点（世界座標）
@@ -202,7 +204,7 @@ export class GpuTerrain {
           .replace('#include <beginnormal_vertex>', 'vec3 objectNormal; vec3 kTP; kTerrainVertex( kTP, objectNormal );')
           .replace('#include <begin_vertex>', 'vec3 transformed = kTP;');
         shader.fragmentShader = shader.fragmentShader
-          .replace('#include <common>', `#include <common>\n${TERRAIN_SHADING_GLSL}\nvarying float vTH, vTSlope, vTWear, vTJit, vTClump;\nvarying vec2 vTLocal, vTDetGrad;\nuniform vec2 tOriginW;\nuniform float tClipHalf, tHasPhoto, tHasWaterMask, tSeason, tWinterSnow, tLightsI, tWet, tSnowCover, tSnowFloor;\nuniform sampler2D tPhoto, tWaterMask, tLights;\n${CURVE_GLSL}\n${FIELD_GLSL}`)
+          .replace('#include <common>', `#include <common>\n${TERRAIN_SHADING_GLSL}\nvarying float vTH, vTSlope, vTWear, vTJit, vTClump;\nvarying vec2 vTLocal, vTDetGrad;\nuniform vec2 tOriginW;\nuniform float tClipHalf, tHasPhoto, tHasWaterMask, tHasPaint, tSeason, tWinterSnow, tLightsI, tWet, tSnowCover, tSnowFloor;\nuniform sampler2D tPhoto, tWaterMask, tLights, tPaint;\n${CURVE_GLSL}\n${FIELD_GLSL}`)
           // 面の向きと傾きは画素ごとに高さ場から出す（頂点の補間だと、区画の細かさが変わる所で線が出る）
           .replace(
             '#include <normal_fragment_begin>',
@@ -223,6 +225,7 @@ export class GpuTerrain {
             'float kPix = length( vViewPosition ) * 0.0015;\n' +
               'vec2 kG0 = tCoarseGrad( vTLocal ) + vTDetGrad;\n' +
               'float kJ = vTJit + tJitterFine( vTLocal, kPix );\n' +
+              'if ( tHasPaint > 0.5 ) { vec2 kPn = texture2D( tPaint, clamp( tUV( vTLocal ), 0.0, 1.0 ) ).rg; tPaintAdd = kPn.r; tPaintCut = kPn.g; }\n' +
               'vec3 kTC = terrainColor( vTH, length( kG0 ), vTWear, kJ, vTClump );\n' +
               // 衛星写真があれば、その色を地表の色にする（細かい色むらだけ手続きの色から少し残す）
               `if ( tHasPhoto > 0.5 ) kTC = texture2D( tPhoto, clamp( tUV( vTLocal ), 0.0, 1.0 ) ).rgb * ${PHOTO_ALBEDO.toFixed(3)} * ( 1.0 + kJ * 0.35 );\n` +
@@ -353,6 +356,47 @@ export class GpuTerrain {
   setLights(tex, intensity) {
     this.uniforms.tLights.value = tex;
     this.uniforms.tLightsI.value = tex ? intensity : 0;
+  }
+
+  // 森の筆（vegetation.paint）を地面の色の森にも効かせる：大地の範囲を 512 画素のマスクに描く
+  setPaint(strokes, size) {
+    if (!strokes?.length) {
+      this.uniforms.tHasPaint.value = 0;
+      return;
+    }
+    const N = 512;
+    const add = new Float32Array(N * N), cut = new Float32Array(N * N);
+    const px = size / N;
+    for (const p of strokes) {
+      const i0 = Math.max(0, Math.floor((p.x - p.r) / px + N / 2)), i1 = Math.min(N - 1, Math.ceil((p.x + p.r) / px + N / 2));
+      const j0 = Math.max(0, Math.floor((p.z - p.r) / px + N / 2)), j1 = Math.min(N - 1, Math.ceil((p.z + p.r) / px + N / 2));
+      const r2 = p.r * p.r;
+      for (let j = j0; j <= j1; j++) {
+        const dz = (j + 0.5 - N / 2) * px - p.z;
+        for (let i = i0; i <= i1; i++) {
+          const dx = (i + 0.5 - N / 2) * px - p.x;
+          const d2 = dx * dx + dz * dz;
+          if (d2 >= r2) continue;
+          const t = 1 - d2 / r2, w = t * t * (3 - 2 * t);
+          const k = j * N + i;
+          // 植えた跡と伐った跡は打ち消し合う（後から描いた方が勝つ）
+          if (p.v > 0) (add[k] = 1 - (1 - add[k]) * (1 - w)), (cut[k] *= 1 - w);
+          else (cut[k] = 1 - (1 - cut[k]) * (1 - w)), (add[k] *= 1 - w);
+        }
+      }
+    }
+    const data = new Uint8Array(N * N * 4);
+    for (let k = 0; k < N * N; k++) {
+      data[k * 4] = Math.round(add[k] * 255);
+      data[k * 4 + 1] = Math.round(cut[k] * 255);
+      data[k * 4 + 3] = 255;
+    }
+    this.paintTex?.dispose();
+    this.paintTex = new THREE.DataTexture(data, N, N, THREE.RGBAFormat);
+    this.paintTex.magFilter = this.paintTex.minFilter = THREE.LinearFilter;
+    this.paintTex.needsUpdate = true;
+    this.uniforms.tPaint.value = this.paintTex;
+    this.uniforms.tHasPaint.value = 1;
   }
 
   setWaterMask(tex) {

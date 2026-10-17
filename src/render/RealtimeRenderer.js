@@ -537,6 +537,11 @@ void main() {`)
     if (has('terrain') || has('water') || has('vegetation')) {
       this.gpuTerrain.setScene(s);
       this.gpuTerrain.setSeason(s.terrain.season, s.terrain.winterSnow);
+      // 森の筆を地面の色にも（筆の跡か大きさが変わったときだけ描き直す）
+      if (this.paintFor?.p !== s.vegetation?.paint || this.paintFor?.size !== s.terrain.size) {
+        this.paintFor = { p: s.vegetation?.paint, size: s.terrain.size };
+        this.gpuTerrain.setPaint(s.vegetation?.paint, s.terrain.size);
+      }
       this.trees.setSeason(s.terrain.season);
       this.surround?.terrain.setSeason(s.terrain.season, s.terrain.winterSnow);
       this.#updatePhotos(s);
