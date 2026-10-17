@@ -252,6 +252,13 @@ export class StillJob {
     const celestial = new Set(s.objects.filter((o) => o.celestial).map((o) => o.id));
     const built = await this.#buildScene(s, terrain, objectMeshes);
     mark('scene');
+    // 一枚絵の細かい地面はリアルタイム表示と少し違うので、カメラが地面すれすれ（1.4 m 未満）なら持ち上げる
+    const cg = terrain.lod?.camGround;
+    if (Number.isFinite(cg) && s.camera.position[1] - cg < 1.4 && s.camera.position[1] - cg > -20) {
+      const dy = cg + 1.4 - s.camera.position[1];
+      s.camera.position = [s.camera.position[0], s.camera.position[1] + dy, s.camera.position[2]];
+      s.camera.target = [s.camera.target[0], s.camera.target[1] + dy, s.camera.target[2]];
+    }
     const camera = this.#camera(s, W / H);
     this.#check();
 

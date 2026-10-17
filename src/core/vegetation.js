@@ -177,7 +177,8 @@ export function placeVegetation(rules, size, sample, heightAt, view, { maxTrees 
             const x = C[0] + (i + rand()) * cell, z = C[2] + (j + rand()) * cell;
             const r1r = rand(), r2 = rand(), r3 = rand();
             const d = Math.hypot(x - C[0], z - C[2]);
-            if (d < r0 || d > Math.min(r1, radius) || Math.abs(x) > size / 2 || Math.abs(z) > size / 2) continue;
+            // カメラのすぐ周り（1.5 m）には置かない（目の前が草で覆われないように）
+            if (d < Math.max(r0, 1.5) || d > Math.min(r1, radius) || Math.abs(x) > size / 2 || Math.abs(z) > size / 2) continue;
             if (!inView(x, z, 2)) continue;
             const sm = sample(x, z);
             // 草むらをすき間なく（生える確率を上げる）

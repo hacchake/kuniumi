@@ -224,7 +224,9 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
     }
   }
 
-  return { positions, normals, colors, uvs, index, tiles: tiles.length, triangles: io / 3, detail, plants };
+  // カメラの真下の地面（一枚絵の細かい地面。カメラが埋もれないか確かめる）
+  const camGround = heightAt(C[0], C[2], 0.5);
+  return { positions, normals, colors, uvs, index, tiles: tiles.length, triangles: io / 3, detail, plants, camGround };
 }
 
 function norm(v) {
