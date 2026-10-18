@@ -93,8 +93,23 @@ export class RealtimeRenderer {
     this.curveUniforms = createCurveUniforms();
 
     this.controls = new OrbitControls(this.camera, canvas);
-    this.controls.enableDamping = true;
-    this.controls.dampingFactor = 0.08;
+    // 慣性は付けない（手を止めた所でぴたりと止まる。一枚絵の構図を決めやすいように）
+    this.controls.enableDamping = false;
+    // 基本の速さは少し控えめに。Alt を押している間は 1/4 の微調整（Shift・Ctrl＋左ドラッグは OrbitControls では移動になるので使わない）
+    const SPEED = { rotate: 0.6, pan: 0.8, zoom: 0.7 };
+    const setSpeed = (k) => {
+      this.controls.rotateSpeed = SPEED.rotate * k;
+      this.controls.panSpeed = SPEED.pan * k;
+      this.controls.zoomSpeed = SPEED.zoom * k;
+    };
+    setSpeed(1);
+    const onSlow = (e) => {
+      if (e.key === 'Alt') e.preventDefault(); // ブラウザのメニューに移らないように
+      setSpeed(e.altKey ? 0.25 : 1);
+    };
+    window.addEventListener('keydown', onSlow);
+    window.addEventListener('keyup', onSlow);
+    window.addEventListener('blur', () => setSpeed(1));
     this.controls.maxPolarAngle = Math.PI * 0.495;
     this.controls.minDistance = 4;
     this.controls.zoomToCursor = true;

@@ -61,8 +61,8 @@ export const EN = {
   '回転（E）': 'Rotate (E)',
   '拡大縮小（R）': 'Scale (R)',
   '大地を生成中': 'Generating terrain',
-  '左ドラッグ: 回転　右ドラッグ: 移動　ホイール: 寄る／引く　クリック: 物体を選ぶ　F: 寄る　Home: 全体　?: 使い方':
-    'Left-drag: orbit　Right-drag: pan　Wheel: zoom　Click: select　F: focus　Home: overview　?: help',
+  '左ドラッグ: 回転　右ドラッグ: 移動　ホイール: 寄る／引く　Alt: ゆっくり　クリック: 物体を選ぶ　F: 寄る　Home: 全体　?: 使い方':
+    'Left-drag: orbit　Right-drag: pan　Wheel: zoom　Alt: slow　Click: select　F: focus　Home: overview　?: help',
   'ここに落とすと読み込みます': 'Drop to import',
   '.json（シーン）／ .glb（モデル）／ .png（ハイトマップ）': '.json (scene) / .glb (model) / .png (heightmap)',
 
@@ -75,6 +75,8 @@ export const EN = {
   '平行に動く': 'Pan',
   'ホイール': 'Wheel',
   '寄る／引く（カーソルの方へ）': 'Zoom in / out (toward the cursor)',
+  'Alt を押しながら': 'Hold Alt',
+  'ゆっくり動かす（構図の微調整に）': 'Move slowly (for fine framing)',
   '選んだ物体に寄る': 'Focus on the selected object',
   '大地全体を見渡す': 'Overview of the whole terrain',
   '物体': 'Objects',
