@@ -76,6 +76,7 @@ export const EN = {
   'ホイール': 'Wheel',
   '寄る／引く（カーソルの方へ）': 'Zoom in / out (toward the cursor)',
   'Alt を押しながら': 'Hold Alt',
+  '📖 完全攻略ガイドを開く（作例レシピ・裏ワザ・やりこみミッション）': '📖 Open the strategy guide (recipes, secrets, challenges — Japanese)',
   'ゆっくり動かす（構図の微調整に）': 'Move slowly (for fine framing)',
   '選んだ物体に寄る': 'Focus on the selected object',
   '大地全体を見渡す': 'Overview of the whole terrain',

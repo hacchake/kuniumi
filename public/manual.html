@@ -1,0 +1,671 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>国産み 完全攻略ガイド</title>
+<meta name="description" content="国産み KUNIUMI の攻略ガイド。ひな形の遊び方から地形づくり、空と天気、歩く・飛ぶ、一枚絵の撮り方、裏ワザとやりこみミッションまで。">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+  :root {
+    --bg: #0b0f1a;
+    --bg2: #121828;
+    --card: #161d30;
+    --line: #2a3350;
+    --ink: #e9ecf5;
+    --sub: #a9b1c9;
+    --gold: #e8c46a;
+    --gold2: #f6dd94;
+    --red: #ef6b5b;
+    --blue: #5fa8f0;
+    --green: #6fcf8a;
+    --purple: #b48cf0;
+    --orange: #f2a14a;
+    --mincho: "Hiragino Mincho ProN", "Yu Mincho", "YuMincho", "Noto Serif JP", serif;
+    --gothic: "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", "Meiryo", "Noto Sans JP", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    background-image:
+      radial-gradient(circle at 12% 8%, rgba(232, 196, 106, 0.08), transparent 40%),
+      radial-gradient(circle at 88% 30%, rgba(95, 168, 240, 0.07), transparent 45%);
+    color: var(--ink);
+    font-family: var(--gothic);
+    line-height: 1.8;
+    font-size: 16px;
+  }
+  a { color: var(--gold2); }
+  img { max-width: 100%; height: auto; display: block; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
+
+  /* ---- 表紙 ---- */
+  .cover { position: relative; overflow: hidden; border-bottom: 3px solid var(--gold); }
+  .cover img { width: 100%; height: min(62vh, 560px); object-fit: cover; filter: saturate(1.1); }
+  .cover::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(11, 15, 26, 0.1) 30%, rgba(11, 15, 26, 0.95)); }
+  .cover-text { position: absolute; left: 0; right: 0; bottom: 28px; z-index: 1; text-align: center; padding: 0 16px; }
+  .cover .badge { display: inline-block; background: var(--red); color: #fff; font-weight: 800; padding: 4px 14px; border-radius: 4px; transform: rotate(-3deg); letter-spacing: 0.1em; box-shadow: 3px 3px 0 #000; }
+  .cover h1 { font-family: var(--mincho); font-size: clamp(34px, 7vw, 72px); margin: 12px 0 4px; line-height: 1.15; color: var(--gold2); text-shadow: 0 3px 0 #000, 0 0 30px rgba(232, 196, 106, 0.5); }
+  .cover h1 small { display: block; font-size: 0.32em; letter-spacing: 0.4em; color: var(--ink); text-shadow: 0 2px 0 #000; }
+  .cover p { margin: 0; font-size: clamp(15px, 2.4vw, 20px); font-weight: 700; text-shadow: 0 2px 6px #000; }
+
+  /* ---- 目次 ---- */
+  .toc { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin: 28px 0 8px; padding: 0; list-style: none; }
+  .toc a { display: flex; gap: 10px; align-items: center; padding: 10px 12px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; color: var(--ink); text-decoration: none; font-weight: 700; transition: transform 0.15s, border-color 0.15s; }
+  .toc a:hover { transform: translateY(-2px); border-color: var(--gold); }
+  .toc .no { flex: none; font-family: var(--mincho); background: var(--gold); color: #1a1405; border-radius: 6px; padding: 0 8px; font-size: 13px; }
+
+  /* ---- 面（STAGE）の見出し ---- */
+  section.stage { margin: 56px 0; scroll-margin-top: 16px; }
+  .stage-head { display: flex; align-items: stretch; gap: 0; margin-bottom: 18px; border-radius: 12px; overflow: hidden; border: 2px solid var(--c, var(--gold)); }
+  .stage-no { flex: none; background: var(--c, var(--gold)); color: #0b0f1a; font-weight: 900; padding: 8px 16px; display: flex; flex-direction: column; justify-content: center; text-align: center; line-height: 1.1; }
+  .stage-no b { font-size: 30px; font-family: var(--mincho); }
+  .stage-no span { font-size: 11px; letter-spacing: 0.2em; }
+  .stage-title { padding: 10px 16px; background: var(--bg2); flex: 1; }
+  .stage-title h2 { margin: 0; font-family: var(--mincho); font-size: clamp(22px, 3.6vw, 30px); line-height: 1.3; }
+  .stage-title .meta { color: var(--sub); font-size: 13px; }
+  .stars { color: var(--gold); letter-spacing: 2px; }
+  h3 { font-family: var(--mincho); font-size: 21px; margin: 28px 0 10px; padding-left: 12px; border-left: 5px solid var(--c, var(--gold)); }
+
+  /* ---- ガイド役のふきだし ---- */
+  .talk { display: flex; gap: 12px; align-items: flex-start; margin: 16px 0; }
+  .talk .face { flex: none; width: 52px; height: 52px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #fff3c4, var(--gold) 55%, #9a7a2a); box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--gold); display: grid; place-items: center; font-family: var(--mincho); font-weight: 900; color: #3a2a05; font-size: 18px; }
+  .talk .bubble { position: relative; background: #fffaf0; color: #222; padding: 10px 14px; border-radius: 14px; font-weight: 600; }
+  .talk .bubble::before { content: ""; position: absolute; left: -9px; top: 16px; border: 9px solid transparent; border-right-color: #fffaf0; border-left: 0; }
+  .talk .name { display: block; font-size: 11px; color: #8a6a1a; font-weight: 800; }
+
+  /* ---- 囲み ---- */
+  .box { border-radius: 12px; padding: 14px 16px; margin: 16px 0; background: var(--card); border: 2px solid var(--line); position: relative; }
+  .box .tag { position: absolute; top: -13px; left: 14px; font-size: 13px; font-weight: 900; padding: 1px 10px; border-radius: 4px; color: #0b0f1a; }
+  .box.point { border-color: var(--green); } .box.point .tag { background: var(--green); }
+  .box.ura { border-color: var(--purple); background: linear-gradient(135deg, rgba(180, 140, 240, 0.12), var(--card)); } .box.ura .tag { background: var(--purple); }
+  .box.warn { border-color: var(--orange); } .box.warn .tag { background: var(--orange); }
+  .box.pro { border-color: var(--blue); } .box.pro .tag { background: var(--blue); }
+  .box p { margin: 6px 0; }
+  .box ul, .box ol { margin: 6px 0; padding-left: 1.3em; }
+
+  /* ---- 表 ---- */
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 15px; }
+  th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--bg2); color: var(--gold2); white-space: nowrap; }
+  .scroll { overflow-x: auto; }
+  kbd { display: inline-block; min-width: 1.6em; padding: 0 6px; border: 1px solid #56607e; border-bottom-width: 3px; border-radius: 5px; background: #1d2540; font-family: var(--gothic); font-size: 0.88em; text-align: center; line-height: 1.6; white-space: nowrap; }
+  .ui { color: var(--gold2); font-weight: 700; }
+  .ui::before { content: "［"; color: var(--sub); } .ui::after { content: "］"; color: var(--sub); }
+
+  /* ---- 図 ---- */
+  figure { margin: 16px 0; }
+  figure img { border-radius: 10px; border: 2px solid var(--line); }
+  figcaption { color: var(--sub); font-size: 14px; margin-top: 6px; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 720px) { .two { grid-template-columns: 1fr; } }
+
+  /* ---- 画面の見方 ---- */
+  .anatomy { position: relative; }
+  .anatomy .pin { position: absolute; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%; background: var(--red); color: #fff; font-weight: 900; display: grid; place-items: center; box-shadow: 0 0 0 3px #fff, 0 3px 8px #000; font-size: 15px; }
+  .legend { list-style: none; padding: 0; margin: 10px 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px 16px; }
+  .legend li { display: flex; gap: 8px; }
+  .legend b { flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--red); color: #fff; display: grid; place-items: center; font-size: 13px; margin-top: 3px; }
+
+  /* ---- 星図鑑（ひな形） ---- */
+  .dex { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
+  .dex .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
+  .dex .card img { aspect-ratio: 16 / 9; object-fit: cover; width: 100%; border: 0; border-radius: 0; }
+  .dex .body { padding: 8px 12px 12px; }
+  .dex .no { font-size: 12px; color: var(--gold); font-weight: 800; letter-spacing: 0.1em; }
+  .dex h4 { margin: 0 0 4px; font-family: var(--mincho); font-size: 18px; }
+  .dex .body p { margin: 0; font-size: 14px; color: var(--sub); line-height: 1.6; }
+  .dex .chip { display: inline-block; font-size: 11px; padding: 0 7px; border-radius: 10px; margin-right: 4px; font-weight: 800; color: #0b0f1a; }
+  .chip.day { background: #8fd0ff; } .chip.eve { background: #ffb36b; } .chip.night { background: #b6a6ff; } .chip.wx { background: #9be3b0; } .chip.star { background: #f6dd94; }
+
+  /* ---- パラメータ早見表 ---- */
+  .param { display: grid; grid-template-columns: 130px 1fr; gap: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin: 12px 0; }
+  .param > div { padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  .param > div:nth-last-child(-n + 2) { border-bottom: 0; }
+  .param .k { background: var(--bg2); color: var(--gold2); font-weight: 800; }
+  .param .lo, .param .hi { font-size: 13px; color: var(--sub); }
+  .param .lo::before { content: "◀ 下げると "; color: var(--blue); font-weight: 800; }
+  .param .hi::before { content: "上げると ▶ "; color: var(--red); font-weight: 800; }
+  @media (max-width: 560px) { .param { grid-template-columns: 1fr; } .param .k { border-bottom: 0; } }
+
+  /* ---- レシピ ---- */
+  .recipe { background: linear-gradient(160deg, #1b2440, var(--card)); border: 2px solid var(--gold); border-radius: 14px; padding: 16px; margin: 18px 0; }
+  .recipe h4 { margin: 0 0 4px; font-family: var(--mincho); font-size: 21px; color: var(--gold2); }
+  .recipe .meta { font-size: 13px; color: var(--sub); }
+  .recipe ol { margin: 10px 0 0; padding-left: 1.4em; }
+  .recipe li { margin: 4px 0; }
+  .recipe .grid { display: grid; grid-template-columns: 300px 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 720px) { .recipe .grid { grid-template-columns: 1fr; } }
+
+  /* ---- ミッション ---- */
+  .missions { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 8px; }
+  .missions label { display: flex; gap: 12px; align-items: flex-start; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; cursor: pointer; }
+  .missions input { width: 22px; height: 22px; accent-color: var(--gold); flex: none; margin-top: 4px; }
+  .missions .rank { flex: none; font-weight: 900; font-size: 12px; padding: 1px 8px; border-radius: 4px; margin-top: 4px; color: #0b0f1a; }
+  .rank.c { background: var(--green); } .rank.b { background: var(--blue); } .rank.a { background: var(--orange); } .rank.s { background: var(--red); color: #fff; }
+  .missions input:checked ~ .txt { text-decoration: line-through; color: var(--sub); }
+  .progress { height: 14px; background: var(--bg2); border-radius: 8px; overflow: hidden; border: 1px solid var(--line); }
+  .progress i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--gold), var(--red)); transition: width 0.3s; }
+  .title-get { font-family: var(--mincho); font-size: 20px; color: var(--gold2); margin: 8px 0; }
+
+  /* ---- Q&A ---- */
+  details { background: var(--card); border: 1px solid var(--line); border-radius: 10px; margin: 8px 0; padding: 0 14px; }
+  summary { cursor: pointer; padding: 10px 0; font-weight: 800; }
+  summary::before { content: "Q. "; color: var(--red); }
+  details p { margin: 0 0 12px; } details p::before { content: "A. "; color: var(--blue); font-weight: 800; }
+
+  footer { border-top: 1px solid var(--line); margin-top: 60px; padding: 24px 0 40px; color: var(--sub); font-size: 13px; text-align: center; }
+  .back { position: fixed; right: 16px; bottom: 16px; background: var(--gold); color: #1a1405; font-weight: 900; text-decoration: none; border-radius: 50%; width: 48px; height: 48px; display: grid; place-items: center; box-shadow: 0 4px 12px #000; font-size: 20px; }
+</style>
+</head>
+<body>
+
+<header class="cover">
+  <img src="manual/still-mountain.jpg" alt="一枚絵で描いた雪をかぶった岩山と針葉樹の森" width="800" height="450">
+  <div class="cover-text">
+    <span class="badge">完全攻略ガイド</span>
+    <h1><small>KUNIUMI</small>国産み</h1>
+    <p>― 山を盛り、海をはり、空を灯す。きみだけの星をつくれ ―</p>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <div class="talk">
+    <div class="face">ナギ</div>
+    <div class="bubble"><span class="name">案内役：国産みの神さま見習い ナギ</span>
+      ようこそ、星づくりの工房へ！ この本を読めば、たった数分で「自分だけの星」が生まれるよ。
+      まずはひな形で遊んで、慣れたら山を盛って、空を変えて、最後は実写みたいな一枚絵を撮ろう。さあ、国を産もう！</div>
+  </div>
+
+  <ol class="toc">
+    <li><a href="#basics"><span class="no">序</span>画面の見方と基本操作</a></li>
+    <li><a href="#s1"><span class="no">壱</span>星図鑑：18 のひな形</a></li>
+    <li><a href="#s2"><span class="no">弐</span>大地をつくる</a></li>
+    <li><a href="#s3"><span class="no">参</span>地表・森・季節・水</a></li>
+    <li><a href="#s4"><span class="no">肆</span>空と天気をあやつる</a></li>
+    <li><a href="#s5"><span class="no">伍</span>物体と天体を置く</a></li>
+    <li><a href="#s6"><span class="no">陸</span>歩く・飛ぶ・舟に乗る</a></li>
+    <li><a href="#s7"><span class="no">漆</span>地球モード</a></li>
+    <li><a href="#s8"><span class="no">捌</span>一枚絵を撮る</a></li>
+    <li><a href="#recipes"><span class="no">技</span>作例レシピ集</a></li>
+    <li><a href="#ura"><span class="no">秘</span>裏ワザ・隠し要素</a></li>
+    <li><a href="#missions"><span class="no">極</span>やりこみミッション</a></li>
+    <li><a href="#export"><span class="no">外</span>書き出し・連携</a></li>
+    <li><a href="#qa"><span class="no">助</span>困ったときは</a></li>
+  </ol>
+
+  <!-- ===================== 序 ===================== -->
+  <section class="stage" id="basics" style="--c: var(--gold)">
+    <div class="stage-head"><div class="stage-no"><span>序章</span><b>序</b></div>
+      <div class="stage-title"><h2>画面の見方と基本操作</h2><div class="meta">難しさ <span class="stars">★☆☆☆☆</span>　まずはここから</div></div></div>
+
+    <figure class="anatomy">
+      <img src="manual/ui.jpg" alt="KUNIUMI の画面全体" width="800" height="450">
+      <span class="pin" style="left:23%;top:4%">1</span>
+      <span class="pin" style="left:59%;top:4%">2</span>
+      <span class="pin" style="left:86%;top:4%">3</span>
+      <span class="pin" style="left:3.5%;top:45%">4</span>
+      <span class="pin" style="left:40%;top:55%">5</span>
+      <span class="pin" style="left:76%;top:30%">6</span>
+    </figure>
+    <ul class="legend">
+      <li><b>1</b><span>星の名前。シーンの題名だよ</span></li>
+      <li><b>2</b><span><span class="ui">選ぶと差し替え</span> 18 のひな形と <span class="ui">ファイル</span> メニュー</span></li>
+      <li><b>3</b><span><span class="ui">🌏 地球</span> <span class="ui">🚶 歩く</span> <span class="ui">✦ 一枚絵を描く</span> と <span class="ui">?</span> 使い方</span></li>
+      <li><b>4</b><span>創造パレット。球・立方体・環・天体などを置く</span></li>
+      <li><b>5</b><span>景観。ここをドラッグして眺める</span></li>
+      <li><b>6</b><span>設定パネル。大地・地形の性格・地表・植生・太陽・大気・水・一枚絵</span></li>
+    </ul>
+
+    <h3>コマンド早見表</h3>
+    <div class="scroll"><table>
+      <tr><th>操作</th><th>効果</th></tr>
+      <tr><td>左ドラッグ ／ 右ドラッグ ／ ホイール</td><td>まわりを回る ／ 平行に動く ／ カーソルの方へ寄る・引く</td></tr>
+      <tr><td><kbd>Alt</kbd> を押しながら</td><td>ゆっくり動く（1/4 の速さ）。構図の微調整に必須！</td></tr>
+      <tr><td><kbd>F</kbd> ／ <kbd>Home</kbd></td><td>選んだ物体に寄る ／ 大地全体を見渡す</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> ／ <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td><td>元に戻す ／ やり直す（失敗しても何度でも戻れる）</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd> ／ <kbd>Ctrl</kbd>+<kbd>O</kbd> ／ <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>N</kbd></td><td>保存 ／ 開く ／ 新しい星</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>一枚絵を描く</td></tr>
+      <tr><td><kbd>G</kbd></td><td>歩くモードへ</td></tr>
+      <tr><td><kbd>W</kbd> <kbd>E</kbd> <kbd>R</kbd>（物体を選んだとき）</td><td>移動 ／ 回転 ／ 拡大のハンドル</td></tr>
+      <tr><td><kbd>Delete</kbd> ／ <kbd>Ctrl</kbd>+<kbd>D</kbd> ／ <kbd>Esc</kbd></td><td>物体の削除 ／ 複製 ／ 選択の解除</td></tr>
+      <tr><td><kbd>?</kbd></td><td>アプリの中の使い方</td></tr>
+    </table></div>
+
+    <div class="box point"><span class="tag">ここがポイント！</span>
+      <p>パネルの項目にマウスを乗せると説明が出るよ。各セクションの <span class="ui">↺</span> はそのセクションだけ既定値に戻すボタン。作業中のシーンはブラウザに<strong>自動で保存</strong>されるから、閉じても続きから遊べる！</p>
+    </div>
+  </section>
+
+  <!-- ===================== 壱 ===================== -->
+  <section class="stage" id="s1" style="--c: #8fd0ff">
+    <div class="stage-head"><div class="stage-no"><span>STAGE</span><b>壱</b></div>
+      <div class="stage-title"><h2>星図鑑：18 のひな形で遊ぶ</h2><div class="meta">難しさ <span class="stars">★☆☆☆☆</span>　画面上の <span class="ui">— 選ぶと差し替え —</span> から呼び出す</div></div></div>
+
+    <div class="talk"><div class="face">ナギ</div><div class="bubble"><span class="name">ナギ</span>
+      最初の一歩はひな形！ 選ぶだけで、昼の大陸から環のある惑星の空までひとっ飛び。気に入ったひな形を土台に改造するのが、いちばんの近道だよ。<kbd>Ctrl</kbd>+<kbd>Z</kbd> で元に戻せるから気軽にね。</div></div>
+
+    <div class="dex">
+      <div class="card"><img src="manual/azure.jpg" alt="" loading="lazy" width="800" height="450"><div class="body"><div class="no">No.01</div><h4>碧の星 — 午後の大陸</h4><p><span class="chip day">昼</span>雪をいただく山並みの島。改造の土台に最適な、いちばんの基本形。</p></div></div>
+      <div class="card"><img src="manual/fuji-lake.jpg" alt="" loading="lazy" width="800" height="450"><div class="body"><div class="no">No.02</div><h4>富士の見える湖</h4><p><span class="chip day">昼</span>手彫りの「富士山形の山」と湖。逆さ富士を狙え！</p></div></div>
+      <div class="card"><img src="manual/misty-valley.jpg" alt="" loading="lazy" width="800" height="450"><div class="body"><div class="no">No.03</div><h4>霧の朝の渓谷</h4><p><span class="chip day">朝</span>谷に霧がたまる朝。光の筋がいちばん映える。</p></div></div>
+      <div class="card"><img src="manual/autumn-village.jpg" alt="" loading="lazy" width="800" height="450"><div class="body"><div class="no">No.04</div><h4>紅葉の山里</h4><p><span class="chip day">昼</span>季節は秋。一枚絵では赤・橙・黄の木が混ざる森に。</p></div></div>
+      <div class="card"><img src="manual/dusk-archipelago.jpg" alt="" loading="lazy" width="800" height="450"><div class="body"><div class="no">No.05</div><h4>黄昏の群島</h4><p><span class="chip eve">夕</span>逆光の島々と、燃える雲。シルエットを楽しむ星。</p></div></div>
+      <div class="card"><img src="manual/atoll.jpg" alt="" loading="lazy" width="800" height="450"><div class="body"><div class="no">No.06</div><h4>熱帯の環礁</h4><p><span class="chip day">昼</span>青い海とヤシの林（一枚絵）。南の島へ上陸しよう。</p></div></div>
+      <div class="card"><img src="manual/rainbow.jpg" alt="" loading="lazy" width="800" height="450"><div class="body"><div class="no">No.07</div><h4>雨上がりの虹</h4><p><span class="chip wx">天気</span>雨と低い太陽で、主虹と淡い副虹が架かる。</p></div></div>
+      <div class="card"><img src="manual/thunderstorm.jpg" alt="" loading="lazy" width="800" height="450"><div class="body"><div class="no">No.08</div><h4>雷雨の山脈</h4><p><span class="chip wx">天気</span>稲光が走る嵐の山。歩くと雷鳴も聞こえる。</p></div></div>
+      <div class="card"><img src="manual/rust-waste.jpg" alt="" loading="lazy" width="800" height="450"><div class="body"><div class="no">No.09</div><h4>赤錆の荒野</h4><p><span class="chip star">異星</span>鋭い岩峰が林立する荒れ地。SF の舞台にどうぞ。</p></div></div>
+      <div class="card"><img src="manual/dunes.jpg" alt="" loading="lazy" width="800" height="450"><div class="body"><div class="no">No.10</div><h4>砂丘と昼の月</h4><p><span class="chip star">異星</span>うねる砂丘の上に、クレーターの月が大きく浮かぶ。</p></div></div>
+      <div class="card"><img src="manual/volcanic.jpg" alt="" loading="lazy" width="800" height="450"><div class="body"><div class="no">No.11</div><h4>黒い火山島の夕暮れ</h4><p><span class="chip eve">夕</span>黒い溶岩の島と、赤い空。重厚な一枚に。</p></div></div>
+      <div class="card"><img src="manual/ice-giants.jpg" alt="" loading="lazy" width="800" height="450"><div class="body"><div class="no">No.12</div><h4>氷の巨峰</h4><p><span class="chip day">昼</span>そびえ立つ氷の峰。一枚絵では岩の割れ目に雪が残る。</p></div></div>
+      <div class="card"><img src="manual/snow-moon.jpg" alt="" loading="lazy" width="800" height="450"><div class="body"><div class="no">No.13</div><h4>雪原の満月</h4><p><span class="chip night">夜</span>月明かりの雪原。青い夜の光が美しい。</p></div></div>
+      <div class="card"><img src="manual/aurora-fjord.jpg" alt="" loading="lazy" width="800" height="300"><div class="body"><div class="no">No.14</div><h4>オーロラの峡湾</h4><p><span class="chip night">夜</span>北の空に揺らめく光のカーテン。</p></div></div>
+      <div class="card"><img src="manual/milky-lake.jpg" alt="" loading="lazy" width="800" height="450"><div class="body"><div class="no">No.15</div><h4>天の川の湖</h4><p><span class="chip night">夜</span>天の川と流れ星。じっと待つと星が流れる。</p></div></div>
+      <div class="card"><img src="manual/tiny-planet.jpg" alt="" loading="lazy" width="800" height="450"><div class="body"><div class="no">No.16</div><h4>小さな星</h4><p><span class="chip star">星の形</span>半径 8 km の豆粒惑星。地平線が丸い！</p></div></div>
+      <div class="card"><img src="manual/otherworld.jpg" alt="" loading="lazy" width="800" height="450"><div class="body"><div class="no">No.17</div><h4>異界の湿原</h4><p><span class="chip star">異星</span>紫の地面と不思議な色の空。夢の中の景色。</p></div></div>
+      <div class="card"><img src="manual/ringed-sky.jpg" alt="" loading="lazy" width="800" height="450"><div class="body"><div class="no">No.18</div><h4>環のある惑星の空</h4><p><span class="chip star">星の形</span>空に巨大な環の惑星。水面に映すかは物体ごとに選べる。</p></div></div>
+    </div>
+    <p style="color:var(--sub);font-size:13px">※ 写真はリアルタイム表示の画面（熱帯の環礁のみ一枚絵）。</p>
+  </section>
+
+  <!-- ===================== 弐 ===================== -->
+  <section class="stage" id="s2" style="--c: var(--orange)">
+    <div class="stage-head"><div class="stage-no"><span>STAGE</span><b>弐</b></div>
+      <div class="stage-title"><h2>大地をつくる</h2><div class="meta">難しさ <span class="stars">★★☆☆☆</span>　パネル <span class="ui">大地</span> <span class="ui">地形の性格</span></div></div></div>
+
+    <div class="talk"><div class="face">ナギ</div><div class="bubble"><span class="name">ナギ</span>
+      星の骨格は「種」と「地形の性格」で決まるよ。種の <span class="ui">⟳</span> を押すたびに、まったく別の大地が生まれる。気に入る地形が出るまでガチャを回そう！ 同じ種と設定なら、いつでも同じ地形が出てくるよ。</div></div>
+
+    <h3>大地の基本</h3>
+    <div class="param">
+      <div class="k">大きさ</div><div>200 m の箱庭から 1 万 km の大陸まで。<span class="lo">箱庭・庭園</span> <span class="hi">大陸・星</span></div>
+      <div class="k">起伏の高さ</div><div>いちばん高い所と低い所の差。<span class="lo">なだらかな丘</span> <span class="hi">険しい山脈</span></div>
+      <div class="k">基準の標高</div><div>大地全体の上げ下げ。下げると海に沈んで島や群島になる。</div>
+      <div class="k">解像度</div><div>格子の細かさ。上げると細かくなるが重くなる。大きな形は変わらない。</div>
+      <div class="k">細部の起伏</div><div>格子より細かい小さな凸凹の強さ。</div>
+    </div>
+
+    <h3>地形の性格（パラメータ早見表）</h3>
+    <div class="param">
+      <div class="k">山の数</div><div><span class="lo">大きな山がひとつ</span> <span class="hi">小さな山がたくさん</span></div>
+      <div class="k">細部の段数</div><div><span class="lo">のっぺり</span> <span class="hi">尾根と谷が細かく刻まれる</span></div>
+      <div class="k">粗さ</div><div><span class="lo">なめらか</span> <span class="hi">ごつごつ</span></div>
+      <div class="k">細部の細かさ</div><div>細部の段どうしの大きさの比。<span class="lo">柔らかい起伏</span> <span class="hi">ちりめん状の細かいしわ</span></div>
+      <div class="k">尾根の鋭さ</div><div><span class="lo">丸い丘</span> <span class="hi">ナイフのような稜線（アルプス風）</span></div>
+      <div class="k">山の丸み</div><div>尖った頂や尾根だけを丸める（谷はそのまま）。富士山のような山に。</div>
+      <div class="k">うねり</div><div><span class="lo">素直な形</span> <span class="hi">渦を巻くようにねじれた地形</span></div>
+      <div class="k">谷の平らさ</div><div><span class="lo">V 字の谷</span> <span class="hi">広く平らな谷底（盆地・平野）</span></div>
+      <div class="k">外周の沈み</div><div>四辺を海に沈める。<span class="lo">どこまでも続く大地</span> <span class="hi">海に浮かぶ島</span></div>
+      <div class="k">侵食</div><div>雨粒が地面を削る。谷筋・ガリー・扇状地ができ、ぐっと本物らしくなる。</div>
+    </div>
+
+    <h3>手彫り：神の手で地形を直す</h3>
+    <p>パネル <span class="ui">大地</span> の <span class="ui">手彫り</span> で筆を選び、景観を<strong>左ドラッグ</strong>（見回しは右ドラッグ）。筆の <span class="ui">半径</span> と <span class="ui">強さ</span> も変えられる。</p>
+    <div class="scroll"><table>
+      <tr><th>筆</th><th>こう使え！</th></tr>
+      <tr><td>盛る ／ 削る</td><td>山を足す・谷や湖を掘る。湖を掘ってから水をはると池ができる</td></tr>
+      <tr><td>ならす</td><td>平らな台地や、家を建てる平地をつくる</td></tr>
+      <tr><td>なめらかに</td><td>尖りすぎた所・段差を丸める</td></tr>
+      <tr><td>富士山形の山</td><td>クリックした所に、裾野の広い円錐の山と火口。大きさは筆の半径。中腹には放射状の沢も刻まれる</td></tr>
+      <tr><td>森を植える ／ 森を伐る</td><td>木を好きな所に。木の量が 0 でも植えた所には立つ</td></tr>
+    </table></div>
+
+    <div class="box pro"><span class="tag">達人のコツ</span>
+      <ul>
+        <li>「尾根の鋭さ」を上げて「山の丸み」も少し上げると、<strong>険しいのに角が取れた</strong>自然な山脈になる。</li>
+        <li>「侵食」は最後に足すのがコツ。形を決めてから削ると、谷の流れがきれいに出る。</li>
+        <li>手彫りの跡は保存しても、解像度を変えても残る。安心して彫り込もう。</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ===================== 参 ===================== -->
+  <section class="stage" id="s3" style="--c: var(--green)">
+    <div class="stage-head"><div class="stage-no"><span>STAGE</span><b>参</b></div>
+      <div class="stage-title"><h2>地表・森・季節・水</h2><div class="meta">難しさ <span class="stars">★★☆☆☆</span>　パネル <span class="ui">地表</span> <span class="ui">植生</span> <span class="ui">水</span></div></div></div>
+
+    <div class="two">
+      <figure><img src="manual/still-lake.jpg" alt="紅葉の湖岸の一枚絵" loading="lazy" width="800" height="450"><figcaption>季節「秋」の一枚絵。水際まで草が生え、木ごとに色が違う</figcaption></figure>
+      <figure><img src="manual/still-forest.jpg" alt="秋の森の中の一枚絵" loading="lazy" width="800" height="450"><figcaption>森の中に立つと、足元には草と花とシダ</figcaption></figure>
+    </div>
+
+    <h3>地表の色</h3>
+    <p><span class="ui">低地</span> <span class="ui">高地</span> <span class="ui">岩肌</span> <span class="ui">雪</span> <span class="ui">水辺</span> の 5 色で大地を塗り分ける。<span class="ui">雪線</span> で雪の積もる高さ、<span class="ui">岩が出る傾斜</span> で岩肌の出やすさを決める。<strong>色を変えるだけで異星になる</strong>ので、紫の低地・橙の岩なんて組み合わせも試してみて。</p>
+
+    <h3>季節</h3>
+    <div class="scroll"><table>
+      <tr><th>季節</th><th>見た目</th></tr>
+      <tr><td>春</td><td>若葉の明るい緑</td></tr>
+      <tr><td>夏</td><td>濃い緑</td></tr>
+      <tr><td>秋</td><td>森が紅葉の赤や黄に。一枚絵では木ごとに赤・橙・黄・緑が混ざる</td></tr>
+      <tr><td>冬</td><td>「冬の雪の高さ」より上の平らな所に雪。木は枯れ枝に</td></tr>
+    </table></div>
+
+    <h3>植生</h3>
+    <div class="param">
+      <div class="k">森の量</div><div>森の広さと密度。リアルタイムでは森の色、一枚絵では木が一本一本立つ</div>
+      <div class="k">木の高さ</div><div>木の背丈の目安（m）</div>
+      <div class="k">針葉樹の割合</div><div>標高が高いほど針葉樹が増える</div>
+      <div class="k">草（一枚絵）</div><div>カメラが地面に近いとき、足元に草と野の花・水際に葦・森の下にシダ</div>
+      <div class="k">熱帯（ヤシ・一枚絵）</div><div>広葉樹の一部をヤシに、下草に幅広の葉の株を</div>
+    </div>
+
+    <h3>水</h3>
+    <p><span class="ui">水をはる</span> で海や湖ができる。<span class="ui">水位</span> を上げ下げすると、海岸線がみるみる変わる。<span class="ui">揺らぎ</span> と <span class="ui">波の大きさ</span> を下げると鏡のような水面に。</p>
+    <div class="box point"><span class="tag">ここがポイント！</span>
+      <p>水位を上げて谷に海を入れると、<strong>入り江とフィヨルド</strong>ができる。基準の標高と水位の組み合わせが、島の形を決める最大のレバーだ！</p>
+    </div>
+  </section>
+
+  <!-- ===================== 肆 ===================== -->
+  <section class="stage" id="s4" style="--c: var(--blue)">
+    <div class="stage-head"><div class="stage-no"><span>STAGE</span><b>肆</b></div>
+      <div class="stage-title"><h2>空と天気をあやつる</h2><div class="meta">難しさ <span class="stars">★★★☆☆</span>　パネル <span class="ui">太陽</span> <span class="ui">大気</span></div></div></div>
+
+    <div class="talk"><div class="face">ナギ</div><div class="bubble"><span class="name">ナギ</span>
+      同じ山でも、光が変われば別世界！ 写真家は「光を撮る」って言うんだ。太陽の高さを 5° くらいにして、夕焼けの魔法を体験してみて。</div></div>
+
+    <h3>太陽と月</h3>
+    <div class="param">
+      <div class="k">高度</div><div><span class="lo">朝焼け・夕焼け・夜（マイナスで日没後）</span> <span class="hi">真昼の光</span></div>
+      <div class="k">方位</div><div>太陽の向き。カメラの後ろなら順光、正面なら逆光のシルエット</div>
+      <div class="k">月齢</div><div>月の満ち欠け。満月は太陽の反対側に昇る</div>
+      <div class="k">日時から</div><div>日時を選んで「合わせる」と、その場所のその時刻の本物の太陽に。▶ で時間を進めて一日を早回し</div>
+    </div>
+
+    <h3>天気（大気 → 天気）</h3>
+    <p>快晴・晴れ・薄曇り・曇り・霧・かすみ・雨・雷雨・雪をまとめて選べる。隣の <span class="ui">▶</span> を押すと、晴れ→曇り→雨→晴れ…と<strong>天気がゆっくり移り変わる</strong>。「いまの実際の天気と時刻」なら、その場所の本物の空模様に。</p>
+
+    <h3>大気の調整</h3>
+    <div class="param">
+      <div class="k">空の青さ</div><div><span class="lo">白っぽい空</span> <span class="hi">深い青空・赤い夕焼け</span></div>
+      <div class="k">大気の濁り</div><div><span class="lo">澄んだ高山の空</span> <span class="hi">霞んだ夏の空</span></div>
+      <div class="k">遠景のかすみ</div><div>遠くの山が青く霞む。奥行きを出す最強の調味料</div>
+      <div class="k">雲の量・厚さ</div><div>雲の多さと、立体的な厚み</div>
+      <div class="k">霧の厚み</div><div>谷にたまる霧。朝の景色に</div>
+      <div class="k">光の筋</div><div>雲や山の切れ間から差す光線（天使の梯子）</div>
+      <div class="k">オーロラ</div><div>上げると夜の北の空に光のカーテン</div>
+    </div>
+
+    <div class="box ura"><span class="tag">裏ワザ：虹の出し方</span>
+      <ol>
+        <li>天気を <span class="ui">雨</span> にする</li>
+        <li>太陽の <span class="ui">高度</span> を 42° より下にする</li>
+        <li>カメラを<strong>太陽に背を向ける</strong>向きにする</li>
+      </ol>
+      <p>すると太陽の反対側の空に、主虹と淡い副虹がゆっくり現れる。二本の虹の間が暗いのも本物どおり！</p>
+    </div>
+  </section>
+
+  <!-- ===================== 伍 ===================== -->
+  <section class="stage" id="s5" style="--c: var(--purple)">
+    <div class="stage-head"><div class="stage-no"><span>STAGE</span><b>伍</b></div>
+      <div class="stage-title"><h2>物体と天体を置く</h2><div class="meta">難しさ <span class="stars">★★★☆☆</span>　画面左の創造パレット</div></div></div>
+
+    <p>パレットの形（球・立方体・円柱・円錐・角錐・トーラス・環）を押すと、画面中央の先の地面に置かれる。<strong>クリックで選び</strong>、<kbd>W</kbd> <kbd>E</kbd> <kbd>R</kbd> で移動・回転・拡大。大きさは 1 m から 100 km まで！</p>
+    <h3>素材で化ける</h3>
+    <p>素材の見本は、石・苔むした岩・大理石・溶岩の星・青い惑星・ガス惑星・月・氷・黄金・鏡面・ガラス・恒星・市松・縞瑪瑙。模様・色・凹凸・粗さ・金属・発光・透けも細かく調整できる。<span class="ui">🖼 画像を貼る…</span> で手持ちの写真も貼れる（物体パネルへ画像を落としてもOK）。</p>
+    <h3>「天体」ボタン</h3>
+    <p>空に浮かぶ大きな星を置く。天体はかすみで消えず、影も落とさない。物体ごとに <span class="ui">水面に映す</span> を切れば、湖に映り込まない。</p>
+
+    <div class="box pro"><span class="tag">達人のコツ：土星をつくれ</span>
+      <ol>
+        <li><span class="ui">天体</span> を押して、素材を <span class="ui">ガス惑星</span> に</li>
+        <li><span class="ui">環</span> を置いて、天体と同じ位置へ。素材を縞模様に</li>
+        <li><kbd>E</kbd> の回転で環を少し傾け、<kbd>R</kbd> で惑星より大きく</li>
+      </ol>
+      <p>ひな形「環のある惑星の空」はこの作り方。夕暮れにすると、空の主役になる！</p>
+    </div>
+  </section>
+
+  <!-- ===================== 陸 ===================== -->
+  <section class="stage" id="s6" style="--c: var(--red)">
+    <div class="stage-head"><div class="stage-no"><span>STAGE</span><b>陸</b></div>
+      <div class="stage-title"><h2>歩く・飛ぶ・舟に乗る</h2><div class="meta">難しさ <span class="stars">★★☆☆☆</span>　ツールバーの <span class="ui">🚶 歩く</span> か <kbd>G</kbd></div></div></div>
+
+    <figure><img src="manual/boat.jpg" alt="小舟に乗って湖から島を眺める" loading="lazy" width="800" height="450"><figcaption>深い水へ歩いて出ると、小舟に乗れる。上には方位と標高の計器、右上は地図</figcaption></figure>
+
+    <div class="scroll"><table>
+      <tr><th>操作</th><th>効果</th></tr>
+      <tr><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>・マウス</td><td>移動・見回す（画面をクリックするとカーソルが隠れる）</td></tr>
+      <tr><td><kbd>Space</kbd> ／ <kbd>Shift</kbd></td><td>ジャンプ ／ 走る</td></tr>
+      <tr><td><kbd>F</kbd></td><td>飛ぶ ⇔ 歩くの切り替え（飛ぶときは <kbd>Space</kbd>/<kbd>E</kbd> 上昇、<kbd>C</kbd>/<kbd>Q</kbd> 下降）</td></tr>
+      <tr><td><kbd>Z</kbd></td><td>双眼鏡（遠くを 6 倍で見る）</td></tr>
+      <tr><td>ホイール ／ <kbd>Esc</kbd></td><td>速さを変える ／ 元の見回しへ戻る</td></tr>
+      <tr><td><kbd>M</kbd></td><td>音を消す</td></tr>
+    </table></div>
+
+    <div class="box point"><span class="tag">ここがポイント！</span>
+      <p>一枚絵の構図は、<strong>歩いて探す</strong>のがいちばん。地面の高さから見ると、上から見下ろすより何倍も迫力が出る。いい場所を見つけたら <kbd>Esc</kbd> で戻って、<kbd>Ctrl</kbd>+<kbd>Enter</kbd>！</p>
+    </div>
+    <h3>経路をたどる（GPX）</h3>
+    <p>登山道などの経路（GPX）を <span class="ui">ファイル → 経路（GPX）…</span> か画面へのドロップで読み込むと、その場所の地形ごと取り込んで道を描く。歩くモードで <kbd>R</kbd> を押すと、経路に沿って自動で歩いてくれる。歩いた道すじも GPX で保存できる。</p>
+  </section>
+
+  <!-- ===================== 漆 ===================== -->
+  <section class="stage" id="s7" style="--c: #4fd1c5">
+    <div class="stage-head"><div class="stage-no"><span>STAGE</span><b>漆</b></div>
+      <div class="stage-title"><h2>地球モード：本物の地球へ</h2><div class="meta">難しさ <span class="stars">★★★☆☆</span>　ツールバーの <span class="ui">🌏 地球</span></div></div></div>
+
+    <p>地球を丸ごと宇宙から眺め、そのまま地上まで寄れる。全大陸・海底・衛星写真・きのうの実際の雲・夜の街の明かりまで本物だ。地名で検索して飛ぶこともできる。</p>
+    <div class="scroll"><table>
+      <tr><th>ボタン</th><th>効果</th></tr>
+      <tr><td>ここを景観に取り込む</td><td>見ている辺りを、衛星写真・川・地名・建物つきの景観にする</td></tr>
+      <tr><td>ここに降りて歩く</td><td>見ている所を取り込んで、そのまま地上に立つ</td></tr>
+      <tr><td>早送り</td><td>1 日を 40 秒で。昼夜の境と街の明かりが地球を回る</td></tr>
+    </table></div>
+    <div class="box ura"><span class="tag">裏ワザ：思い出の場所へ</span>
+      <p><span class="ui">ファイル → 地球の地形（地名・緯度経度）…</span> で、ふるさとや旅先の名前を入れてみよう。実際の山と川の上を歩き、太陽の <span class="ui">日時から</span> で「あの日のあの時刻」の光まで再現できる。</p>
+    </div>
+  </section>
+
+  <!-- ===================== 捌 ===================== -->
+  <section class="stage" id="s8" style="--c: var(--gold)">
+    <div class="stage-head"><div class="stage-no"><span>STAGE</span><b>捌</b></div>
+      <div class="stage-title"><h2>一枚絵を撮る：最終奥義</h2><div class="meta">難しさ <span class="stars">★★★★☆</span>　<span class="ui">✦ 一枚絵を描く</span> か <kbd>Ctrl</kbd>+<kbd>Enter</kbd>（Chrome / Edge）</div></div></div>
+
+    <div class="two">
+      <figure><img src="manual/still-mountain.jpg" alt="雪の岩山の一枚絵" loading="lazy" width="800" height="450"><figcaption>岩の割れ目と沢筋に残る雪</figcaption></figure>
+      <figure><img src="manual/still-reeds.jpg" alt="葦の生えた湖岸の一枚絵" loading="lazy" width="800" height="450"><figcaption>水際の葦と、底が透ける澄んだ水</figcaption></figure>
+    </div>
+    <p>光の道すじを一本ずつ追いかける「パストレース」で、反射・屈折・柔らかい影まで計算した実写調の絵を描く。木・草・花・岩・葦・シダが一本一本立ち、最後に AI がノイズを取り除く。</p>
+
+    <h3>撮影設定（パネル「一枚絵」）</h3>
+    <div class="param">
+      <div class="k">大きさ</div><div>HD・フル HD・WQHD・4K・正方形・縦長・A4 から</div>
+      <div class="k">サンプル数</div><div><span class="lo">速いがざらつく（下見は 16〜32）</span> <span class="hi">なめらか（本番は 64〜128）</span></div>
+      <div class="k">地形の精細さ</div><div>近くの地面の細かさの上限。GPU が苦しいときは下げる</div>
+      <div class="k">ぼけの強さ</div><div>ピントの外がぼける。強くすると<strong>ミニチュア写真</strong>のように</div>
+      <div class="k">ピントの距離</div><div>どこにピントを合わせるか</div>
+      <div class="k">色調・露出補正</div><div>映画調（AgX）か ACES、明るさの補正</div>
+      <div class="k">光のにじみ</div><div>明るい所のまわりの柔らかい光</div>
+    </div>
+
+    <div class="box pro"><span class="tag">プロの撮影術</span>
+      <ul>
+        <li><strong>まず小さく試し撮り</strong>：960×540・32 サンプルで構図と光を確かめてから、本番の大きさで。</li>
+        <li><strong>カメラは低く</strong>：地面から 1.5〜3 m。手前に草や岩を入れると奥行きが出る。</li>
+        <li><strong>斜めの光</strong>：太陽の高度 15〜35° で、横から当てると立体感が際立つ。</li>
+        <li><strong>手前・中・奥</strong>：手前に草花、中ほどに湖、奥に山。三段の構図は鉄板！</li>
+        <li>構図の微調整は <kbd>Alt</kbd> を押しながらゆっくり。</li>
+        <li>保存は PNG のほか、HDR（.hdr）・OpenEXR（.exr）も。合成ソフトで仕上げたい人に。</li>
+      </ul>
+    </div>
+    <div class="box warn"><span class="tag">注意</span>
+      <p>描いている間はリアルタイム表示が止まる（GPU を一枚絵に譲るため）。<kbd>Esc</kbd> で中止できる。1280×720・64 サンプルで 1〜2 分が目安。</p>
+    </div>
+  </section>
+
+  <!-- ===================== レシピ ===================== -->
+  <section class="stage" id="recipes" style="--c: var(--gold2)">
+    <div class="stage-head"><div class="stage-no"><span>RECIPE</span><b>技</b></div>
+      <div class="stage-title"><h2>作例レシピ集</h2><div class="meta">この手順どおりにやれば、あの景色が手に入る</div></div></div>
+
+    <div class="recipe"><div class="grid">
+      <img src="manual/fuji-lake.jpg" alt="" loading="lazy" width="800" height="450">
+      <div><h4>其の一　逆さ富士の朝焼け</h4><div class="meta">所要 3 分　<span class="stars">★★☆☆☆</span></div>
+        <ol>
+          <li>ひな形 <span class="ui">富士の見える湖</span> を呼ぶ</li>
+          <li>水の <span class="ui">揺らぎ</span> と <span class="ui">波の大きさ</span> をぐっと下げて、鏡の湖に</li>
+          <li>太陽の <span class="ui">高度</span> を 3〜6° に、<span class="ui">方位</span> を山の横へ</li>
+          <li>大気の <span class="ui">霧の厚み</span> を少し足すと、朝もやの湖面に</li>
+          <li>湖の対岸に低く構えて、<kbd>Ctrl</kbd>+<kbd>Enter</kbd></li>
+        </ol></div>
+    </div></div>
+
+    <div class="recipe"><div class="grid">
+      <img src="manual/ringed-sky.jpg" alt="" loading="lazy" width="800" height="450">
+      <div><h4>其の二　土星の昇る海</h4><div class="meta">所要 5 分　<span class="stars">★★★☆☆</span></div>
+        <ol>
+          <li>ひな形 <span class="ui">碧の星</span> から始める</li>
+          <li><span class="ui">天体</span> を押し、素材を <span class="ui">ガス惑星</span> に</li>
+          <li><span class="ui">環</span> を同じ位置に重ね、<kbd>E</kbd> で 20° ほど傾ける</li>
+          <li>太陽の <span class="ui">高度</span> を 0〜3° にして夕暮れに</li>
+          <li>天体の <span class="ui">水面に映す</span> を入れると、海に惑星が映る</li>
+        </ol></div>
+    </div></div>
+
+    <div class="recipe"><div class="grid">
+      <img src="manual/atoll.jpg" alt="" loading="lazy" width="800" height="450">
+      <div><h4>其の三　南の島の木陰</h4><div class="meta">所要 4 分　<span class="stars">★★☆☆☆</span></div>
+        <ol>
+          <li>ひな形 <span class="ui">熱帯の環礁</span> を呼ぶ（熱帯はすでに 0.75）</li>
+          <li><kbd>G</kbd> で歩いて、浜の近くの林へ</li>
+          <li>海の方を向き、ヤシの幹を画面の端に入れる</li>
+          <li><kbd>Esc</kbd> で戻って一枚絵。足元には幅広の葉の株も生える</li>
+        </ol></div>
+    </div></div>
+
+    <div class="recipe"><div class="grid">
+      <img src="manual/still-lake.jpg" alt="" loading="lazy" width="800" height="450">
+      <div><h4>其の四　紅葉の湖畔</h4><div class="meta">所要 5 分　<span class="stars">★★★☆☆</span></div>
+        <ol>
+          <li>ひな形 <span class="ui">紅葉の山里</span> を呼ぶ</li>
+          <li><kbd>G</kbd> で湖岸まで歩き、水際に立つ</li>
+          <li>対岸の紅葉の丘が水面に映る向きを探す</li>
+          <li>太陽を斜め後ろに回して一枚絵。手前に葦が生える</li>
+        </ol></div>
+    </div></div>
+
+    <div class="recipe"><div class="grid">
+      <img src="manual/tiny-planet.jpg" alt="" loading="lazy" width="800" height="450">
+      <div><h4>其の五　手のひらの惑星（ミニチュア写真）</h4><div class="meta">所要 3 分　<span class="stars">★★★☆☆</span></div>
+        <ol>
+          <li>ひな形 <span class="ui">小さな星</span> か、<span class="ui">大きさ</span> を小さくした島を用意</li>
+          <li>上から斜めに見下ろす構図にする</li>
+          <li>一枚絵の <span class="ui">ぼけの強さ</span> を上げ、<span class="ui">ピントの距離</span> を島の真ん中へ</li>
+          <li>手前と奥がぼけて、おもちゃの模型のような一枚に！</li>
+        </ol></div>
+    </div></div>
+  </section>
+
+  <!-- ===================== 裏ワザ ===================== -->
+  <section class="stage" id="ura" style="--c: var(--purple)">
+    <div class="stage-head"><div class="stage-no"><span>SECRET</span><b>秘</b></div>
+      <div class="stage-title"><h2>裏ワザ・隠し要素</h2><div class="meta">知っているとちょっと嬉しい、星の小さな秘密</div></div></div>
+
+    <div class="box ura"><span class="tag">隠し要素その一：小舟</span><p>歩くモードで深い水（1.2 m より深い所）へ歩いて出ると、小舟に乗る。波で揺れ、舳先にしぶきが立ち、後ろには白い航跡が残る。</p></div>
+    <div class="box ura"><span class="tag">隠し要素その二：蛍</span><p>春か夏の晴れた夜、地面の近くを歩くと、周りを蛍が舞って数秒おきにふわっと光る。</p></div>
+    <div class="box ura"><span class="tag">隠し要素その三：足跡</span><p>雪の上や砂浜を歩くと、左右交互に足跡が残る。振り返ってみよう。雪が解けると消える。</p></div>
+    <div class="box ura"><span class="tag">隠し要素その四：積もる雪</span><p>天気を <span class="ui">雪</span> にしてしばらく待つと、季節に関係なく平らな所からまだらに積もる（約 1 分半でほぼ一面）。やむと少しずつ解ける。</p></div>
+    <div class="box ura"><span class="tag">隠し要素その五：流れ星と天の川</span><p>晴れた夜空には天の川が流れ、ときどき流れ星が走る。ひな形「天の川の湖」でじっと待ってみよう。</p></div>
+    <div class="box ura"><span class="tag">隠し要素その六：雷鳴</span><p>雷雨の中を歩いていると、稲光から少し遅れて雷鳴が響く。近い雷ほど早く大きい。</p></div>
+    <div class="box ura"><span class="tag">隠し要素その七：雨の水面</span><p>雨の日は地面が濡れてつややかになり、近くの水面には雨粒の波紋が広がる。</p></div>
+    <div class="box ura"><span class="tag">裏ワザ：カメラの道すじで映画監督</span><p>パネル <span class="ui">カメラの道すじ</span> で視点をいくつか足し、▶ でその間をなめらかに飛ぶ。● で再生しながら録画すれば、空撮映像の完成！</p></div>
+  </section>
+
+  <!-- ===================== ミッション ===================== -->
+  <section class="stage" id="missions" style="--c: var(--red)">
+    <div class="stage-head"><div class="stage-no"><span>CHALLENGE</span><b>極</b></div>
+      <div class="stage-title"><h2>やりこみミッション</h2><div class="meta">達成したら印をつけよう（このブラウザに記録される）</div></div></div>
+
+    <div class="progress"><i id="bar"></i></div>
+    <div class="title-get" id="title">称号：見習いの国つくり</div>
+
+    <ul class="missions" id="missionList">
+      <li><label><input type="checkbox" data-id="m1"><span class="rank c">C</span><span class="txt">18 のひな形をすべて呼び出して眺める</span></label></li>
+      <li><label><input type="checkbox" data-id="m2"><span class="rank c">C</span><span class="txt">種の ⟳ を 10 回押して、いちばん好きな大地を見つける</span></label></li>
+      <li><label><input type="checkbox" data-id="m3"><span class="rank c">C</span><span class="txt">歩くモードで山頂に登り、景色を見下ろす</span></label></li>
+      <li><label><input type="checkbox" data-id="m4"><span class="rank b">B</span><span class="txt">小舟に乗って、湖の真ん中まで漕ぎ出す</span></label></li>
+      <li><label><input type="checkbox" data-id="m5"><span class="rank b">B</span><span class="txt">手彫りの「富士山形の山」で、自分の霊峰を建てる</span></label></li>
+      <li><label><input type="checkbox" data-id="m6"><span class="rank b">B</span><span class="txt">虹を自分の手で架ける（雨・低い太陽・背中に太陽）</span></label></li>
+      <li><label><input type="checkbox" data-id="m7"><span class="rank b">B</span><span class="txt">夜の草むらで蛍を見つける</span></label></li>
+      <li><label><input type="checkbox" data-id="m8"><span class="rank a">A</span><span class="txt">環のある惑星を自作して、夕暮れの空に浮かべる</span></label></li>
+      <li><label><input type="checkbox" data-id="m9"><span class="rank a">A</span><span class="txt">地球モードで自分の住む町を見つけ、そこに降りて歩く</span></label></li>
+      <li><label><input type="checkbox" data-id="m10"><span class="rank a">A</span><span class="txt">カメラの道すじで空撮映像を録画する</span></label></li>
+      <li><label><input type="checkbox" data-id="m11"><span class="rank a">A</span><span class="txt">ぼけを使ったミニチュア写真の一枚絵を撮る</span></label></li>
+      <li><label><input type="checkbox" data-id="m12"><span class="rank s">S</span><span class="txt">四季（春・夏・秋・冬）で同じ場所の一枚絵を撮り比べる</span></label></li>
+      <li><label><input type="checkbox" data-id="m13"><span class="rank s">S</span><span class="txt">ひな形を使わず、新しい星から自分だけの世界をつくる</span></label></li>
+      <li><label><input type="checkbox" data-id="m14"><span class="rank s">S</span><span class="txt">4K の一枚絵を 128 サンプルで仕上げ、壁紙にする</span></label></li>
+    </ul>
+  </section>
+
+  <!-- ===================== 書き出し ===================== -->
+  <section class="stage" id="export" style="--c: #9aa6ad">
+    <div class="stage-head"><div class="stage-no"><span>EXPORT</span><b>外</b></div>
+      <div class="stage-title"><h2>書き出し・連携</h2><div class="meta">つくった星を外の世界へ（ファイル メニュー）</div></div></div>
+    <div class="scroll"><table>
+      <tr><th>形式</th><th>使いみち</th></tr>
+      <tr><td>シーン（.json）</td><td>星の設計図。<kbd>Ctrl</kbd>+<kbd>S</kbd> で保存、友だちに渡せば同じ星が生まれる</td></tr>
+      <tr><td>glTF（.glb）</td><td>地形・水・太陽・物体・カメラを 3D モデルとして。Blender などで開ける</td></tr>
+      <tr><td>Blender 用 .py</td><td>glb と同じフォルダで実行すると、空・カメラ・レンダー設定まで整う</td></tr>
+      <tr><td>ハイトマップ（16bit PNG）</td><td>World Machine・Gaea・Unreal・Unity などのゲームエンジンへ</td></tr>
+      <tr><td>表示中の画面（PNG）／ 画面を録画（動画）</td><td>リアルタイム表示をそのまま画像や動画に</td></tr>
+    </table></div>
+    <p>逆に、.json・.glb・.png/.jpg（ハイトマップ）を画面へドロップすれば読み込める。Blender で彫り直した地形も glb で戻せる。</p>
+  </section>
+
+  <!-- ===================== Q&A ===================== -->
+  <section class="stage" id="qa" style="--c: var(--blue)">
+    <div class="stage-head"><div class="stage-no"><span>HELP</span><b>助</b></div>
+      <div class="stage-title"><h2>困ったときは</h2><div class="meta">よくある詰まりポイント</div></div></div>
+    <details><summary>一枚絵が描けない</summary><p>一枚絵は WebGPU を使うので、Chrome か Edge の最新版で開いてね。「GPU でエラーが出ました」と出たら、一枚絵の <span class="ui">地形の精細さ</span>・大きさ・サンプル数を下げてみて。何度も出るときは、ブラウザを開き直すと直ることが多いよ。</p></details>
+    <details><summary>視点がすぐ遠くへ飛んでいってしまう</summary><p><kbd>Alt</kbd> を押しながら操作すると 1/4 の速さになる。<kbd>Home</kbd> で全体の眺めに戻れるよ。</p></details>
+    <details><summary>地形を壊してしまった</summary><p><kbd>Ctrl</kbd>+<kbd>Z</kbd> で何度でも戻れる。セクションの <span class="ui">↺</span> ならそのセクションだけ既定値に戻せる。</p></details>
+    <details><summary>動きが重い</summary><p>表示の解像度は自動で調整されるけど、<span class="ui">解像度</span> を下げたり、雲や霧を減らすと軽くなるよ。</p></details>
+    <details><summary>一枚絵に木や草が出ない</summary><p><span class="ui">森の量</span> と <span class="ui">草（一枚絵）</span> を確かめて。草はカメラが地面に近いとき（高さ数十 m まで）だけ置かれるよ。</p></details>
+    <details><summary>作った星はどこに保存されるの？</summary><p>作業中はこのブラウザに自動で残る。別の PC へ持っていくなら <kbd>Ctrl</kbd>+<kbd>S</kbd> でシーン（.json）を保存しよう。</p></details>
+  </section>
+
+  <div class="talk">
+    <div class="face">ナギ</div>
+    <div class="bubble"><span class="name">ナギ</span>
+      攻略おつかれさま！ でもね、この本に載っていない景色のほうが、ずっとたくさんあるんだ。種をひとつ回すたびに、まだ誰も見たことのない星が生まれる。さあ、きみの国産みの続きを！</div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">国産み KUNIUMI 完全攻略ガイド　<a href="./">▶ 工房へ戻る</a></div>
+</footer>
+<a class="back" href="#" aria-label="ページの先頭へ">▲</a>
+
+<script>
+  // やりこみミッション：印はこのブラウザに残す（使えないときは残さないだけ）
+  (function () {
+    const KEY = 'kuniumi.manual.missions';
+    let done = {};
+    try { done = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { done = {}; }
+    const boxes = [...document.querySelectorAll('#missionList input')];
+    const titles = ['見習いの国つくり', '丘を盛る者', '山河の匠', '天地の名工', '星を産む神'];
+    const update = () => {
+      const n = boxes.filter((b) => b.checked).length;
+      document.getElementById('bar').style.width = (n / boxes.length) * 100 + '%';
+      const t = titles[Math.min(titles.length - 1, Math.floor((n / boxes.length) * (titles.length - 1) + 1e-9))];
+      document.getElementById('title').textContent = '称号：' + t + '（' + n + ' / ' + boxes.length + '）';
+    };
+    for (const b of boxes) {
+      b.checked = !!done[b.dataset.id];
+      b.addEventListener('change', () => {
+        done[b.dataset.id] = b.checked;
+        try { localStorage.setItem(KEY, JSON.stringify(done)); } catch (e) { /* 残せなくても遊べる */ }
+        update();
+      });
+    }
+    update();
+  })();
+</script>
+</body>
+</html>

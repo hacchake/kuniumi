@@ -508,3 +508,18 @@ body.walking #create { display: none; }
 .sculpt-btns button.active { background: rgba(212, 175, 95, 0.45); border-color: #d4af5f; }
 .sculpt-num { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; opacity: 0.85; }
 .sculpt-num input { width: 56px; }
+
+/* 使い方の中の、攻略ガイドへの入口 */
+.help-guide {
+  display: block;
+  grid-column: 1 / -1;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--gold, #e8c46a);
+  border-radius: 10px;
+  color: var(--gold, #e8c46a);
+  font-weight: 700;
+  text-decoration: none;
+  background: rgba(232, 196, 106, 0.08);
+}
+.help-guide:hover { background: rgba(232, 196, 106, 0.16); }
