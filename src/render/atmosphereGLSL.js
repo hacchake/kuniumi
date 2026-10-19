@@ -74,13 +74,21 @@ export const CLOUD_FUNCS_GLSL = /* glsl */ `
     float c = cloudCover( p.xz );
     if ( c <= 0.0 ) return 0.0;
     float top = clamp( c * 3.2, 0.05, 1.0 ); // 濃い所ほど頂が高い
+    vec3 pw = p + vec3( cloudOrigin.x, 0.0, cloudOrigin.y );
+    float big = 0.5;
+    if ( detail ) {
+      // 数百 m の大きなこぶ：頂の高さを場所ごとに上下させ（もくもく盛り上がる所と低い所）、底も少し揺らす。
+      // これが無いと、遠くの雲が底の平らななめらかなパンケーキに見える
+      big = kNoise3( pw / 700.0 );
+      top = clamp( top * ( 0.65 + 0.7 * big ), 0.05, 1.0 );
+      hr -= ( big - 0.5 ) * 0.08;
+    }
     float prof = smoothstep( 0.0, 0.07, hr ) * ( 1.0 - smoothstep( top * 0.55, top, hr ) );
     float d = clamp( c * 2.5, 0.0, 1.0 ) * prof;
     if ( detail && d > 0.0 ) {
-      // 大きなこぶ → 小さなこぶ → 細かいけば立ち（カリフラワー状の縁）
-      vec3 pw = p + vec3( cloudOrigin.x, 0.0, cloudOrigin.y );
-      float e = kNoise3( pw / 170.0 ) * 0.52 + kNoise3( pw / 56.0 ) * 0.31 + kNoise3( pw / 19.0 ) * 0.17;
-      d = max( 0.0, d - e * 0.62 * ( 1.0 - d * 0.4 ) );
+      // 大きなこぶ → 中くらい → 小さなこぶ → 細かいけば立ち（カリフラワー状の縁）
+      float e = big * 0.3 + kNoise3( pw / 170.0 ) * 0.36 + kNoise3( pw / 56.0 ) * 0.22 + kNoise3( pw / 19.0 ) * 0.12;
+      d = max( 0.0, d - e * 0.72 * ( 1.0 - d * 0.35 ) );
     }
     return d * cloudDensity * 0.09;
   }
