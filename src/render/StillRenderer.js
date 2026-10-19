@@ -550,10 +550,20 @@ export class StillJob {
       const R = this.place.R;
       const wgeo = R > 0 ? curvedDisc(R, s.water.level) : new THREE.PlaneGeometry(span, span, 1, 1);
       if (!(R > 0)) wgeo.rotateX(-Math.PI / 2);
-      // さざ波は「表面の粗さ」で表す。繰り返しの法線マップはパストレーサのテクスチャ合成で継ぎ目が線になるため使わない。
+      // 波：カメラの真下を中心に、繰り返さない波の法線マップを貼る（太陽のきらめき・映り込みの揺らぎ）。
+      // 繰り返す法線マップはパストレーサのテクスチャ合成で継ぎ目が線になるので、範囲の外は平らにして「表面の粗さ」に任せる。
       // 粗さは「揺らぎ」「波の大きさ」から決める（太陽の照り返しが広がり、遠くの水面が空を柔らかく映す）
       const tint = new THREE.Color(s.water.color);
-      const rough = Math.min(0.25, 0.015 + s.water.distortion * 0.008 * s.water.waveScale);
+      const rough = Math.min(0.25, 0.015 + s.water.distortion * 0.008 * s.water.waveScale) * 0.75;
+      const camH = Math.max(1, s.camera.position[1] - s.water.level);
+      // 範囲は見ている先の海を覆うように：カメラの高さの 12 倍ほどの広さを、視線の向き（水平）へずらして置く
+      const waveW = Math.min(12000, Math.max(800, camH * 12 + 600));
+      const fx = s.camera.target[0] - s.camera.position[0], fz = s.camera.target[2] - s.camera.position[2];
+      const fl = Math.hypot(fx, fz) || 1;
+      const ahead = waveW * 0.4;
+      const waveC = [s.camera.position[0] - this.place.ox + (fx / fl) * ahead, s.camera.position[2] - this.place.oz + (fz / fl) * ahead];
+      const waveTex = waveNormalMap(1536, waveW, s.water.distortion, s.water.waveScale, (s.vegetation?.seed ?? 77) + 5);
+      addWaveUV(wgeo, waveC, waveW);
       // 上空（20 km 以上）から見下ろすときは、海底は見えないので「透ける水」をやめ、暗い水の色と表面の反射だけにする。
       // 透ける水のままだと、球面に沿わせた三角形の面ごとに屈折がずれ、同心円の縞になる
       const fromSky = R > 0 && s.camera.position[1] > 20000;
@@ -570,6 +580,9 @@ export class StillJob {
             attenuationColor: tint.clone().lerp(new THREE.Color(1, 1, 1), 0.55),
             attenuationDistance: 10,
           });
+      wmat.normalMap = waveTex;
+      wmat.normalScale = new THREE.Vector2(1, 1);
+      this.disposers.push(() => waveTex.dispose());
       water = new THREE.Mesh(wgeo, wmat);
       if (!(R > 0)) water.position.y = s.water.level;
       scene.add(water);
@@ -952,6 +965,76 @@ function flipRows(data, W, H) {
 }
 
 // 丸い星の水面（と海底）：注視点（原点）を中心に、近くは細かく遠くは粗い同心円の円盤を、標高 level の球面に沿って曲げる
+// 波の法線マップ（size 画素四方で W m 四方を覆う。繰り返さない）。風向きのまわりに散らした波を重ねる。
+// 接線の空間は 接線 = +x、従法線 = −z（addWaveUV の接線と合わせる）。縁へ向かって平らに戻す（範囲の外と継ぎ目を作らない）
+function waveNormalMap(size, W, distortion, waveScale, seed) {
+  let st = seed * 9301 + 49297;
+  const rand = () => ((st = (st * 233280 + 49297) % 2147483647) / 2147483647 + 1) % 1;
+  const texel = W / size;
+  const lMin = texel * 3, lMax = Math.max(lMin * 4, Math.min(W / 5, 60 * Math.max(0.3, waveScale)));
+  const slope = 0.09 * Math.min(2, Math.max(0.25, distortion / 3));
+  const wind = rand() * Math.PI * 2;
+  const NW = 28;
+  const waves = [];
+  for (let i = 0; i < NW; i++) {
+    const lam = lMin * Math.pow(lMax / lMin, (i + rand()) / NW);
+    const dir = wind + (rand() - 0.5) * 2.4;
+    const k = (Math.PI * 2) / lam;
+    waves.push({ kx: Math.cos(dir) * k, kz: Math.sin(dir) * k, s: (slope / Math.sqrt(NW)) * (0.6 + rand() * 0.8), ph: rand() * Math.PI * 2 });
+  }
+  const data = new Uint8Array(size * size * 4);
+  for (let j = 0; j < size; j++) {
+    const z = (j / (size - 1) - 0.5) * W;
+    for (let i = 0; i < size; i++) {
+      const x = (i / (size - 1) - 0.5) * W;
+      let hx = 0, hz = 0;
+      for (const w of waves) {
+        // 高さ = Σ (s/k) sin(k·p + φ) なので、傾きは s cos(k·p + φ) × 波の向き
+        const c = Math.cos(w.kx * x + w.kz * z + w.ph) * w.s;
+        const kl = Math.hypot(w.kx, w.kz);
+        hx += c * (w.kx / kl);
+        hz += c * (w.kz / kl);
+      }
+      // 縁の 25% で平らへ（範囲の外の、粗さで表す水面となめらかにつなぐ）
+      const e = Math.min(i, j, size - 1 - i, size - 1 - j) / (size * 0.25);
+      const f = Math.min(1, e) * Math.min(1, e);
+      hx *= f;
+      hz *= f;
+      const l = Math.hypot(hx, 1, hz);
+      const o = (j * size + i) * 4;
+      data[o] = ((-hx / l) * 0.5 + 0.5) * 255;
+      data[o + 1] = ((hz / l) * 0.5 + 0.5) * 255;
+      data[o + 2] = ((1 / l) * 0.5 + 0.5) * 255;
+      data[o + 3] = 255;
+    }
+  }
+  const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat, THREE.UnsignedByteType);
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearFilter;
+  tex.colorSpace = THREE.NoColorSpace;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+// 水面に、波の法線マップ用の UV（c を中心に W m 四方で 0..1）と接線（+x を面に沿わせたもの）を付ける
+function addWaveUV(geo, c, W) {
+  const p = geo.attributes.position;
+  if (!geo.attributes.normal) geo.computeVertexNormals();
+  const n = geo.attributes.normal;
+  const uv = new Float32Array(p.count * 2), tan = new Float32Array(p.count * 4);
+  for (let i = 0; i < p.count; i++) {
+    uv[i * 2] = (p.getX(i) - c[0]) / W + 0.5;
+    uv[i * 2 + 1] = (p.getZ(i) - c[1]) / W + 0.5;
+    const nx = n.getX(i), ny = n.getY(i), nz = n.getZ(i);
+    let tx = 1 - nx * nx, ty = -nx * ny, tz = -nx * nz;
+    const l = Math.hypot(tx, ty, tz) || 1;
+    tan.set([tx / l, ty / l, tz / l, 1], i * 4);
+  }
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  geo.setAttribute('tangent', new THREE.BufferAttribute(tan, 4));
+}
+
 function curvedDisc(R, level, maxR = Math.PI * R * 0.98, SEG = DISC_SEG, ratio = DISC_RATIO) {
   const radii = [0];
   for (let r = 2; r < maxR; r *= ratio) radii.push(r);
