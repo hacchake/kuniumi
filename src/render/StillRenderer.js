@@ -699,7 +699,11 @@ export class StillJob {
         add(g.trunk, trunk, list);
         split(list, brdCols.length, 7.3).forEach((sub, j) => add(j ? g.crown.clone() : g.crown, brdCols[j], sub, { side: THREE.DoubleSide, colorVar: 0.3, seed: 5 + i * 7 + j, roughness: 0.7 }));
       });
+      // 草の葉の色：低地の色から。季節で枯れ色へ寄せる（秋は黄土色、冬は枯れ草色）
       const grassCol = new THREE.Color(s.terrain.palette.low).lerp(new THREE.Color('#9fa84a'), 0.25);
+      if (s.terrain.season === 'autumn') grassCol.lerp(new THREE.Color('#a58c4c'), 0.55);
+      else if (s.terrain.season === 'winter') grassCol.lerp(new THREE.Color('#8f7c5c'), 0.7);
+      else if (s.terrain.season === 'spring') grassCol.lerp(new THREE.Color('#7fb048'), 0.3);
       const grassLists = split(P.grass, 3);
       grassLists.forEach((list, i) => add(detailedGrass(i + 1), grassCol, list, { side: THREE.DoubleSide, roughness: 0.6, colorVar: 0.35, seed: 9 + i }));
       // 岩と石（形の違う 4 種）。色は大地の岩の色を明るめに

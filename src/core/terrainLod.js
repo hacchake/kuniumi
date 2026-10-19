@@ -144,6 +144,8 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
     realWorld: terrain.mode === 'heightmap' && !!terrain.heightmap?.geo,
     fine: true, // 近景の細かい色（濡れた水際・水底の小石）
     seaFloor: STILL_SEA_FLOOR, // 深い海の底を水の散乱色で塗る
+    season: terrain.season, // 季節の地表の色（リアルタイム表示と同じ式）
+    winterSnow: terrain.winterSnow,
     waterColor: water.color,
   });
   const col = [0, 0, 0];

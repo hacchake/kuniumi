@@ -61,6 +61,7 @@ export function createTerrainShader(opts) {
   // 一枚絵の深い海の色（水の散乱色）：水の色の設定は深い所の暗い見た目なので、散らす色としては明るめに
   const scatterCol = opts.waterColor ? lin(opts.waterColor).map((v) => Math.min(1, v * 2.5)) : null;
 
+  const above0 = (H) => !waterEnabled || H >= sea; // 水の下には雪を積もらせない
   // x, z（世界座標）を渡すと、森の所を森の色にする
   return function shade(H, slope, wv, jitter, col, x, z, curv = 0) {
     const mix = (c, t) => {
@@ -143,6 +144,26 @@ export function createTerrainShader(opts) {
       }
     }
     // ゆらぎで明るさにも少しムラ
+    // 季節（opts.season のときだけ。リアルタイム表示の GpuTerrain の季節の式と同じ）：緑の濃い所ほど、
+    // 春は若葉の明るい緑、秋は紅葉の赤〜黄、冬は茶色がかって、冬の雪の高さより上の平らな所は雪に
+    if (opts.season && opts.season !== 'summer' && x !== undefined) {
+      const gr = Math.min(1, Math.max(0, ((col[1] - col[0]) / (col[1] + col[0] + 1e-4)) * 4));
+      const lm = col[0] * 0.2126 + col[1] * 0.7152 + col[2] * 0.0722;
+      if (opts.season === 'spring') {
+        mix([col[0] * 1.05, col[1] * 1.25, col[2] * 0.85], gr * 0.7);
+      } else if (opts.season === 'autumn') {
+        const n = valueNoise(x / 128, z / 128, 77) * 0.7 + valueNoise(x / 32, z / 32, 78) * 0.3;
+        const k = lm * 2.2 + 0.03;
+        mix([(0.62 + 0.1 * n) * k, (0.16 + 0.32 * n) * k, (0.04 + 0.04 * n) * k], gr * 0.85);
+      } else if (opts.season === 'winter') {
+        const kg = 1 - 0.25 * gr;
+        col[0] *= 0.95 * kg;
+        col[1] *= 0.92 * kg;
+        col[2] *= 0.85 * kg;
+        const ws = opts.winterSnow ?? 600;
+        mix([0.82, 0.85, 0.9], smooth(ws - 150, ws + 250, H) * (1 - smooth(0.55, 1, slope)) * (above0(H) ? 1 : 0));
+      }
+    }
     const lum = 1 + jitter * 0.18;
     col[0] = Math.min(1, col[0] * lum);
     col[1] = Math.min(1, col[1] * lum);
