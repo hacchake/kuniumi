@@ -13,7 +13,7 @@ import { toneMapToRGBA8 } from '../core/tonemap.js';
 import { sunIrradiance, discScaleFor } from '../core/skyModel.js';
 import { computeAtmosphere, renderMask } from './atmospherePass.js';
 import { atmosphereParams } from './atmosphereParams.js';
-import { fillInstances } from '../three/vegetationMeshes.js';
+import { fillInstances, coniferGeometry, broadleafGeometry } from '../three/vegetationMeshes.js';
 import { detailedBroadleaf, detailedConifer, detailedGrass, detailedFlowers, detailedRock, detailedReeds, detailedFern, detailedPalm, detailedTropicalPlant } from '../three/detailedPlants.js';
 import { planetRadius } from '../core/schema.js';
 import { curvePoint, DISC_RATIO, DISC_SEG } from '../core/curvature.js';
@@ -646,11 +646,38 @@ export class StillJob {
         autumn: ['#a8461a', '#c27a1c', '#b8962a', '#8c2c16', '#6a7026'],
         winter: ['#4d4136', '#584a3c', '#463c34'],
       }[s.terrain.season] ?? ['#325a22', '#3e6a26', '#2c4e20', '#4a6a2a']).map((c) => new THREE.Color(c));
-      split(P.conifer, 3).forEach((list, i) => {
+      // 遠くの木（画面で背丈 40 画素より小さく見えるもの）は軽い形にする。細かい形は 1 本 1 万枚以上の三角形で、
+      // 十数万本すべてを細かくすると光線の計算も GPU の記憶も重くなる（重い場面で GPU が打ち切られる原因になる）
+      const camL = [s.camera.position[0] - this.place.ox, s.camera.position[1], s.camera.position[2] - this.place.oz];
+      const focalPx = s.render.still.height / (2 * Math.tan(((s.camera.fov ?? 50) * Math.PI) / 360));
+      const nearFar = (list) => {
+        const near = [], far = [];
+        for (let k = 0; k < list.length; k += 5) {
+          const d = Math.hypot(list[k] - camL[0], list[k + 1] - camL[1], list[k + 2] - camL[2]);
+          (list[k + 3] * focalPx >= 40 * d ? near : far).push(list[k], list[k + 1], list[k + 2], list[k + 3], list[k + 4]);
+        }
+        return [near, far];
+      };
+      // 軽い形（リアルタイム表示の木）。細かい形の葉の平均の明るさに合わせて頂点の色を塗る
+      const shade = (g, v) => {
+        g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 3).fill(v), 3));
+        return g;
+      };
+      const lite = {};
+      const liteConifer = () => (lite.c ??= (({ trunk, crown }) => ({ trunk: shade(trunk, 1), crown: shade(crown, 0.72) }))(coniferGeometry()));
+      const liteBroadleaf = () => (lite.b ??= (({ trunk, crown }) => ({ trunk: shade(trunk, 1), crown: shade(crown, 0.75) }))(broadleafGeometry()));
+      const [conNear, conFar] = nearFar(P.conifer);
+      split(conNear, 3).forEach((list, i) => {
         const g = detailedConifer(i + 1);
         add(g.trunk, trunk, list);
         add(g.crown, conCol, list, { side: THREE.DoubleSide, colorVar: 0.25, seed: 3 + i });
       });
+      if (conFar.length) {
+        const g = liteConifer();
+        add(g.trunk, trunk, conFar);
+        add(g.crown, conCol, conFar, { colorVar: 0.25, seed: 4 });
+      }
+      this.stats.treesLite = (conFar.length) / 5;
       // 熱帯：広葉樹の一部をヤシに（割合は植生の「熱帯」）
       const tropical = Math.max(0, Math.min(1, s.vegetation.tropical ?? 0));
       const [palms, broad] = split(P.broadleaf, 2, 3.7, tropical);
@@ -660,7 +687,14 @@ export class StillJob {
         add(g.trunk, palmTrunk, list);
         add(g.crown, palmCol, list, { side: THREE.DoubleSide, colorVar: 0.3, seed: 51 + i, roughness: 0.6 });
       });
-      split(broad, 3).forEach((list, i) => {
+      const [broadNear, broadFar] = nearFar(broad);
+      if (broadFar.length) {
+        const g = liteBroadleaf();
+        add(g.trunk, trunk, broadFar);
+        split(broadFar, brdCols.length, 7.3).forEach((sub, j) => add(j ? g.crown.clone() : g.crown, brdCols[j], sub, { colorVar: 0.3, seed: 60 + j, roughness: 0.7 }));
+        this.stats.treesLite += broadFar.length / 5;
+      }
+      split(broadNear, 3).forEach((list, i) => {
         const g = detailedBroadleaf(i + 1);
         add(g.trunk, trunk, list);
         split(list, brdCols.length, 7.3).forEach((sub, j) => add(j ? g.crown.clone() : g.crown, brdCols[j], sub, { side: THREE.DoubleSide, colorVar: 0.3, seed: 5 + i * 7 + j, roughness: 0.7 }));
