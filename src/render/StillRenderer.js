@@ -18,6 +18,7 @@ import { detailedBroadleaf, detailedConifer, detailedGrass, detailedFlowers, det
 import { planetRadius } from '../core/schema.js';
 import { curvePoint, DISC_RATIO, DISC_SEG } from '../core/curvature.js';
 import { buildSurroundMesh } from '../core/surroundMesh.js';
+import { STILL_SEA_FLOOR } from '../core/terrainLod.js';
 
 // 川・湖の印（PNG）から、粗さの地図（水 = なめらか）と、水の所を暗くした写真を作る（どちらも行 0 = 北、flipY のまま）
 async function waterTextures(maskUrl, photoTex) {
@@ -573,10 +574,13 @@ export class StillJob {
       if (!(R > 0)) water.position.y = s.water.level;
       scene.add(water);
       // 水の底：地形の外まで光が素通りしないよう、暗い海底でふさぐ
-      const bedY = Math.min(t.baseHeight, s.water.level) - 3; // 地形の最低点のすぐ下（縁の段差を作らない）
+      // 一枚絵の地形は深い海の底を STILL_SEA_FLOOR で受け止めるので、そのすぐ下に地形の外まで続く海の底を置く（色は水の散乱色）
+      const bedY = s.water.level - STILL_SEA_FLOOR - 0.3;
       const bgeo = R > 0 ? curvedDisc(R, bedY, Math.PI * R * 0.98, 256, 1.06) : new THREE.PlaneGeometry(span, span, 1, 1);
       if (!(R > 0)) bgeo.rotateX(-Math.PI / 2);
-      const bed = new THREE.Mesh(bgeo, new THREE.MeshStandardMaterial({ color: 0x1a1612, roughness: 1 }));
+      const bedCol = new THREE.Color(s.water.color).multiplyScalar(2.5);
+      bedCol.r = Math.min(1, bedCol.r); bedCol.g = Math.min(1, bedCol.g); bedCol.b = Math.min(1, bedCol.b);
+      const bed = new THREE.Mesh(bgeo, new THREE.MeshStandardMaterial({ color: bedCol, roughness: 1 }));
       if (!(R > 0)) bed.position.y = bedY;
       scene.add(bed);
       this.disposers.push(() => (wgeo.dispose(), wmat.dispose(), bgeo.dispose(), bed.material.dispose()));

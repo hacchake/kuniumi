@@ -58,6 +58,8 @@ export function createTerrainShader(opts) {
   P.forest = lin(palette.forest ?? '#1f3018');
   const grassSoil = lin('#4a5a2c'); // 草むらの足元（草の葉と陰の混ざった色）
   const bedCol = lin('#6e5f4a'); // 浅い水底の小石と砂の色
+  // 一枚絵の深い海の色（水の散乱色）：水の色の設定は深い所の暗い見た目なので、散らす色としては明るめに
+  const scatterCol = opts.waterColor ? lin(opts.waterColor).map((v) => Math.min(1, v * 2.5)) : null;
 
   // x, z（世界座標）を渡すと、森の所を森の色にする
   return function shade(H, slope, wv, jitter, col, x, z, curv = 0) {
@@ -130,7 +132,10 @@ export function createTerrainShader(opts) {
         col[1] *= k;
         col[2] *= k;
       }
-      if (above < 0) {
+      if (above < 0 && opts.seaFloor && scatterCol) {
+        // 一枚絵：深くなるほど水の散乱色へ（海の底は opts.seaFloor の深さで受け止めている）
+        mix(scatterCol, smooth(1, opts.seaFloor, -above));
+      } else if (above < 0) {
         const deep = smooth(0, shoreBand * 6, -above);
         col[0] *= 1 - deep * 0.55;
         col[1] *= 1 - deep * 0.45;

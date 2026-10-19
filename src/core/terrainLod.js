@@ -12,6 +12,9 @@ import { curvePoint, curveNormal, belowWater, landLift } from './curvature.js';
 // 色は頂点ごとに塗る（近いほど頂点が細かいので、近景ほど色も細かくなる）。
 
 const N = 64; // 区画 1 枚あたりの分割数
+// 一枚絵の海の底の深さ (m)。パストレーサは水の中で光が散る計算を持たないので、深い海が黒い穴になる。
+// 一枚絵では、これより深い海底をこの深さで受け止めて水の散乱色で塗り、深い海の青さに見せる（浅瀬は本物の海底が透ける）
+export const STILL_SEA_FLOOR = 12;
 
 // view: { position:[x,y,z], target:[x,y,z], fov(度), aspect, height(px) }
 // 戻り値: { positions, normals, colors, uvs, index, tiles, triangles }
@@ -140,6 +143,8 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
     vegetation,
     realWorld: terrain.mode === 'heightmap' && !!terrain.heightmap?.geo,
     fine: true, // 近景の細かい色（濡れた水際・水底の小石）
+    seaFloor: STILL_SEA_FLOOR, // 深い海の底を水の散乱色で塗る
+    waterColor: water.color,
   });
   const col = [0, 0, 0];
   const G = N + 3; // 法線用に 1 マス外側も計算する
@@ -170,8 +175,15 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
         else if (j === N && nb.s > L) y = stitched(x, z, true, nb.s);
         else if (i === 0 && nb.w > L) y = stitched(x, z, false, nb.w);
         else if (i === N && nb.e > L) y = stitched(x, z, false, nb.e);
-        const gx = (hg[k + 1] - hg[k - 1]) / (2 * s);
-        const gz = (hg[k + G] - hg[k - G]) / (2 * s);
+        let gx = (hg[k + 1] - hg[k - 1]) / (2 * s);
+        let gz = (hg[k + G] - hg[k - G]) / (2 * s);
+        // 深い海の底は STILL_SEA_FLOOR で受け止める（色は y のまま元の深さで決める）
+        const yShade = y;
+        if (water.enabled && y < water.level - STILL_SEA_FLOOR) {
+          y = water.level - STILL_SEA_FLOOR;
+          gx *= 0.05;
+          gz *= 0.05;
+        }
         const nl = Math.hypot(gx, 1, gz);
         // 丸い星では、水の下の地形を海面の円盤のたわみより深くする
         const lvl = water.enabled ? water.level : -Infinity;
@@ -199,7 +211,7 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
         // 岩の割れ目の細かいくぼみ（頂点の隣どうし）も足す。見えている細かさのくぼみに雪がたまって、まだらになる
         const fineC = ((hg[k + 1] + hg[k - 1] + hg[k + G] + hg[k - G]) / 4 - hg[k]) / Math.max(s, 0.5);
         curv += Math.max(-0.3, Math.min(0.3, fineC)) * 0.8;
-        shade(y, Math.hypot(gx, gz), wearAt(x, z), jitter, col, x, z, curv);
+        shade(yShade, Math.hypot(gx, gz), wearAt(x, z), jitter, col, x, z, curv);
         // 衛星写真があれば、色は写真のテクスチャ（一枚絵の材質の map。uv で貼る）から。
         // 頂点の色は明るさの倍率と細かい色むらだけ（頂点ごとに写真を拾うと、遠くの粗い区画で写真がぼやけるため）
         if (photo && !(water.enabled && y < water.level)) {
