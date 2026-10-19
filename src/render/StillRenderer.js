@@ -299,9 +299,11 @@ export class StillJob {
     pt.fadeDuration = 0;
     pt.dynamicLowRes = false;
     pt.maxBounces = this.tuning.bounces ?? 6;
-    // 1 回に GPU へ積む光線の数。大きな大地は 1 本あたりの計算が重く、まとめて積むと
-    // OS の監視（約 2 秒）で GPU が打ち切られるので、小分けにする
-    pt.frameBudget = this.tuning.frameBudget ?? (s.terrain.size > 200000 ? 50000 : 250000);
+    // 1 回に GPU へ積む光線の数。1 回が OS の監視（約 2 秒）を超えると GPU が打ち切られる。
+    // 光線 1 本の重さは場面で大きく違い、草の茂る近景では 13 万本で約 2.5 秒かかった（内蔵 GPU）。
+    // どの場面でも 1 秒前後に収まるよう 5 万本ずつに分ける（全体の計算量は同じで、回数が増えるだけ）。
+    // 描いている途中で本数を変えると、パストレーサは作業用の領域を作り直して途中の光線を捨てるので変えない
+    pt.frameBudget = this.tuning.frameBudget ?? 50000;
     if (this.tuning.megakernel) this.useMegakernel = true;
     pt.maxSamples = st.samples;
     pt.filterGlossyFactor = 0.5;
