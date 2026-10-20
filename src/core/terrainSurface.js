@@ -48,7 +48,8 @@ function refSurface(terrain, ref) {
   const { size, heightScale, baseHeight } = terrain;
   const { field, res } = ref;
   const cell = size / (res - 1);
-  const refH = (x, z) => baseHeight + sampleField(field, res, x / size + 0.5, z / size + 0.5) * heightScale;
+  // 3 次補間（Catmull-Rom）：双一次補間だと格子の線で面が折れ、近景の斜面が大きな三角形の集まりに見える
+  const refH = (x, z) => baseHeight + sampleFieldCubic(field, res, x / size + 0.5, z / size + 0.5) * heightScale;
   const rs = terrain.palette?.rockSlope ?? 0.95;
   const seed = (terrain.noise?.seed ?? 0) + 101;
   const heightAt = (x, z, spacing) => {
@@ -78,6 +79,18 @@ function refSurface(terrain, ref) {
   const gh = (u, v) => sampleField(field, res, u, v);
   // baseAt: 細かい起伏を足す前の高さ（安い。くぼみの判定に使う）
   return { heightAt, baseAt: refH, baseCell: cell, wearAt: own.wearAt, coarse: coarseFrom(gh, res, terrain, own.wearAt) };
+}
+
+// 高さ場の 3 次補間（Catmull-Rom、u,v は 0..1）。格子点では元の値を通り、傾きも格子の線で途切れない
+function sampleFieldCubic(field, res, u, v) {
+  const x = Math.min(Math.max(u, 0), 1) * (res - 1);
+  const y = Math.min(Math.max(v, 0), 1) * (res - 1);
+  const xi = Math.min(Math.floor(x), res - 2), yi = Math.min(Math.floor(y), res - 2);
+  const fx = x - xi, fy = y - yi;
+  const at = (i, j) => field[Math.min(res - 1, Math.max(0, j)) * res + Math.min(res - 1, Math.max(0, i))];
+  const cr = (p0, p1, p2, p3, t) => p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)));
+  const row = (j) => cr(at(xi - 1, j), at(xi, j), at(xi + 1, j), at(xi + 2, j), fx);
+  return cr(row(yi - 1), row(yi), row(yi + 1), row(yi + 2), fy);
 }
 
 // 岩場の起伏のオクターブ：[波長 m, 振幅（波長に対する比）, 種のずらし]
