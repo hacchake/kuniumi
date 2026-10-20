@@ -334,7 +334,9 @@ if ( kTreeSnow > 0.0 ) diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.8, 0.83
           if (F && ((L[k] - cam.x) * F.x + (L[k + 2] - cam.z) * F.z) / d < COS) continue;
           // 1 km より先は 2 本に 1 本へ間引き、少し大きくして森の見た目の密度を保つ
           if (d > THIN && (k / 5) % 2 === 1) continue;
-          lists.far[kind].push(L[k] - ox, L[k + 1], L[k + 2] - oz, L[k + 3] * (d > THIN ? 1.25 : 1), L[k + 4]);
+          // 遠景の広葉樹は樹冠を少し大きく：隣と重なって、一本ずつの点ではなく森のかたまりに見えるように
+          const grow = kind === 'broadleaf' ? 1.15 : 1;
+          lists.far[kind].push(L[k] - ox, L[k + 1], L[k + 2] - oz, L[k + 3] * (d > THIN ? 1.25 : 1) * grow, L[k + 4]);
         }
       }
     }
