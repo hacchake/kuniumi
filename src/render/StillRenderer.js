@@ -592,7 +592,7 @@ export class StillJob {
             attenuationColor: tint.clone().lerp(new THREE.Color(1, 1, 1), 0.55),
             attenuationDistance: 10,
           });
-      wmat.normalMap = waveTex;
+      if (!this.tuning.noWaves) wmat.normalMap = waveTex;
       wmat.normalScale = new THREE.Vector2(1, 1);
       this.disposers.push(() => waveTex.dispose());
       water = new THREE.Mesh(wgeo, wmat);
@@ -951,7 +951,7 @@ export class StillJob {
         }
       }
     }
-    const res = computeAtmosphere(this.view.renderer, meshes, camera, W, H, { ...atmosphereParams(s), skyE, view, shadowBounds });
+    const res = computeAtmosphere(this.view.renderer, meshes, camera, W, H, { ...atmosphereParams(s), skyE, view, shadowBounds, waterLevel: s.water.enabled ? s.water.level : null });
     for (let i = 0, n = W * H; i < n; i++) {
       const o = i * 4, m = res.surface[i], T = res.inscatter[o + 3];
       for (let c = 0; c < 3; c++) hdr[o + c] = hdr[o + c] * m * T + res.inscatter[o + c];

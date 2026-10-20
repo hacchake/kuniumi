@@ -234,6 +234,8 @@ export function computeAtmosphere(gl, meshes, camera, W, H, atm) {
     skyE: { value: atm.skyE },
     ambient: { value: new THREE.Vector3(...atm.ambient) },
     maxDist: { value: atm.fog.maxDist },
+    // 水面の標高（無ければ使わない）。水面の見た目は空の映り込みが大半なので、雲の影は弱く掛ける
+    waterLevel: { value: atm.waterLevel ?? -1e9 },
     mode: { value: 0 },
   };
   for (const [k, v] of Object.entries(cloudFogUniformValues(atm))) uniforms[k] = { value: v };
@@ -251,7 +253,7 @@ export function computeAtmosphere(gl, meshes, camera, W, H, atm) {
         uniform sampler2D gbuf;
         uniform mat4 invProj, camWorld;
         uniform vec3 camPos, sunDir, sunE, ambient;
-        uniform float skyE, maxDist;
+        uniform float skyE, maxDist, waterLevel;
         uniform int mode;
         ${CLOUD_UNIFORMS_GLSL}
         ${CLOUD_FUNCS_GLSL}
@@ -272,6 +274,8 @@ export function computeAtmosphere(gl, meshes, camera, W, H, atm) {
             vec3 n = g.gba;
             float direct = dot( sunE, vec3( 0.2126, 0.7152, 0.0722 ) ) * max( 0.0, dot( n, sunDir ) ) * sunVisible( p + n * 0.5 );
             float f = direct / max( 1e-4, direct + skyE * ( 0.5 + 0.5 * n.y ) );
+            // 水面（水位の高さで上向きの面）：映り込みは雲の影で暗くならない。水中で散る光の分だけ（約 2 割）
+            if ( n.y > 0.98 && abs( kAlt( p ) - waterLevel ) < 1.0 ) f *= 0.2;
             gl_FragColor = vec4( 1.0 - f * ( 1.0 - cloudShadow( p, sunDir, 6 ) ) );
             return;
           }
