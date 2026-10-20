@@ -32,8 +32,11 @@ export function addAurora(d, north, time, out, k = 1) {
   hx /= hl;
   hy /= hl;
   const az = Math.atan2(hx, hy);
-  const wave = noise1(az * 2 + time * 0.03) * 0.25 + noise1(az * 5 - time * 0.05) * 0.08;
-  const above = el - (0.16 + wave);
+  // 下の縁はほぼ同じ高さ（上空約 100 km）にそろい、細かく折れ曲がる（大きくうねらせると V 字の山のように見える）
+  const wave = noise1(az * 2 + time * 0.03) * 0.06 + noise1(az * 7 - time * 0.05) * 0.04 + noise1(az * 19 + time * 0.08) * 0.015;
+  // 下の縁：北の空に東西へのびる帯を下から見上げた形。真北で最も高く、東西へ離れるほど遠くなって地平線へ下がる（仰角 = atan(tan(h) cos(方位))）
+  const base = Math.atan(Math.tan(0.16 + wave) * Math.max(0.05, Math.cos(az)));
+  const above = el - base;
   let band = smooth(-0.03, 0, above) * Math.exp(-Math.max(above, 0) * 4);
   band *= smooth(1.9, 0.6, Math.abs(az));
   if (band < 1e-4) return;

@@ -54,8 +54,10 @@ export class Aurora {
             vec2 hz = normalize( vec2( d.x, - d.z * north ) + 1e-5 );
             float az = atan( hz.x, hz.y ); // -π..π、0 = 北（南）
             // カーテンの帯：北の空の高さ 10〜45° に、方位でうねりながら
-            float wave = noise1( az * 2.0 + time * 0.03 ) * 0.25 + noise1( az * 5.0 - time * 0.05 ) * 0.08;
-            float base = 0.16 + wave; // 帯の下の縁の高さ（ラジアン）
+            // 下の縁はほぼ同じ高さ（上空約 100 km）にそろい、細かく折れ曲がる（大きくうねらせると V 字の山のように見える）
+            float wave = noise1( az * 2.0 + time * 0.03 ) * 0.06 + noise1( az * 7.0 - time * 0.05 ) * 0.04 + noise1( az * 19.0 + time * 0.08 ) * 0.015;
+            // 帯の下の縁の高さ（ラジアン）：北の空に東西へのびる帯を下から見上げた形。真北で最も高く、東西では地平線へ下がる
+            float base = atan( tan( 0.16 + wave ) * max( 0.05, cos( az ) ) );
             float above = el - base;
             float band = smoothstep( -0.03, 0.0, above ) * exp( - max( above, 0.0 ) * 4.0 );
             // 方位で北から離れるほど弱く（地平線沿いに東西へ広がる）
