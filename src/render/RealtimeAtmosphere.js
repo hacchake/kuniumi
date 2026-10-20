@@ -252,6 +252,32 @@ export class RealtimeAtmosphere {
 
     this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.marchMat);
     this.quad.frustumCulled = false;
+    // 画面の明るさを測る（自動露出用）：重ね合わせた後・トーンマップ前の明るさの対数を 16×16 に縮めて読む
+    this.lumRT = new THREE.WebGLRenderTarget(16, 16, { type: THREE.FloatType });
+    this.lumMat = new THREE.ShaderMaterial({
+      uniforms: { sceneTex: this.uniforms.sceneTex, atmTex: this.uniforms.atmTex, exposure: { value: 1 } },
+      depthTest: false,
+      depthWrite: false,
+      vertexShader: /* glsl */ `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4( position.xy, 0.0, 1.0 ); }`,
+      fragmentShader: /* glsl */ `
+        precision highp float;
+        varying vec2 vUv;
+        uniform sampler2D sceneTex, atmTex;
+        uniform float exposure;
+        void main() {
+          // 区画の中の 4 点の平均（ちらつきを抑える）
+          float s = 0.0;
+          for ( int i = 0; i < 4; i ++ ) {
+            vec2 o = vec2( float( i % 2 ), float( i / 2 ) ) * 0.5 - 0.25;
+            vec2 uv = vUv + o / 16.0;
+            vec4 c = texture2D( sceneTex, uv ), a = texture2D( atmTex, uv );
+            vec3 col = c.rgb * a.a + a.rgb;
+            s += log( 1e-4 + dot( col, vec3( 0.2126, 0.7152, 0.0722 ) ) * exposure );
+          }
+          gl_FragColor = vec4( s * 0.25, 0.0, 0.0, 1.0 );
+        }`,
+    });
+    this.lumPx = new Float32Array(16 * 16 * 4);
     this.fsScene = new THREE.Scene();
     this.fsScene.add(this.quad);
     this.fsCam = new THREE.OrthographicCamera();
@@ -304,6 +330,22 @@ export class RealtimeAtmosphere {
       u.shadowMatrix.value.copy(this.shadow.matrix);
       u.shadowBias.value = this.shadow.bias;
     }
+  }
+
+  // 画面の明るさの対数平均（露出 exposure を掛けた値）。直前の render の結果から測る
+  measureKey(exposure) {
+    const gl = this.gl;
+    this.lumMat.uniforms.exposure.value = exposure;
+    const prev = this.quad.material;
+    this.quad.material = this.lumMat;
+    gl.setRenderTarget(this.lumRT);
+    gl.render(this.fsScene, this.fsCam);
+    gl.setRenderTarget(null);
+    this.quad.material = prev;
+    gl.readRenderTargetPixels(this.lumRT, 0, 0, 16, 16, this.lumPx);
+    let s = 0;
+    for (let i = 0; i < 256; i++) s += this.lumPx[i * 4];
+    return Math.exp(s / 256);
   }
 
   render(scene, camera) {

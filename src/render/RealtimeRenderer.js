@@ -1184,6 +1184,15 @@ void main() {`)
         this.shadowDirty = false;
       }
       this.atmosphere.render(this.scene, cam);
+      // 自動露出：12 コマおきに画面の明るさを測り、目標の倍率へ約 1 秒かけて寄せる（一枚絵の自動露出と同じ式）。
+      // 森の中や日陰で真っ暗にならないように。夕景・夜景（太陽が低い）は演出なので補わない
+      this.aeFrame = (this.aeFrame ?? 0) + 1;
+      if (this.aeFrame % 12 === 0) {
+        const base = this.baseExposure ?? 1;
+        const key = this.atmosphere.measureKey(base);
+        // 暗すぎるときに明るくするだけ（開けた景色は空が大きく写って明るめに測れるので、暗くはしない）
+        this.aeTarget = s.sun.elevation > 5 ? Math.min(4, Math.max(1, Math.pow(0.12 / Math.max(1e-6, key), 0.6))) : 1;
+      }
     } else {
       this.renderer.setRenderTarget(null);
       this.renderer.render(this.scene, cam);
@@ -1277,8 +1286,8 @@ void main() {`)
     if (!this.storm) {
       if (this.flash) {
         this.flash = null;
-        this.renderer.toneMappingExposure = this.baseExposure ?? 1;
       }
+      this.renderer.toneMappingExposure = (this.baseExposure ?? 1) * (this.autoK ?? 1);
       this.flashLight.intensity = 0;
       return;
     }
@@ -1305,7 +1314,7 @@ void main() {`)
       if (f.t > f.end) this.flash = null;
     }
     const night = nightFactor(this.store.get().sun.elevation);
-    this.renderer.toneMappingExposure = (this.baseExposure ?? 1) * (1 + k * (0.3 + night * 0.45));
+    this.renderer.toneMappingExposure = (this.baseExposure ?? 1) * (this.autoK ?? 1) * (1 + k * (0.3 + night * 0.45));
     this.flashLight.intensity = k * Math.PI * (2 + night * 4);
   }
 
@@ -1331,6 +1340,8 @@ void main() {`)
     if (this._paused) return;
     this.timer.update();
     const dt = this.timer.getDelta();
+    // 自動露出の倍率をなめらかに目標へ（測るのは描くときなので、ここでは寄せるだけ）
+    this.autoK = (this.autoK ?? 1) + ((this.aeTarget ?? 1) - (this.autoK ?? 1)) * Math.min(1, Math.min(dt, 0.1) * 2.5);
     this.#lightning(Math.min(dt, 0.1));
     this.#snowCover(Math.min(dt, 0.1));
     this.trees?.setWind(Math.min(dt, 0.1), this.store.get().atmosphere.precip);
