@@ -40,7 +40,17 @@ function midBroadleaf() {
     [0.02, 0.76, -0.05, 0.17],
     [-0.04, 0.5, 0.14, 0.16],
   ].map(([x, y, z, r]) => roundBlob(r, x, y, z, 1));
-  return { trunk, crown: mergeGeometries(blobs) };
+  const crown = mergeGeometries(blobs);
+  // 陰影は樹冠全体の中心から：塊ごとに丸く陰をつけると「玉の寄せ集め」に見えるので、
+  // 面の向きを樹冠の中心から外向きへ寄せ、ひとかたまりの木として光を受けるようにする（塊は輪郭に残る）
+  const p = crown.attributes.position, n = crown.attributes.normal;
+  const v = new THREE.Vector3(), w = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.set(p.getX(i), (p.getY(i) - 0.62) * 1.3, p.getZ(i)).normalize();
+    w.set(n.getX(i), n.getY(i), n.getZ(i)).multiplyScalar(0.3).addScaledVector(v, 0.7).normalize();
+    n.setXYZ(i, w.x, w.y, w.z);
+  }
+  return { trunk, crown };
 }
 function lowBroadleaf() {
   return roundBlob(0.3, 0, 0.62, 0, 0, 0.85);
@@ -137,6 +147,13 @@ if ( kTreeSnow > 0.0 ) diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.8, 0.83
   // 季節の葉の色（広葉樹は春の若葉・秋の紅葉・冬の枯れ枝、針葉樹は冬に少し白く）
   setSeason(season) {
     const { conCrown, brdCrown } = this.crowns;
+    // 広葉樹の木ごとの色合い（基本の色に掛ける倍率）：秋は赤・橙・黄・まだ緑の木が混ざる、春は若葉の濃淡
+    this.brdTints = {
+      autumn: [[1, 1, 1], [1.15, 1.7, 1.2], [1.05, 2.2, 1.4], [0.85, 0.65, 0.8], [0.55, 1.9, 0.9]],
+      spring: [[1, 1, 1], [1.2, 1.15, 0.9], [0.85, 1, 0.95], [1.15, 1.25, 1.05]],
+      winter: [[1, 1, 1], [1.1, 1.05, 1], [0.9, 0.9, 0.95]],
+    }[season] ?? [[1, 1, 1], [1.15, 1.1, 0.9], [0.85, 0.95, 0.9]];
+    this.dirty = true;
     brdCrown.color.set({ spring: '#4c7a26', autumn: '#9a4614', winter: '#4d4136' }[season] ?? '#2e4d1f');
     conCrown.color.set(season === 'winter' ? '#3b4a42' : '#1b3317');
   }
@@ -311,6 +328,10 @@ if ( kTreeSnow > 0.0 ) diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.8, 0.83
       fillInstances(trunk, near, 0, 1);
       fillInstances(crown, near, 0.35, kind === 'conifer' ? 3 : 5);
       fillInstances(this.far[kind][0], far, 0.35, kind === 'conifer' ? 3 : 5);
+      if (kind === 'broadleaf' && this.brdTints) {
+        tint(crown, near, this.brdTints);
+        tint(this.far[kind][0], far, this.brdTints);
+      }
     }
   }
 
@@ -329,3 +350,17 @@ if ( kTreeSnow > 0.0 ) diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.8, 0.83
 }
 
 const clampList = (L, max) => (L.length / 5 > max ? L.slice(0, max * 5) : L);
+
+// 木ごとの色合い：置き場所（世界座標）のハッシュで倍率を選び、明るさのゆらぎに掛ける（視点を変えても同じ木は同じ色）
+function tint(mesh, list, tints) {
+  const c = mesh.instanceColor;
+  if (!c) return;
+  for (let i = 0, k = 0; k < list.length; i++, k += 5) {
+    const h = Math.abs(Math.sin((list[k] + mesh.parent.position.x) * 12.9898 + (list[k + 2] + mesh.parent.position.z) * 78.233) * 43758.5453) % 1;
+    const t = tints[Math.min(tints.length - 1, Math.floor(h * tints.length))];
+    c.array[i * 3] *= t[0];
+    c.array[i * 3 + 1] *= t[1];
+    c.array[i * 3 + 2] *= t[2];
+  }
+  c.needsUpdate = true;
+}
