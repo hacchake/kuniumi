@@ -719,7 +719,8 @@ export class StillJob {
       const grassLists = split(P.grass, 3);
       grassLists.forEach((list, i) => add(detailedGrass(i + 1), grassCol, list, { side: THREE.DoubleSide, roughness: 0.6, colorVar: 0.35, seed: 9 + i }));
       // 岩と石（形の違う 4 種）。色は大地の岩の色を明るめに
-      const rockCol = new THREE.Color(s.terrain.palette.rock).lerp(new THREE.Color('#b4afa6'), 0.6);
+      // 岩の色：大地の岩肌の色に少しだけ明るい灰色を混ぜる（強く寄せると草の斜面で白く光って浮く）
+      const rockCol = new THREE.Color(s.terrain.palette.rock).lerp(new THREE.Color('#8e8880'), 0.3);
       split(P.rocks ?? [], 4).forEach((list, i) => add(detailedRock(i + 1), rockCol, list, { roughness: 0.9, colorVar: 0.25, seed: 21 + i }));
       // シダ（森の下草）
       const fernCol = new THREE.Color(s.terrain.season === 'autumn' ? '#5a6a26' : '#3a6a22');
