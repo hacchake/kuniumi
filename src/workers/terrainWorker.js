@@ -4,6 +4,7 @@ import { computeTerrainColors } from '../core/terrainColor.js';
 import { decodePng } from '../core/png16.js';
 import { applyErosion, erosionParams } from '../core/erosion.js';
 import { applySculpt, roundPeaks } from '../core/sculpt.js';
+import { mixHeightmap, MIX_WEAR_RES } from '../core/heightmapMix.js';
 
 let field = null;
 let wear = null; // 侵食で盛った(+)・削った(−)量
@@ -56,7 +57,10 @@ async function buildField(t) {
       decoded.clear();
       decoded.set(t.heightmap.id, img);
     }
-    return { field: resampleImage(img.data, img.width, img.height, t.resolution), wear: null };
+    // ノイズを重ねる・雨で削る（設定があれば）
+    const mixed = mixHeightmap(img, t);
+    const wear = mixed.wear ? resampleImage(mixed.wear, MIX_WEAR_RES, MIX_WEAR_RES, t.resolution) : null;
+    return { field: resampleImage(mixed.img.data, img.width, img.height, t.resolution), wear };
   }
   const f = generateNoiseField(t.noise, t.resolution);
   return applyErosion(f, t.resolution, t.noise.erosion ?? 0, t.noise.seed, erosionParams(t.noise));

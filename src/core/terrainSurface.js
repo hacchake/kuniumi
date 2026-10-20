@@ -3,6 +3,7 @@ import { applyErosion, erosionParams } from './erosion.js';
 import { applySculpt, roundPeaks } from './sculpt.js';
 import { detailHeight, shoreFade } from './terrainDetail.js';
 import { hash2 } from './noise.js';
+import { mixHeightmap, MIX_WEAR_RES } from './heightmapMix.js';
 
 // 地形の「任意の地点の高さ」を返す部品。一枚絵の細かい地形と、木・草の配置が使う。
 //   heightAt(x, z, spacing): 標高 (m)。spacing (m) より細かい起伏は描かない
@@ -19,7 +20,10 @@ const BASE = 513; // ノイズ地形の侵食と正規化の基準格子（リ�
 // ここでは格子より細かい起伏だけを足す（一枚絵の地面がリアルタイム表示とずれて、カメラが浮いたり埋まったりしないように）
 export function createTerrainSurface(terrain, heightmapImage = null, sea = null, ref = null) {
   const { size, heightScale, baseHeight } = terrain;
-  if (terrain.mode === 'heightmap' && heightmapImage) return heightmapSurface(terrain, heightmapImage, sea);
+  if (terrain.mode === 'heightmap' && heightmapImage) {
+    const { img, wear } = mixHeightmap(heightmapImage, terrain); // ノイズを重ねる・雨で削る（リアルタイム表示と同じ）
+    return heightmapSurface(terrain, img, sea, wear);
+  }
   if (ref?.field && ref.res > 1) return refSurface(terrain, ref);
 
   const noise = terrain.noise;
@@ -109,7 +113,7 @@ function valueNoise2(x, y, seed) {
   return (a + (b - a) * fx) * (1 - fy) + (c + (d - c) * fx) * fy;
 }
 
-function heightmapSurface(terrain, img, sea) {
+function heightmapSurface(terrain, img, sea, wear = null) {
   const { size, heightScale, baseHeight } = terrain;
   const { data, width: W, height: H } = img;
   const px = (i, j) => data[Math.min(H - 1, Math.max(0, j)) * W + Math.min(W - 1, Math.max(0, i))];
@@ -131,7 +135,7 @@ function heightmapSurface(terrain, img, sea) {
     const h = baseHeight + (bicubic(u, v) + deltaAt(u, v)) * heightScale;
     return h + detailAt(x, z, spacing) * shoreFade(h, sea);
   };
-  const wearAt = () => 0;
+  const wearAt = wear ? (x, z) => sampleField(wear, MIX_WEAR_RES, x / size + 0.5, z / size + 0.5) : () => 0;
   return { heightAt, wearAt, coarse: coarseFrom((u, v) => bicubic(u, v) + deltaAt(u, v), Math.max(W, H), terrain, wearAt) };
 }
 

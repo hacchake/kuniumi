@@ -41,6 +41,9 @@ const HINTS = {
   'terrain.noise.valley': '大きいほど低い所が平らになり、山がそびえる',
   'terrain.noise.falloff': '外周を沈めて島や大陸にする',
   'terrain.noise.erosion': '雨が削る谷筋と、土砂がたまる扇状地をつくる',
+  'terrain.heightmapMix.mode': '読み込んだハイトマップに「地形の性格」のノイズを重ねる。足す＝起伏を加える、掛ける＝ノイズの低い所を沈める、高い方・低い方＝どちらかを選ぶ',
+  'terrain.heightmapMix.amount': 'ノイズを重ねる強さ',
+  'terrain.heightmapMix.erode': 'ハイトマップ（重ねたあと）を雨で削り、谷筋と扇状地をつくる。強さと性質は「地形の性格」の侵食の設定',
   'terrain.noise.erosionStrength': '雨粒が地面を削る強さ。上げるほど谷が深く鋭く刻まれる',
   'terrain.noise.erosionDeposit': '流れが緩んだ所に土砂を置く量。上げるほど谷底や山裾に扇状地が厚く積もる',
   'terrain.noise.erosionInertia': '雨粒の流れの勢い。上げるほど谷が蛇行せず、長くまっすぐ流れ下る',
@@ -112,6 +115,17 @@ const SECTIONS = [
       { path: 'terrain.labels', label: '地名を表示', type: 'toggle' },
       { path: 'terrain.buildings', label: '建物（3D）', type: 'toggle' },
       { path: 'terrain.route', label: '経路（GPX）', type: 'route' },
+    ],
+  },
+  {
+    id: 'mix',
+    title: 'ハイトマップに重ねる',
+    sub: 'Heightmap mix',
+    hmOnly: true,
+    fields: [
+      { path: 'terrain.heightmapMix.mode', label: '重ね方', type: 'select', options: [['none', '重ねない'], ['add', '足す'], ['multiply', '掛ける'], ['max', '高い方'], ['min', '低い方']] },
+      { path: 'terrain.heightmapMix.amount', label: '重ねる強さ', min: 0, max: 1, step: 0.01 },
+      { path: 'terrain.heightmapMix.erode', label: '雨で削る', type: 'toggle' },
     ],
   },
   {
@@ -715,7 +729,12 @@ export class Panel {
       wb.range.value = s.water.level;
     }
     const noise = s.terrain.mode === 'noise';
-    for (const { sec, el } of this.sections) if (sec.noiseOnly) el.classList.toggle('dim', !noise);
+    // 地形の性格は、ハイトマップにノイズを重ねる・削るときにも効く
+    const hm = s.terrain.mode === 'heightmap' && !!s.terrain.heightmap;
+    const mix = s.terrain.heightmapMix ?? {};
+    const mixUsesNoise = hm && ((mix.mode ?? 'none') !== 'none' || !!mix.erode);
+    for (const { sec, el } of this.sections) if (sec.noiseOnly) el.classList.toggle('dim', !noise && !mixUsesNoise);
+    for (const { sec, el } of this.sections) if (sec.hmOnly) el.classList.toggle('dim', !hm);
     // 実際の景観の欄は、地球から取り込んだ地形のときだけ使える
     const geo = s.terrain.mode === 'heightmap' && !!s.terrain.heightmap?.geo;
     for (const { sec, el } of this.sections) if (sec.geoOnly) el.classList.toggle('dim', !geo);

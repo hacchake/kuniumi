@@ -58,6 +58,7 @@ export function createDefaultScene() {
         erosionStrength: 0.3, // 削る強さ（0..1）
         round: 0, // 山の丸み（0..1）：尖った頂と尾根を丸める（富士山のようななだらかな山に）
       },
+      heightmapMix: { mode: 'none', amount: 0.3, erode: false }, // ハイトマップに重ねるノイズ（「地形の性格」の設定で作る）と、雨で削るか
       heightmap: null, // { id, name, png(dataURL 16bit推奨), width, height, geo?: { 範囲・出典 }, photo?: 衛星写真(JPEG dataURL), surround?: { …, photo? } }
       photo: true, // 地球から取り込んだ地形で、衛星写真の色を使う（写真が無ければ手続きの色）
       labels: true, // 地球から取り込んだ地形の地名（山・市・町・村）を出す

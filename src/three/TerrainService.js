@@ -1,4 +1,5 @@
 import { sculptKey } from '../core/sculpt.js';
+import { heightmapMixActive } from '../core/heightmapMix.js';
 
 // ワーカーに地形計算を頼む窓口。
 // 同時に投げるのは1件だけにして、計算中に来た変更は「最新の1件」にまとめて後から送る。
@@ -6,7 +7,11 @@ import { sculptKey } from '../core/sculpt.js';
 export function fieldKeyOf(t) {
   // 手彫りは世界座標 (m) なので、大きさ・起伏の高さ・基準の標高が変わっても計算し直す
   const sc = t.sculpt?.length ? `:sc:${sculptKey(t.sculpt)}:${t.size}:${t.heightScale}:${t.baseHeight}` : '';
-  if (t.mode === 'heightmap' && t.heightmap) return `hm:${t.heightmap.id}:${t.resolution}${sc}`;
+  if (t.mode === 'heightmap' && t.heightmap) {
+    // ノイズを重ねる・削るときは、その設定とノイズの性格も鍵に入れる
+    const mix = heightmapMixActive(t) ? `:mix:${JSON.stringify(t.heightmapMix)}:${JSON.stringify(t.noise)}` : '';
+    return `hm:${t.heightmap.id}:${t.resolution}${mix}${sc}`;
+  }
   return `noise:${JSON.stringify(t.noise)}:${t.resolution}${sc}`;
 }
 
