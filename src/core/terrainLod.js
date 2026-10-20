@@ -61,7 +61,16 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
       const inView = ang - radius < halfDiag * 1.15;
       // 頂点の間隔が、画面上で detail 画素くらいになるまで分ける（視野の外は粗くてよい）
       const target = (inView ? detail : detail * 40) * pixel;
-      const split = L / N / d > target && L / N > 0.15 && depth < 18;
+      // 斜面に沿った頂点の間隔：急な崖では水平の間隔より長く、三角形が縦に引き伸ばされて筋になるので、
+      // 区画の中の高さの差（角と中心の 5 点）から傾きを見積もって長さに掛ける（視野の中の、ある程度近い区画だけ）
+      let stretch = 1;
+      if (inView && L < size / 8) {
+        const q = L * 0.5;
+        const hs = [heightAt(x0, z0, q), heightAt(x0 + L, z0, q), heightAt(x0, z0 + L, q), heightAt(x0 + L, z0 + L, q), heightAt(x0 + q, z0 + q, q)];
+        const g = (Math.max(...hs) - Math.min(...hs)) / L;
+        stretch = Math.min(4, Math.sqrt(1 + g * g));
+      }
+      const split = (L * stretch) / N / d > target && L / N > 0.15 && depth < 18;
       if (split) {
         const h = L / 2;
         visit(x0, z0, h, depth + 1);
