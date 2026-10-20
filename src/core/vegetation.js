@@ -109,10 +109,13 @@ export function createVegetationRules(ctx) {
       const above = H - sea;
       if (above < -0.8) return 0; // 水の底には置かない（浅瀬の石は置く）
       const n = valueNoise(x / 40, z / 40, seed + 9);
-      let d = 0.03 + 0.4 * smooth(rs * 0.35, rs * 0.9, slope) * (1 - smooth(rs * 1.3, rs * 2, slope));
+      // 岩は転がり落ちて止まる所に：緩い斜面（斜面の裾・谷筋・水際）に多く、急な斜面には置かない
+      const steep = 1 - smooth(0.25, 0.5, slope);
+      if (steep <= 0) return 0;
+      let d = 0.03 + 0.3 * smooth(0.08, 0.25, slope) * steep;
       d += 0.55 * (1 - smooth(shoreBand * 0.3, shoreBand * 1.2, Math.abs(above))); // 水際
       d += 0.25 * smooth(0.004, 0.03, -wv); // 侵食で削られた谷筋
-      return Math.min(1, d * (0.4 + 1.2 * n * n));
+      return Math.min(1, d * steep * (0.4 + 1.2 * n * n));
     },
     // 針葉樹になる確率：標高が高いほど増える
     coniferChance(H) {
@@ -235,7 +238,13 @@ export function placeVegetation(rules, size, sample, heightAt, view, { maxTrees 
           if (a > rules.rocks(sm.h, sm.slope, sm.wv, x, z)) continue;
           // 大きさは小さいものほど多く（大岩はまれ）
           const s = smin + (smax - smin) * b * b;
-          out.rocks.push(x, heightAt(x, z) - s * 0.06, z, s, c * Math.PI * 2);
+          // 足元の地面を岩の幅で測る：細かい起伏まで入れた傾きが大きい所や段の縁では転がり落ちるので置かない。
+          // 置くときは足元のいちばん低い所に合わせて沈める（縁に引っかかって浮かないように）
+          const r = s * 0.5;
+          const h0 = heightAt(x, z), h1 = heightAt(x + r, z), h2 = heightAt(x - r, z), h3 = heightAt(x, z + r), h4 = heightAt(x, z - r);
+          const lo = Math.min(h0, h1, h2, h3, h4), hi = Math.max(h0, h1, h2, h3, h4);
+          if ((hi - lo) / (2 * r) > 0.45) continue;
+          out.rocks.push(x, lo - s * 0.08, z, s, c * Math.PI * 2);
         }
       }
     }

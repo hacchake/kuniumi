@@ -57,7 +57,7 @@ function refSurface(terrain, ref) {
     const h = refH(x, z);
     return h + fine + cragAt(x, z, h, spacing);
   };
-  // 岩場：急斜面にだけ、尾根の立った割れ目と岩棚（段）を刻む。頂点の間隔より細かい段は足さない（遠景はちらつかないように）
+  // 岩場：急斜面にだけ、尾根の立った割れ目を刻む。頂点の間隔より細かい段は足さない（遠景はちらつかないように）
   const cragAt = (x, z, h, spacing) => {
     const e = Math.max(cell * 0.5, 2);
     const gx = (refH(x + e, z) - refH(x - e, z)) / (2 * e);
@@ -72,14 +72,8 @@ function refSurface(terrain, ref) {
       const n = valueNoise2(x / lam, z / lam, seed + k);
       d += (1 - Math.abs(2 * n - 1) - 0.5) * amp * lam * fade; // 尾根型（折れた稜線）
     }
-    // 岩棚：段の高さを場所ごとにゆらし、段の縁だけ急に（段の上は平らで雪が残る）
-    const step = 9 + 6 * valueNoise2(x / 90, z / 90, seed + 50);
-    const fadeT = smoothstep(spacing * 2, spacing * 6, step);
-    const t = (h + d) / step + valueNoise2(x / 50, z / 50, seed + 51) * 1.5;
-    const f = t - Math.floor(t);
-    // 段は本当に急な岩壁だけ（中くらいの斜面に段を付けると、等高線のような波模様に見える）
-    const terr = (Math.floor(t) + Math.pow(f, 4) - t) * step * 0.3 * fadeT * smoothstep(rs * 1.1, rs * 1.8, sl);
-    return m * (d + terr);
+    // 以前はここで岩棚（段）も刻んでいたが、草の斜面では段々畑に見えるのでやめた
+    return m * d;
   };
   const gh = (u, v) => sampleField(field, res, u, v);
   // baseAt: 細かい起伏を足す前の高さ（安い。くぼみの判定に使う）
