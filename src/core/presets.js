@@ -188,7 +188,8 @@ export const PRESETS = [
         },
         vegetation: { trees: 0, grass: 0 },
         sun: { elevation: 14, azimuth: 250 },
-        atmosphere: { turbidity: 12, rayleigh: 1.3, mieCoefficient: 0.012, haze: 0.5, clouds: 0, exposure: 0.11 },
+        // 砂ぼこりで淡い空。濁りを強くしすぎると、太陽と反対側の空が青みのない暗い灰色になる
+        atmosphere: { turbidity: 7, rayleigh: 1.8, mieCoefficient: 0.01, haze: 0.5, clouds: 0, exposure: 0.11 },
         water: { enabled: false },
         camera: { position: [-3800, 700, 4200], target: [0, 120, 0], fov: 45 },
         // 昼の空に浮かぶ大きな月
