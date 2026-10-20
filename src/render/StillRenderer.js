@@ -750,7 +750,11 @@ export class StillJob {
     // 照明用：パストレーサは環境光を半精度（最大 65504）で持つので、太陽円盤を広げて薄め、総量はそのまま収める。
     // 背景用：見た目の太陽の大きさは本物のまま（切り詰められても見た目には眩しいだけで差がない）
     const discScale = discScaleFor(Math.max(...sunIrradiance(p)) * s.sun.intensity);
-    const opts = { skyScale: s.atmosphere.ambient, sunScale: s.sun.intensity, clouds: false };
+    // 丸い星の地平線の下がり角：カメラの高さ h、半径 R のとき acos(R / (R + h))（小さな星では大きく、空が下まで回り込む）
+    const R0 = this.place.R;
+    const camH = Math.max(1, s.camera.position[1] - (s.water.enabled ? s.water.level : s.terrain.baseHeight));
+    const horizonDip = R0 > 0 ? Math.acos(R0 / (R0 + camH)) : 0;
+    const opts = { skyScale: s.atmosphere.ambient, sunScale: s.sun.intensity, clouds: false, horizonDip };
     const mkEnv = (data) => {
       const tex = new THREE.DataTexture(data, ew, eh, THREE.RGBAFormat, THREE.FloatType);
       tex.mapping = THREE.EquirectangularReflectionMapping;

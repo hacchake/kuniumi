@@ -180,6 +180,8 @@ export function renderSkyEquirect(p, width, height, opts = {}) {
   const horizon = [0, 0, 0];
   const SS = 12;
   const skyScale = opts.skyScale ?? 1; // 空の明るさ（環境光）の倍率
+  // 丸い星の地平線の下がり角（ラジアン）。その角度までは水平より下でも空
+  const horizonY = -Math.sin(Math.max(0, opts.horizonDip ?? 0));
   const nearSun = Math.cos(SUN_RADIUS * (opts.discScale ?? 1) + (6 * PI) / height); // 円盤の縁から数画素以内
   for (let r = 0; r < height; r++) {
     const v = (r + 0.5) / height;
@@ -212,9 +214,15 @@ export function renderSkyEquirect(p, width, height, opts = {}) {
         col[0] *= skyScale;
         col[1] *= skyScale;
         col[2] *= skyScale;
+      } else if (y > horizonY) {
+        // 丸い星の縁より上（水平より下でも、星が丸く落ち込む分は空が見える）：地平線の空の色
+        skyRadiance(p, [dir[0] / cl, 0.0, dir[2] / cl], col, { ...opts, sunDisc: false });
+        col[0] *= skyScale;
+        col[1] *= skyScale;
+        col[2] *= skyScale;
       } else {
         skyRadiance(p, [dir[0] / cl, 0.0, dir[2] / cl], horizon, { sunDisc: false, clouds: false });
-        const k = 0.25 + 0.75 * Math.exp(y * 8); // 下ほど暗く
+        const k = 0.25 + 0.75 * Math.exp((y - horizonY) * 8); // 下ほど暗く
         col[0] = horizon[0] * k * 0.5 * skyScale;
         col[1] = horizon[1] * k * 0.5 * skyScale;
         col[2] = horizon[2] * k * 0.5 * skyScale;
