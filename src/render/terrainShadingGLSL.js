@@ -99,6 +99,8 @@ export const TERRAIN_SHADING_GLSL = /* glsl */ `
   }
   // くぼみ(+)・出っ張り(−)の度合い（描く側が高さ場から入れる。core/terrainColor.js の curv と同じ）
   float tCurv = 0.0;
+  // 近くの細かい色むら（2 m・0.5 m。画素より細かい段は消えているので遠景では 0）。描く側が入れる
+  float tFineJit = 0.0;
   // 雪線を波打たせる斑（−0.5..0.5。描く側が入れる）
   float tSnowN = 0.0;
   // 地層の縞の細かさ（1 画素あたりの標高の変化。描く側が fwidth から入れる。0 なら縞を消さない）
@@ -127,10 +129,11 @@ export const TERRAIN_SHADING_GLSL = /* glsl */ `
     col = mix( col, tRock, tSmooth( 0.004, 0.04, - wv ) * 0.45 );
     float kFor = tForestAt( H, slope, wv, clump );
     col = mix( col, tForest, kFor * 0.85 );
-    // 森の地面：一色だと平らに見えるので、色むら（2 m・0.5 m の細かいむらを含む）で落ち葉と土のまだらに。
-    // 明るさを大きく揺らし、明るい所は枯れ葉の茶色へ寄せる
-    col *= 1.0 + jitter * 1.4 * kFor;
-    col = mix( col, vec3( 0.32, 0.22, 0.12 ) * ( 0.6 + jitter ), kFor * tSmooth( 0.0, 0.25, jitter ) * 0.5 );
+    // 森の地面：一色だと平らに見えるので、近くの細かい色むら（2 m・0.5 m）だけで落ち葉と土のまだらに。
+    // 粗い色むら（数十 m）まで使うと、遠くから見て黄土色の大きな斑になる
+    float kFj = tFineJit * 4.0;
+    col *= 1.0 + kFj * 0.5 * kFor;
+    col = mix( col, vec3( 0.32, 0.22, 0.12 ) * ( 0.7 + kFj * 0.3 ), kFor * tSmooth( 0.0, 0.4, kFj ) * 0.5 );
     // 地層：周期の違う 2 つの縞を重ね、色むらで揺らす。画面で 1 本が 3 画素より細くなる所では消す
     float sPer = max( 8.0, tHeightScale * 0.03 );
     float sPh = H / sPer + jitter * 2.5;
@@ -178,7 +181,8 @@ export function updateTerrainShadingUniforms(u, s) {
   u.tHigh.value.copy(lin(p.high));
   u.tRock.value.copy(lin(p.rock));
   u.tSnow.value.copy(lin(p.snow));
-  u.tSoil.value.copy(u.tShore.value).add(u.tHigh.value).multiplyScalar(0.5);
+  // 土砂の色：高地の色に砂浜の色を少しだけ（core/terrainColor.js と同じ）
+  u.tSoil.value.copy(u.tShore.value).multiplyScalar(0.25).add(u.tHigh.value.clone().multiplyScalar(0.75));
   u.tForest.value.copy(lin(p.forest ?? '#1f3018'));
   u.tSea.value = w.enabled ? w.level : t.baseHeight - 1;
   u.tTop.value = t.baseHeight + t.heightScale;

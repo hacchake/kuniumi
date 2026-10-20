@@ -235,7 +235,8 @@ export class GpuTerrain {
             'if ( tClipHalf > 0.0 ) { vec2 kw = vTLocal + tOriginW; if ( max( abs( kw.x ), abs( kw.y ) ) < tClipHalf ) discard; }\n' +
             'float kPix = length( vViewPosition ) * 0.0015;\n' +
               'vec2 kG0 = tCoarseGrad( vTLocal ) + vTDetGrad;\n' +
-              'float kJ = vTJit + tJitterFine( vTLocal, kPix );\n' +
+              'tFineJit = tJitterFine( vTLocal, kPix );\n' +
+              'float kJ = vTJit + tFineJit;\n' +
               'if ( tHasPaint > 0.5 ) { vec2 kPn = texture2D( tPaint, clamp( tUV( vTLocal ), 0.0, 1.0 ) ).rg; tPaintAdd = kPn.r; tPaintCut = kPn.g; }\n' +
               'tStrataAA = fwidth( vTH );\n' +
               // くぼみの度合い：高さ場の格子 1.5 マスの幅で、周り 4 点の平均と比べる（一枚絵と同じ）

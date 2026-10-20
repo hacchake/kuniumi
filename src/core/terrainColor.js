@@ -47,7 +47,8 @@ export function createTerrainShader(opts) {
     snow: lin(palette.snow),
   };
   // 土砂の色：水辺と高地の中間
-  P.soil = P.shore.map((v, i) => (v + P.high[i]) * 0.5);
+  // 土砂の色：高地の色に砂浜の色を少しだけ（半々だと山肌に黄土色の大きな斑が出た。リアルタイム表示の tSoil と同じ）
+  P.soil = P.shore.map((v, i) => v * 0.25 + P.high[i] * 0.75);
   const sea = waterEnabled ? waterLevel : baseHeight - 1;
   const top = baseHeight + heightScale;
   const shoreBand = shoreBandOf(heightScale, baseHeight, sea, !!opts.realWorld);
