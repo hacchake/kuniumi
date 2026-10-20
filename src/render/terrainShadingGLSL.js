@@ -148,7 +148,8 @@ export const TERRAIN_SHADING_GLSL = /* glsl */ `
     col = mix( col, tSnow, snowAlt * lodge );
     if ( tWater > 0.5 ) {
       float above = H - tSea;
-      col = mix( col, tShore, ( 1.0 - tSmooth( tShoreBand * 0.5, tShoreBand * 1.6, above + jitter * tShoreBand ) ) * ( 1.0 - tSmooth( 0.4, 0.9, slope ) ) );
+      // 砂浜の上の縁：色むらで大きく波打たせる（等高線そのままだと定規で引いた直線になる）
+      col = mix( col, tShore, ( 1.0 - tSmooth( tShoreBand * 0.5, tShoreBand * 1.6, above + jitter * tShoreBand * 1.6 ) ) * ( 1.0 - tSmooth( 0.4, 0.9, slope ) ) );
       if ( above < 0.0 ) {
         float deep = tSmooth( 0.0, tShoreBand * 6.0, - above );
         col *= vec3( 1.0 - deep * 0.55, 1.0 - deep * 0.45, 1.0 - deep * 0.35 );
