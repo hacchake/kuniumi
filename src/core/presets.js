@@ -163,6 +163,8 @@ export const PRESETS = [
         size: 12000,
         heightScale: 2200,
         baseHeight: -100,
+        // 切り立った岩壁が多いので格子を細かく（257 だと 1 マス 47 m で、一枚絵の崖が縦に引き伸ばされた筋になる）
+        resolution: 513,
         noise: { seed: 913, frequency: 1.6, ridged: 0.85, warp: 0.9, valley: 2.6, falloff: 0, round: 0.35 },
         palette: { shore: '#a8673f', low: '#8a4a2b', high: '#b0703f', rock: '#5a3424', snow: '#e8d6c4', snowLine: 0.92, rockSlope: 0.6 },
       },
