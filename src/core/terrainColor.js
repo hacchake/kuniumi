@@ -160,6 +160,9 @@ export function createTerrainShader(opts) {
         col[0] *= 0.95 * kg;
         col[1] *= 0.92 * kg;
         col[2] *= 0.85 * kg;
+        // 緑の濃い所（草地・森の地面）ほど、枯れ草の茶色へ
+        const kw = lm * 2.0 + 0.02;
+        mix([0.42 * kw, 0.34 * kw, 0.22 * kw], Math.min(1, gr * 1.5) * 0.85);
         const ws = opts.winterSnow ?? 600;
         mix([0.82, 0.85, 0.9], smooth(ws - 150, ws + 250, H) * (1 - smooth(0.55, 1, slope)) * (above0(H) ? 1 : 0));
       }

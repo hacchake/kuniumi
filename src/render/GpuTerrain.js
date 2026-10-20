@@ -264,7 +264,10 @@ export class GpuTerrain {
               '    kTC = mix( kTC, kAut * ( kLm * 2.2 + 0.03 ), kGr * 0.85 );\n' +
               '  } else {\n' +
               '    float kSn = smoothstep( tWinterSnow - 150.0, tWinterSnow + 250.0, vTH ) * ( 1.0 - smoothstep( 0.55, 1.0, length( kG0 ) ) );\n' +
-              '    kTC = mix( kTC * vec3( 0.95, 0.92, 0.85 ) * mix( 1.0, 0.75, kGr ), vec3( 0.82, 0.85, 0.9 ), kSn * ( 1.0 - kWm ) );\n' +
+              '    kTC = kTC * vec3( 0.95, 0.92, 0.85 ) * mix( 1.0, 0.75, kGr );\n' +
+              // 緑の濃い所（草地・森の地面）ほど、枯れ草の茶色へ（一枚絵の core/terrainColor.js と同じ）
+              '    kTC = mix( kTC, vec3( 0.42, 0.34, 0.22 ) * ( kLm * 2.0 + 0.02 ), min( 1.0, kGr * 1.5 ) * 0.85 );\n' +
+              '    kTC = mix( kTC, vec3( 0.82, 0.85, 0.9 ), kSn * ( 1.0 - kWm ) );\n' +
               '  }\n' +
               '}\n' +
               // 降り積もる雪：まだら（ノイズ）が積もるほど広がり、急な斜面と川・海には積もらない
