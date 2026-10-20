@@ -1191,7 +1191,9 @@ void main() {`)
         const base = this.baseExposure ?? 1;
         const key = this.atmosphere.measureKey(base);
         // 暗すぎるときに明るくするだけ（開けた景色は空が大きく写って明るめに測れるので、暗くはしない）
-        this.aeTarget = s.sun.elevation > 5 ? Math.min(4, Math.max(1, Math.pow(0.12 / Math.max(1e-6, key), 0.6))) : 1;
+        // 夕景（太陽が地平線近く）は最大 2 倍まで、夜は補わない
+        const aeMax = s.sun.elevation > 5 ? 4 : s.sun.elevation > -4 ? 2 : 1;
+        this.aeTarget = Math.min(aeMax, Math.max(1, Math.pow(0.12 / Math.max(1e-6, key), 0.6)));
       }
     } else {
       this.renderer.setRenderTarget(null);

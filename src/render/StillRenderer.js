@@ -402,14 +402,16 @@ export class StillJob {
     mark('atmosphere');
     if (st.bloom > 0) applyBloom(hdr, W, H, st.bloom);
     // 自動露出：絵の明るさの対数平均を、晴れた景色のふつうの明るさ（0.12）へ寄せる。
-    // 寄せ方は控えめ（比の 0.6 乗、0.7〜6 倍）で、暗い森は開けた所よりは暗く残る。夕景・夜景（太陽が低い）は演出なので補わない
+    // 寄せ方は控えめ（比の 0.6 乗、0.7〜6 倍）で、暗い森は開けた所よりは暗く残る。
+    // 夕景（太陽が地平線近く）は暗さも演出なので最大 2 倍まで、夜（太陽が −4° より下）は補わない
     let exposure = s.atmosphere.exposure * st.exposure;
-    if (st.autoExposure !== false && s.sun.elevation > 5) {
+    const aeMax = s.sun.elevation > 5 ? 6 : s.sun.elevation > -4 ? 2 : 1;
+    if (st.autoExposure !== false && aeMax > 1) {
       let sum = 0;
       const n = W * H;
       for (let i = 0; i < n * 4; i += 4) sum += Math.log(1e-4 + (hdr[i] * 0.2126 + hdr[i + 1] * 0.7152 + hdr[i + 2] * 0.0722) * exposure);
       const key = Math.exp(sum / n);
-      const k = Math.min(6, Math.max(0.7, Math.pow(0.12 / Math.max(1e-6, key), 0.6)));
+      const k = Math.min(aeMax, Math.max(aeMax > 2 ? 0.7 : 1, Math.pow(0.12 / Math.max(1e-6, key), 0.6)));
       exposure *= k;
       this.stats.autoExposure = Math.round(k * 100) / 100;
     }
