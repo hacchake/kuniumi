@@ -125,7 +125,12 @@ export const TERRAIN_SHADING_GLSL = /* glsl */ `
     col *= vec3( veg * ( 1.0 + jitter * 0.25 ), veg, veg * ( 1.0 - jitter * 0.2 ) );
     col = mix( col, tSoil, tSmooth( 0.002, 0.02, wv ) * 0.7 );
     col = mix( col, tRock, tSmooth( 0.004, 0.04, - wv ) * 0.45 );
-    col = mix( col, tForest, tForestAt( H, slope, wv, clump ) * 0.85 );
+    float kFor = tForestAt( H, slope, wv, clump );
+    col = mix( col, tForest, kFor * 0.85 );
+    // 森の地面：一色だと平らに見えるので、色むら（2 m・0.5 m の細かいむらを含む）で落ち葉と土のまだらに。
+    // 明るさを大きく揺らし、明るい所は枯れ葉の茶色へ寄せる
+    col *= 1.0 + jitter * 1.4 * kFor;
+    col = mix( col, vec3( 0.32, 0.22, 0.12 ) * ( 0.6 + jitter ), kFor * tSmooth( 0.0, 0.25, jitter ) * 0.5 );
     // 地層：周期の違う 2 つの縞を重ね、色むらで揺らす。画面で 1 本が 3 画素より細くなる所では消す
     float sPer = max( 8.0, tHeightScale * 0.03 );
     float sPh = H / sPer + jitter * 2.5;
