@@ -14,7 +14,7 @@ import { sunIrradiance, discScaleFor } from '../core/skyModel.js';
 import { computeAtmosphere, renderMask } from './atmospherePass.js';
 import { atmosphereParams, overcastAmount } from './atmosphereParams.js';
 import { fillInstances, coniferGeometry, broadleafGeometry } from '../three/vegetationMeshes.js';
-import { detailedBroadleaf, detailedConifer, detailedGrass, detailedFlowers, detailedRock, detailedReeds, detailedFern, detailedPalm, detailedTropicalPlant } from '../three/detailedPlants.js';
+import { detailedBroadleaf, detailedConifer, detailedGrass, detailedFlowers, detailedRock, detailedReeds, detailedFern, detailedLitter, detailedPalm, detailedTropicalPlant } from '../three/detailedPlants.js';
 import { planetRadius } from '../core/schema.js';
 import { curvePoint, DISC_RATIO, DISC_SEG } from '../core/curvature.js';
 import { buildSurroundMesh } from '../core/surroundMesh.js';
@@ -732,6 +732,10 @@ export class StillJob {
         split(ferns, 2).forEach((list, i) => add(detailedFern(i + 1), fernCol, list, { side: THREE.DoubleSide, roughness: 0.65, colorVar: 0.3, seed: 41 + i }));
         split(trop, 2).forEach((list, i) => add(detailedTropicalPlant(i + 1), new THREE.Color('#3f7a28'), list, { side: THREE.DoubleSide, roughness: 0.5, colorVar: 0.35, seed: 45 + i }));
       }
+      // 落ち葉・落ち針（木の下）。季節で色を変える（秋は鮮やかな赤茶、ほかは枯れた茶）
+      const litterCol = new THREE.Color({ autumn: '#9a5424', winter: '#5e4a38', spring: '#5f4c34' }[s.terrain.season] ?? '#5a4630');
+      split(P.litter ?? [], 2).forEach((list, i) => add(detailedLitter(i + 1), litterCol, list, { side: THREE.DoubleSide, roughness: 0.85, colorVar: 0.3, seed: 71 + i }));
+      split(P.needles ?? [], 2).forEach((list, i) => add(detailedLitter(i + 1, true), new THREE.Color('#6a4a2e'), list, { side: THREE.DoubleSide, roughness: 0.85, colorVar: 0.25, seed: 75 + i }));
       // 葦（水際）。季節で色を変える（秋冬は枯れ色）
       const reedCol = new THREE.Color({ spring: '#6f8a3c', autumn: '#a08a52', winter: '#9a8a68' }[s.terrain.season] ?? '#6a7d38');
       split(P.reeds ?? [], 2).forEach((list, i) => add(detailedReeds(i + 1), reedCol, list, { side: THREE.DoubleSide, roughness: 0.6, colorVar: 0.25, seed: 31 + i }));

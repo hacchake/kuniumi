@@ -16,6 +16,7 @@ export function defaultVegetation() {
     treeHeight: 16, // 木の高さの目安 (m)
     conifer: 0.5, // 針葉樹の割合（標高が高いほど増える）
     grass: 0.6, // 足元の草の量（一枚絵で、カメラが地面に近いときだけ）
+    litter: 0.6, // 木の下の落ち葉・落ち針の量（一枚絵で、カメラが地面に近いときだけ）
     tropical: 0, // 熱帯の割合（一枚絵で、広葉樹のうちヤシになる割合。下草も大きな葉の熱帯の株が混ざる）
     seed: 77,
     paint: [], // 手で植えた・伐った跡：[{ x, z, r, v }]（v = 1 植える、-1 伐る）。リアルタイム表示と一枚絵の両方に効く
@@ -150,11 +151,12 @@ export function placeVegetation(rules, size, sample, heightAt, view, { maxTrees 
     return cos > Math.cos(Math.min(Math.PI, halfH * 1.25 + r / d));
   };
 
-  const out = { conifer: [], broadleaf: [], grass: [], rocks: [], reeds: [], ferns: [] };
+  const out = { conifer: [], broadleaf: [], grass: [], rocks: [], reeds: [], ferns: [], litter: [], needles: [] };
 
   // ---- 木：カメラの周りの見えている範囲に、格子＋ゆらぎで候補を置き、森の密度で間引く ----
   // 候補の位置は格子ごとのハッシュで決める（視点を変えても同じ所に同じ木が立つ）。
   // 置く範囲は「木が 1 画素ほどに見える距離」まで。数千 km の大地でも、カメラの近くから順に調べる
+  const near = treeIndex();
   if (veg.trees > 0) {
     const cell = Math.max(5, veg.treeHeight * 0.55);
     const pix = (2 * Math.tan(halfV)) / (view.height || 1080);
@@ -167,6 +169,8 @@ export function placeVegetation(rules, size, sample, heightAt, view, { maxTrees 
       if (!t) return;
       out[t.kind].push(t.x, t.y, t.z, t.h, t.rot);
       count++;
+      // 足元の草・岩・落ち葉が木を避けたり寄ったりできるよう、近くの木を覚える
+      if (Math.hypot(t.x - C[0], t.z - C[2]) < 340) near.add(t);
     };
     // 近い順（カメラを囲む四角い輪を、内側から外側へ）
     for (let r = 0; r <= n && count < maxTrees; r++) {
@@ -207,8 +211,11 @@ export function placeVegetation(rules, size, sample, heightAt, view, { maxTrees 
             if (!inView(x, z, 2)) continue;
             const sm = sample(x, z);
             // 草むらをすき間なく（生える確率を上げる）
+            // 幹の根元には生やさない。樹冠の下は日陰なので薄く
+            const tr = near.at(x, z);
+            if (tr.trunk < 0.35) continue;
             const pg = rules.grass(sm.h, sm.slope, sm.wv, x, z);
-            if (r1r > Math.sqrt(pg) * (1 - smooth(radius * 0.6, radius, d) * 0.7)) continue;
+            if (r1r > Math.sqrt(pg) * (1 - 0.92 * tr.canopy) * (1 - smooth(radius * 0.6, radius, d) * 0.7)) continue;
             out.grass.push(x, heightAt(x, z) - 0.02, z, 0.35 + r2 * 0.45, r3 * Math.PI * 2);
             count++;
           }
@@ -239,6 +246,7 @@ export function placeVegetation(rules, size, sample, heightAt, view, { maxTrees 
           if (a > rules.rocks(sm.h, sm.slope, sm.wv, x, z)) continue;
           // 大きさは小さいものほど多く（大岩はまれ）
           const s = smin + (smax - smin) * b * b;
+          if (near.at(x, z).trunk < s * 0.5 + 0.2) continue; // 幹にめり込ませない
           // 足元の地面を岩の幅で測る：細かい起伏まで入れた傾きが大きい所や段の縁では転がり落ちるので置かない。
           // 置くときは足元のいちばん低い所に合わせて沈める（縁に引っかかって浮かないように）
           const r = s * 0.5;
@@ -266,6 +274,7 @@ export function placeVegetation(rules, size, sample, heightAt, view, { maxTrees 
           if (!inView(x, z, 2.5)) continue;
           const sm = sample(x, z);
           if (a > rules.reeds(sm.h, sm.slope, x, z)) continue;
+          if (near.at(x, z).trunk < 0.5) continue;
           out.reeds.push(x, heightAt(x, z) - 0.05, z, 0.8 + b * 0.7, c * Math.PI * 2);
         }
       }
@@ -286,19 +295,88 @@ export function placeVegetation(rules, size, sample, heightAt, view, { maxTrees 
           if (d < Math.max(r0, 1.5) || d > Math.min(r1, radius) || Math.abs(x) > size / 2 || Math.abs(z) > size / 2) continue;
           if (!inView(x, z, 1.5)) continue;
           const sm = sample(x, z);
-          if (a > rules.fern(sm.h, sm.slope, sm.wv, x, z)) continue;
+          // シダは樹冠の下に寄る（木の無い所では減る）。幹の根元は避ける
+          const tr = near.at(x, z);
+          if (tr.trunk < 0.5) continue;
+          if (a > rules.fern(sm.h, sm.slope, sm.wv, x, z) * (0.45 + 0.55 * tr.canopy)) continue;
           out.ferns.push(x, heightAt(x, z) - 0.03, z, 0.6 + b * 0.8, c * Math.PI * 2);
         }
       }
     }
   }
+  // ---- 落ち葉・落ち針：カメラの周り 60 m までの、樹冠の下（幹に近いほど厚く） ----
+  if ((veg.litter ?? 0) > 0 && near.count) {
+    const ground = heightAt(C[0], C[2]);
+    const radius = Math.min(60, Math.max(0, 60 - (C[1] - ground) * 0.5));
+    for (const [r0, r1, cell] of [[0, 20, 0.7], [20, radius, 1.5]]) {
+      if (r0 >= radius) break;
+      const n = Math.ceil(Math.min(r1, radius) / cell);
+      for (let j = -n; j <= n; j++) {
+        for (let i = -n; i <= n; i++) {
+          const x = C[0] + (i + rand()) * cell, z = C[2] + (j + rand()) * cell;
+          const a = rand(), b = rand(), c = rand();
+          const d = Math.hypot(x - C[0], z - C[2]);
+          if (d < Math.max(r0, 1) || d > Math.min(r1, radius) || Math.abs(x) > size / 2 || Math.abs(z) > size / 2) continue;
+          if (!inView(x, z, 1.5)) continue;
+          const tr = near.at(x, z);
+          if (tr.canopy <= 0 || tr.trunk < 0.15) continue;
+          if (a > tr.canopy * Math.min(1, veg.litter * 1.4)) continue;
+          const sm = sample(x, z);
+          if (sm.slope > 0.8) continue; // 急な斜面には溜まらない
+          (tr.kind === 'conifer' ? out.needles : out.litter).push(x, heightAt(x, z) - 0.01, z, cell * (1.7 + b * 0.8), c * Math.PI * 2);
+        }
+      }
+    }
+  }
   return {
+    litter: new Float32Array(out.litter),
+    needles: new Float32Array(out.needles),
     conifer: new Float32Array(out.conifer),
     broadleaf: new Float32Array(out.broadleaf),
     grass: new Float32Array(out.grass),
     rocks: new Float32Array(out.rocks),
     reeds: new Float32Array(out.reeds),
     ferns: new Float32Array(out.ferns),
+  };
+}
+
+// 近くの木の索引（4 m 四方ごと）。at(x, z): { trunk: 幹の表面までの距離 (m), canopy: 樹冠の下の度合い 0..1, kind: いちばん覆っている木の種類 }
+function treeIndex() {
+  const G = 4, grid = new Map();
+  let count = 0, maxR = 0;
+  const key = (i, j) => i * 73856093 + j * 19349663;
+  const none = { trunk: Infinity, canopy: 0, kind: null };
+  return {
+    get count() { return count; },
+    add(t) {
+      const k = key(Math.floor(t.x / G), Math.floor(t.z / G));
+      if (!grid.has(k)) grid.set(k, []);
+      // 幹の太さと樹冠の広がり（detailedPlants の形に合わせた、高さに対する割合）
+      const crown = t.h * (t.kind === 'conifer' ? 0.24 : 0.36);
+      grid.get(k).push({ x: t.x, z: t.z, trunk: t.h * (t.kind === 'conifer' ? 0.026 : 0.034), crown, kind: t.kind });
+      maxR = Math.max(maxR, crown);
+      count++;
+    },
+    at(x, z) {
+      if (!count) return none;
+      const n = Math.ceil(maxR / G), gi = Math.floor(x / G), gj = Math.floor(z / G);
+      let trunk = Infinity, canopy = 0, best = 0, kind = null;
+      for (let j = gj - n; j <= gj + n; j++)
+        for (let i = gi - n; i <= gi + n; i++) {
+          const list = grid.get(key(i, j));
+          if (!list) continue;
+          for (const t of list) {
+            const d = Math.hypot(x - t.x, z - t.z);
+            trunk = Math.min(trunk, d - t.trunk);
+            if (d >= t.crown * 1.15) continue;
+            // 樹冠の縁まではほぼ覆われ、外へ少しぼかす。重なる樹冠は足し合わせる（隙間の木漏れ日は残る）
+            const c = 1 - smooth(t.crown * 0.55, t.crown * 1.15, d);
+            canopy = 1 - (1 - canopy) * (1 - c);
+            if (c > best) (best = c), (kind = t.kind);
+          }
+        }
+      return { trunk, canopy, kind };
+    },
   };
 }
 

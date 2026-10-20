@@ -296,6 +296,40 @@ export function detailedReeds(seed = 1) {
   return g;
 }
 
+// 落ち葉の吹きだまり（半径 0.5 の円の中に地面すれすれに寝た葉）。needles: 細い落ち針
+export function detailedLitter(seed = 1, needles = false) {
+  const rand = mulberry32(seed * 613 + 71);
+  const pos = [], nrm = [], col = [];
+  const n = needles ? 260 : 70;
+  for (let k = 0; k < n; k++) {
+    // 中ほどに多く、縁へまばらに
+    const r = 0.5 * Math.sqrt(rand()) * (0.6 + 0.4 * rand()), a = rand() * Math.PI * 2;
+    const cx = Math.cos(a) * r, cz = Math.sin(a) * r, cy = 0.004 + rand() * 0.012;
+    const L = needles ? 0.05 + rand() * 0.03 : 0.07 + rand() * 0.05, W = needles ? 0.003 : L * (0.45 + rand() * 0.25);
+    const th = rand() * Math.PI * 2, dx = Math.cos(th), dz = Math.sin(th);
+    const sx = -dz * W / 2, sz = dx * W / 2;
+    const tilt = (rand() - 0.5) * 0.3 * L; // 少し反り返る
+    const v = 0.65 + rand() * 0.6, hue = rand();
+    const pts = [
+      [cx - dx * L / 2, cy, cz - dz * L / 2],
+      [cx + sx, cy + tilt, cz + sz],
+      [cx + dx * L / 2, cy + Math.abs(tilt), cz + dz * L / 2],
+      [cx - sx, cy - tilt * 0.5, cz - sz],
+    ];
+    for (const q of [0, 1, 2, 0, 2, 3]) {
+      pos.push(...pts[q]);
+      nrm.push(0, 1, 0);
+      // 葉ごとに色をずらす（赤み・黄み・枯れ色）
+      col.push(v * (1 + (hue - 0.5) * 0.35), v * (1 - Math.abs(hue - 0.5) * 0.2), v * (0.9 - hue * 0.25));
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  return g;
+}
+
 // シダの株：弓なりに広がる葉（7〜10 枚）。葉は中軸の左右に小葉が並び、先と根元ほど小さい
 export function detailedFern(seed = 1) {
   const rand = mulberry32(seed * 101 + 29);
