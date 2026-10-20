@@ -863,9 +863,12 @@ export class StillJob {
     scene.environment = mkEnv(addNight(grey(renderSkyEquirect(p, ew, eh, { ...opts, discScale }))));
     // 背景は見た目だけなので、半精度に収まるよう太陽の芯だけ頭打ちにする（眩しさは変わらない）
     const bg = addNight(grey(renderSkyEquirect(p, ew, eh, opts)), true);
+    // 夜空の星と天の川（リアルタイム表示の RealtimeAtmosphere と同じ式）。背景の見た目だけで、光源には入れない
+    const starK = night * (1 - 0.85 * (s.atmosphere.clouds ?? 0)) * (8 / Math.max(0.02, s.atmosphere.exposure / 0.12));
+    if (starK > 0.01) addStarsAndMilkyWay(bg, ew, eh, starK, s.atmosphere.exposure);
     for (let i = 0; i < bg.length; i++) if (bg[i] > 65000) bg[i] = 65000;
     const rainy = s.atmosphere.precip === 'rain' || s.atmosphere.precip === 'storm';
-    scene.background = discScale > 1 || rainy ? mkEnv(bg) : scene.environment;
+    scene.background = discScale > 1 || rainy || starK > 0.01 ? mkEnv(bg) : scene.environment;
 
     scene.updateMatrixWorld(true);
     return { scene, terrainMesh, surroundMesh, water, plants, buildingMeshes, textures, skyP: p, skyBG: { data: bg, w: ew, h: eh } };
@@ -1131,6 +1134,85 @@ function curvedDisc(R, level, maxR = Math.PI * R * 0.98, SEG = DISC_SEG, ratio =
   g.setIndex(index);
   g.computeVertexNormals();
   return g;
+}
+
+// ---- 夜空：星と天の川（RealtimeAtmosphere.js の GLSL と同じ式を、全天画像に描き込む） ----
+const MW_POLE = (() => { const v = [0.42, 0.55, -0.72], l = Math.hypot(...v); return v.map((x) => x / l); })();
+const MW_CENTER = (() => { const v = [-0.62, 0.2, -0.24], l = Math.hypot(...v); return v.map((x) => x / l); })();
+const fract = (x) => x - Math.floor(x);
+function sHash(x, y, z) {
+  x = fract(x * 0.3183099 + 0.1) * 17;
+  y = fract(y * 0.3183099 + 0.1) * 17;
+  z = fract(z * 0.3183099 + 0.1) * 17;
+  return fract(x * y * z * (x + y + z));
+}
+function mwNoise(x, y, z) {
+  const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z);
+  let fx = x - ix, fy = y - iy, fz = z - iz;
+  fx = fx * fx * (3 - 2 * fx);
+  fy = fy * fy * (3 - 2 * fy);
+  fz = fz * fz * (3 - 2 * fz);
+  const h = (a, b, c) => sHash(ix + a, iy + b, iz + c);
+  const l = (a, b, t) => a + (b - a) * t;
+  return l(l(l(h(0, 0, 0), h(1, 0, 0), fx), l(h(0, 1, 0), h(1, 1, 0), fx), fy), l(l(h(0, 0, 1), h(1, 0, 1), fx), l(h(0, 1, 1), h(1, 1, 1), fx), fy), fz);
+}
+function milkyBand(d) {
+  const lat = d[0] * MW_POLE[0] + d[1] * MW_POLE[1] + d[2] * MW_POLE[2];
+  const core = Math.max(0, d[0] * MW_CENTER[0] + d[1] * MW_CENTER[1] + d[2] * MW_CENTER[2]);
+  const w = 0.12 + 0.1 * core;
+  return Math.exp(-(lat * lat) / (w * w)) * (0.35 + 0.65 * core * core);
+}
+// data: 全天画像（行 0 = 真下）。k: 星の明るさ（リアルタイムの starI と同じ尺度）、exposure: 空の明るさとの比べに使う露出
+function addStarsAndMilkyWay(data, ew, eh, k, exposure) {
+  const pixAng = (2 * Math.PI) / ew; // 1 画素の角度
+  const d = [0, 0, 0];
+  for (let r = Math.floor(eh / 2); r < eh; r++) {
+    const lat = ((r + 0.5) / eh - 0.5) * Math.PI;
+    const y = Math.sin(lat), cl = Math.cos(lat);
+    for (let c = 0; c < ew; c++) {
+      const phi = ((c + 0.5) / ew - 0.5) * 2 * Math.PI;
+      d[0] = Math.cos(phi) * cl; d[1] = y; d[2] = Math.sin(phi) * cl;
+      const o = (r * ew + c) * 4;
+      const lum = (data[o] * 0.2126 + data[o + 1] * 0.7152 + data[o + 2] * 0.0722) * exposure;
+      const fade = Math.exp(-lum * 6) * Math.min(1, Math.max(0, (y + 0.02) / 0.08)); // 明るい空と地平線では見えない
+      if (fade < 0.01) continue;
+      let sr = 0, sg = 0, sb = 0;
+      // 天の川
+      const b = milkyBand(d);
+      if (b > 0.01) {
+        const n = mwNoise(d[0] * 9, d[1] * 9, d[2] * 9) * 0.55 + mwNoise(d[0] * 23, d[1] * 23, d[2] * 23) * 0.3 + mwNoise(d[0] * 61, d[1] * 61, d[2] * 61) * 0.15;
+        const la = d[0] * MW_POLE[0] + d[1] * MW_POLE[1] + d[2] * MW_POLE[2];
+        const rift = 1 - 0.7 * Math.exp(-Math.pow((la - 0.02) / 0.035, 2)) * smooth01(0.35, 0.65, mwNoise(d[0] * 14 + 3.1, d[1] * 14 + 3.1, d[2] * 14 + 3.1));
+        const m = b * (0.4 + 0.9 * n * n) * rift * 0.07;
+        sr += 0.85 * m; sg += 0.82 * m; sb += 0.78 * m;
+      }
+      // 星：格子ごとにまれに 1 つ。全天画像の画素より小さい星は、画素に合わせて広げて明るさの総量を保つ
+      for (let l = 0; l < 2; l++) {
+        const sc = l === 0 ? 180 : 520;
+        const qx = d[0] * sc, qy = d[1] * sc, qz = d[2] * sc;
+        const cx = Math.floor(qx), cy = Math.floor(qy), cz = Math.floor(qz);
+        const h = sHash(cx, cy, cz);
+        const th = l === 0 ? 0.988 : 0.975 - 0.02 * b;
+        if (h <= th) continue;
+        const px = cx + sHash(cx + 1.37, cy + 1.37, cz + 1.37), py = cy + sHash(cx + 2.11, cy + 2.11, cz + 2.11), pz = cz + sHash(cx + 3.73, cy + 3.73, cz + 3.73);
+        const dd2 = (qx - px) ** 2 + (qy - py) ** 2 + (qz - pz) ** 2;
+        const sig = Math.max(0.13, pixAng * sc * 0.6); // 星の広がり（格子の単位）
+        const e = Math.exp(-dd2 / (2 * sig * sig)) * ((0.13 * 0.13) / (sig * sig));
+        const bb = Math.pow((h - th) / (1 - th), 3) * (l === 0 ? 1 : 0.35) * e;
+        const tint = sHash(cx + 7.7, cy + 7.7, cz + 7.7);
+        sr += (1 + (0.7 - 1) * tint) * bb; sg += (0.78 + (0.82 - 0.78) * tint) * bb; sb += (0.6 + (1 - 0.6) * tint) * bb;
+      }
+      // リアルタイムでは表示の値に足しているので、露出で割って空の明るさの単位に戻す
+      const g = (k * fade) / Math.max(0.02, exposure);
+      data[o] += sr * g;
+      data[o + 1] += sg * g;
+      data[o + 2] += sb * g;
+    }
+  }
+}
+function smooth01(a, b, x) {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
 }
 
 // 画面の描き換えの機会を与える（requestAnimationFrame は画面が隠れていると止まるので時間で待つ）
