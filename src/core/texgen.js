@@ -15,6 +15,7 @@ export const PATTERNS = [
   ['cells', '細胞'],
   ['craters', 'クレーター'],
   ['stripes', '縞'],
+  ['rings', '惑星の環'],
   ['checker', '市松'],
   ['image', '画像'],
 ];
@@ -135,6 +136,20 @@ function patternFn(p, aspect) {
         const n = pfbm(u, v, PX, PY, seed, 3);
         const s = 0.5 + 0.5 * Math.sin((u * PX * 2 + (n - 0.5) * 0.4) * Math.PI * 2);
         return { t: sm(0.4, 0.6, s), h: s * 0.2, g: 0 };
+      };
+    case 'rings':
+      // 惑星の環（環の形の u = 内側 0 → 外側 1）：幅のばらばらな細い帯を重ね、外寄りに目立つ隙間、内側はかすかに
+      return (u) => {
+        const band = (f, k) => {
+          const x = u * f, i = Math.floor(x), t = x - i;
+          const a = hash2(i, k, seed), b = hash2(i + 1, k, seed);
+          return a + (b - a) * t * t * (3 - 2 * t);
+        };
+        let d = band(9, 1) * 0.45 + band(31, 2) * 0.3 + band(97, 3) * 0.17 + band(260, 4) * 0.08;
+        d *= sm(0.0, 0.25, u) * (0.55 + 0.45 * sm(0.25, 0.4, u)); // 内側の淡い環
+        d *= 1 - 0.85 * (sm(0.6, 0.62, u) * (1 - sm(0.66, 0.68, u))); // 隙間
+        d *= 1 - 0.5 * sm(0.94, 1.0, u); // 外の縁は薄れる
+        return { t: Math.min(1, Math.max(0, d * 1.25)), h: 0, g: 0 };
       };
     case 'checker':
       return (u, v) => {

@@ -49,6 +49,7 @@ export const MATERIAL_PRESETS = [
   { id: 'glass', name: 'ガラス', m: { pattern: 'solid', color: '#ffffff', color2: '#ffffff', bump: 0, roughness: 0.02, metalness: 0, transmission: 1 } },
   { id: 'star', name: '恒星', m: { pattern: 'cells', color: '#ffd27a', color2: '#ff8a2a', scale: 6, bump: 0, roughness: 1, glow: 4 } },
   { id: 'checker', name: '市松', m: { pattern: 'checker', color: '#e8e2d4', color2: '#2a2622', scale: 4, bump: 0, roughness: 0.4 } },
+  { id: 'rings', name: '惑星の環', m: { pattern: 'rings', color: '#3a2e26', color2: '#e8d2b0', scale: 1, bump: 0, roughness: 0.9 } },
   { id: 'stripes', name: '縞瑪瑙', m: { pattern: 'stripes', color: '#c27a4a', color2: '#f2dcc0', scale: 5, bump: 0.15, roughness: 0.35 } },
 ];
 
