@@ -207,12 +207,15 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
         normals.set(pn, vo * 3);
         uvs.set([x / size + 0.5, 0.5 - z / size], vo * 2);
         // 色のゆらぎ：大きな斑から足元の細かいムラまで（世界座標の値ノイズ）
+        // 急な崖では高さも混ぜる（水平の位置だけだと、崖を上下しても色むらが変わらず縦の筋になる。リアルタイム表示と同じ考え）
+        const steep = Math.min(1, Math.max(0, (Math.hypot(gx, gz) - 0.6) / 0.8));
+        const jx = x + yShade * 0.6 * steep, jz = z - yShade * 0.45 * steep;
         const jitter =
-          (valueNoise(x / 400, z / 400, 4) - 0.5) * 0.35 +
-          (valueNoise(x / 64, z / 64, 11) - 0.5) * 0.5 +
-          (valueNoise(x / 8, z / 8, 18) - 0.5) * 0.22 +
-          (valueNoise(x / 2, z / 2, 25) - 0.5) * 0.12 +
-          (valueNoise(x / 0.5, z / 0.5, 32) - 0.5) * 0.06;
+          (valueNoise(jx / 400, jz / 400, 4) - 0.5) * 0.35 +
+          (valueNoise(jx / 64, jz / 64, 11) - 0.5) * 0.5 +
+          (valueNoise(jx / 8, jz / 8, 18) - 0.5) * 0.22 +
+          (valueNoise(jx / 2, jz / 2, 25) - 0.5) * 0.12 +
+          (valueNoise(jx / 0.5, jz / 0.5, 32) - 0.5) * 0.06;
         // くぼみの度合い：細かい起伏を足す前の地形で、周り 4 点の平均と比べる（区画の細かさによらず同じ値）
         let curv = 0;
         if (baseAt) {
