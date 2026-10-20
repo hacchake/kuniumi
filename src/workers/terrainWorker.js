@@ -2,7 +2,7 @@
 import { generateNoiseField, resampleImage } from '../core/heightfield.js';
 import { computeTerrainColors } from '../core/terrainColor.js';
 import { decodePng } from '../core/png16.js';
-import { applyErosion } from '../core/erosion.js';
+import { applyErosion, erosionParams } from '../core/erosion.js';
 import { applySculpt, roundPeaks } from '../core/sculpt.js';
 
 let field = null;
@@ -59,6 +59,6 @@ async function buildField(t) {
     return { field: resampleImage(img.data, img.width, img.height, t.resolution), wear: null };
   }
   const f = generateNoiseField(t.noise, t.resolution);
-  return applyErosion(f, t.resolution, t.noise.erosion ?? 0, t.noise.seed);
+  return applyErosion(f, t.resolution, t.noise.erosion ?? 0, t.noise.seed, erosionParams(t.noise));
 }
 

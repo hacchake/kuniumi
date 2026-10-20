@@ -53,6 +53,9 @@ export function createDefaultScene() {
         valley: 1.35, // 谷の平らさ（高さの指数）
         falloff: 0.55, // 外周を沈める度合い（島・大陸づくり）
         erosion: 0.5, // 雨による侵食（谷筋と扇状地）
+        erosionInertia: 0.05, // 侵食の流れのまっすぐさ（0..0.5）
+        erosionDeposit: 0.3, // 土砂の置きやすさ（0..1）
+        erosionStrength: 0.3, // 削る強さ（0..1）
         round: 0, // 山の丸み（0..1）：尖った頂と尾根を丸める（富士山のようななだらかな山に）
       },
       heightmap: null, // { id, name, png(dataURL 16bit推奨), width, height, geo?: { 範囲・出典 }, photo?: 衛星写真(JPEG dataURL), surround?: { …, photo? } }

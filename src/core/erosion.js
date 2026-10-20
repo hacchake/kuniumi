@@ -41,8 +41,8 @@ function brushes(size) {
   return brushCache;
 }
 
-// map: Float32Array(size*size)、その場で書き換える
-function erode(map, size, droplets, seed) {
+// map: Float32Array(size*size)、その場で書き換える。q: 雨粒の性質（P を上書きしたもの）
+function erode(map, size, droplets, seed, q = P) {
   const rand = mulberry32(seed);
   const { offs, weights } = brushes(size);
   const hg = (x, y) => {
@@ -64,8 +64,8 @@ function erode(map, size, droplets, seed) {
       const ox = x - nx, oy = y - ny;
       const idx = ny * size + nx;
       const a = hg(x, y);
-      dx = dx * P.inertia - a.gx * (1 - P.inertia);
-      dy = dy * P.inertia - a.gy * (1 - P.inertia);
+      dx = dx * q.inertia - a.gx * (1 - q.inertia);
+      dy = dy * q.inertia - a.gy * (1 - q.inertia);
       const len = Math.hypot(dx, dy);
       if (len === 0) break;
       dx /= len;
@@ -76,14 +76,14 @@ function erode(map, size, droplets, seed) {
       const dh = hg(x, y).h - a.h;
       const cap = Math.max(-dh * speed * water * P.capacity, P.minCapacity);
       if (sediment > cap || dh > 0) {
-        const put = dh > 0 ? Math.min(dh, sediment) : (sediment - cap) * P.deposit;
+        const put = dh > 0 ? Math.min(dh, sediment) : (sediment - cap) * q.deposit;
         sediment -= put;
         map[idx] += put * (1 - ox) * (1 - oy);
         map[idx + 1] += put * ox * (1 - oy);
         map[idx + size] += put * (1 - ox) * oy;
         map[idx + size + 1] += put * ox * oy;
       } else {
-        const take = Math.min((cap - sediment) * P.erode, -dh);
+        const take = Math.min((cap - sediment) * q.erode, -dh);
         for (let k = 0; k < offs.length; k++) {
           const bx = nx + offs[k][0], by = ny + offs[k][1];
           if (bx < 0 || by < 0 || bx >= size || by >= size) continue;
@@ -100,13 +100,26 @@ function erode(map, size, droplets, seed) {
   }
 }
 
-// field（res×res, 0..1）に侵食を加える。amount: 0..1
+// ノイズ設定から雨粒の性質を作る（未設定なら既定の性質）
+//   erosionInertia: 流れのまっすぐさ（大きいほど谷が蛇行せず長くまっすぐに）
+//   erosionDeposit: 土砂の置きやすさ（大きいほど谷底や裾に扇状地が厚く積もる）
+//   erosionStrength: 削る強さ（大きいほど谷が深く鋭く刻まれる）
+export function erosionParams(noise = {}) {
+  return {
+    ...P,
+    inertia: noise.erosionInertia ?? P.inertia,
+    deposit: noise.erosionDeposit ?? P.deposit,
+    erode: noise.erosionStrength ?? P.erode,
+  };
+}
+
+// field（res×res, 0..1）に侵食を加える。amount: 0..1。q: 雨粒の性質（erosionParams）
 // 戻り値: { field: 侵食後, wear: 盛った量(+)・削った量(−)。地表の色づけに使う }
-export function applyErosion(field, res, amount, seed) {
+export function applyErosion(field, res, amount, seed, q = P) {
   if (!(amount > 0)) return { field, wear: null };
   const base = res === ER ? field.slice() : resampleImage(field, res, res, ER);
   const eroded = base.slice();
-  erode(eroded, ER, Math.round(amount * 1.5 * ER * ER), seed + 999);
+  erode(eroded, ER, Math.round(amount * 1.5 * ER * ER), seed + 999, q);
   const diff = new Float32Array(ER * ER);
   for (let k = 0; k < diff.length; k++) diff[k] = eroded[k] - base[k];
   const d = res === ER ? diff : resampleImage(diff, ER, ER, res);

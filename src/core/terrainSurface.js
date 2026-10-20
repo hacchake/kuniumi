@@ -1,5 +1,5 @@
 import { createNoiseSampler, generateNoiseFieldWithRange, sampleField, edgeFade } from './heightfield.js';
-import { applyErosion } from './erosion.js';
+import { applyErosion, erosionParams } from './erosion.js';
 import { applySculpt, roundPeaks } from './sculpt.js';
 import { detailHeight, shoreFade } from './terrainDetail.js';
 import { hash2 } from './noise.js';
@@ -24,7 +24,7 @@ export function createTerrainSurface(terrain, heightmapImage = null, sea = null,
 
   const noise = terrain.noise;
   const base = generateNoiseFieldWithRange(noise, BASE);
-  const { wear } = applyErosion(base.field, BASE, noise.erosion ?? 0, noise.seed);
+  const { wear } = applyErosion(base.field, BASE, noise.erosion ?? 0, noise.seed, erosionParams(noise));
   const raw = createNoiseSampler(noise, { refNyquist: (BASE - 1) / 3, extraOctaves: 6 });
   const span = base.max - base.min || 1;
 
