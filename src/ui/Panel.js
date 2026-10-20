@@ -74,6 +74,7 @@ const HINTS = {
   'render.still.terrainDetail': '一枚絵の地形の細かさの上限',
   'render.still.denoise': 'AI（Intel Open Image Denoise）でざらつきを取る',
   'render.still.exposure': 'リアルタイムの露出に対する補正',
+  'render.still.autoExposure': '森の中や日陰など暗すぎる絵を、カメラの自動露出のように明るく補う（夕景・夜景はそのまま）',
   'render.still.bloom': '明るい所の光のにじみ',
 };
 
@@ -253,6 +254,7 @@ const SECTIONS = [
       { path: 'render.still.denoise', label: 'ノイズ除去', type: 'toggle' },
       { path: 'render.still.tone', label: '色調', type: 'select', options: [['agx', 'AgX（映画調）'], ['aces', 'ACES']] },
       { path: 'render.still.exposure', label: '露出補正', min: 0.25, max: 4, step: 0.05 },
+      { path: 'render.still.autoExposure', label: '自動露出', type: 'toggle' },
       { path: 'render.still.bloom', label: '光のにじみ', min: 0, max: 0.2, step: 0.005 },
     ],
   },

@@ -401,7 +401,19 @@ export class StillJob {
     this.#applyAtmosphere(hdr, s, built, objectMeshes, celestial, camera, W, H);
     mark('atmosphere');
     if (st.bloom > 0) applyBloom(hdr, W, H, st.bloom);
-    const rgba = toneMapToRGBA8(hdr, W, H, { mode: st.tone, exposure: s.atmosphere.exposure * st.exposure });
+    // 自動露出：絵の明るさの対数平均を、晴れた景色のふつうの明るさ（0.12）へ寄せる。
+    // 寄せ方は控えめ（比の 0.6 乗、0.7〜6 倍）で、暗い森は開けた所よりは暗く残る。夕景・夜景（太陽が低い）は演出なので補わない
+    let exposure = s.atmosphere.exposure * st.exposure;
+    if (st.autoExposure !== false && s.sun.elevation > 5) {
+      let sum = 0;
+      const n = W * H;
+      for (let i = 0; i < n * 4; i += 4) sum += Math.log(1e-4 + (hdr[i] * 0.2126 + hdr[i + 1] * 0.7152 + hdr[i + 2] * 0.0722) * exposure);
+      const key = Math.exp(sum / n);
+      const k = Math.min(6, Math.max(0.7, Math.pow(0.12 / Math.max(1e-6, key), 0.6)));
+      exposure *= k;
+      this.stats.autoExposure = Math.round(k * 100) / 100;
+    }
+    const rgba = toneMapToRGBA8(hdr, W, H, { mode: st.tone, exposure });
     for (const t of built.textures) t.dispose();
     return { hdr, rgba, width: W, height: H, samples: st.samples, traceSec, denoised: !!denoiser };
   }
@@ -642,7 +654,7 @@ export class StillJob {
       const conCol = new THREE.Color(s.terrain.season === 'winter' ? '#33433a' : '#1d3519');
       // 広葉樹の色は木ごとにばらつかせる（秋は赤・橙・黄・まだ緑の木が混ざる）
       const brdCols = ({
-        spring: ['#4f8028', '#6a9a30', '#5d8a3a', '#7a9a3c'],
+        spring: ['#4f8028', '#6a9a30', '#5d8a3a', '#7a9a3c', '#e4a9bd'], // 春は 5 本に 1 本ほど桜色
         autumn: ['#a8461a', '#c27a1c', '#b8962a', '#8c2c16', '#6a7026'],
         winter: ['#4d4136', '#584a3c', '#463c34'],
       }[s.terrain.season] ?? ['#325a22', '#3e6a26', '#2c4e20', '#4a6a2a']).map((c) => new THREE.Color(c));

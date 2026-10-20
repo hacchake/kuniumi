@@ -250,6 +250,8 @@ export const EN = {
   '色調': 'Tone mapping',
   'AgX（映画調）': 'AgX (filmic)',
   '露出補正': 'Exposure offset',
+  '自動露出': 'Auto exposure',
+  '森の中や日陰など暗すぎる絵を、カメラの自動露出のように明るく補う（夕景・夜景はそのまま）': 'Brighten images that are too dark (forest interiors, shade) like a camera auto exposure (sunsets and nights are left as they are)',
   '光のにじみ': 'Bloom',
 
   // 説明（ツールチップ）

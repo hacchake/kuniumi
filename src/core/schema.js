@@ -130,6 +130,7 @@ export function createDefaultScene() {
         samples: 64, // 1 画素あたりの光線の数（多いほどなめらか・時間がかかる。ノイズ除去があれば 32〜128 で十分）
         terrainDetail: 1025, // 静止画用の地形の細かさ（1025 = 約400万三角形まで / 2049 = 約700万まで）
         denoise: true, // AI ノイズ除去（Intel Open Image Denoise）
+        autoExposure: true, // 自動露出：森の中など暗すぎる絵を明るく補う（夕景・夜景はそのまま）
         tone: 'agx', // 'agx'（映画調）| 'aces'
         exposure: 1, // リアルタイムの露出に掛ける補正
         bloom: 0.04, // 明るい所の光のにじみ
