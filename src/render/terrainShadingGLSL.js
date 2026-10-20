@@ -136,9 +136,9 @@ export const TERRAIN_SHADING_GLSL = /* glsl */ `
     col = mix( col, rockCol, tSmooth( tRockSlope * 0.7, tRockSlope * 1.25, slope + jitter * 0.15 ) );
     // 雪：くぼみ（沢筋）では雪線より下まで降り、急な岩場でもくぼみには残る（core/terrainColor.js と同じ式）
     float sk = max( 1.0, 1500.0 / max( 1.0, tTop - tSea ) );
-    float snowAlt = tSmooth( tSnowLine - 0.04 * sk, tSnowLine + 0.06 * sk, alt + ( jitter * 0.08 + tSnowN * 0.14 + clamp( tCurv, 0.0, 0.3 ) * 0.8 ) * sk );
+    float snowAlt = tSmooth( tSnowLine - 0.04 * sk, tSnowLine + 0.06 * sk, alt + ( jitter * 0.08 + tSnowN * 0.14 + clamp( tCurv, 0.0, 0.3 ) * 0.35 ) * sk );
     float lodge = max( max( 1.0 - tSmooth( tRockSlope * 1.1, tRockSlope * 1.9, slope ),
-      tSmooth( 0.03, 0.12, tCurv + jitter * 0.05 ) * ( 1.0 - tSmooth( tRockSlope * 2.2, tRockSlope * 3.2, slope ) ) ),
+      tSmooth( 0.06, 0.2, tCurv + jitter * 0.08 ) * 0.85 * ( 1.0 - tSmooth( tRockSlope * 1.8, tRockSlope * 2.8, slope ) ) ),
       tSmooth( 0.006, 0.03, - wv ) * 0.8 );
     col = mix( col, tSnow, snowAlt * lodge );
     if ( tWater > 0.5 ) {

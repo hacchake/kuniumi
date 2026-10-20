@@ -116,8 +116,8 @@ export function createTerrainShader(opts) {
     const sk = Math.max(1, 1500 / Math.max(1, top - sea));
     // 雪線そのものも数百 m の斑で波打たせる（一直線の境目にしない）
     const snowN = x !== undefined ? valueNoise(x / 800, z / 800, 591) * 0.6 + valueNoise(x / 260, z / 260, 592) * 0.4 - 0.5 : 0;
-    const snowAlt = smooth(sl - 0.04 * sk, sl + 0.06 * sk, alt + (jitter * 0.08 + snowN * 0.14 + Math.max(0, Math.min(0.3, curv)) * 0.8) * sk);
-    const lodge = Math.max(1 - smooth(rs * 1.1, rs * 1.9, slope), smooth(0.03, 0.12, curv + jitter * 0.05) * (1 - smooth(rs * 2.2, rs * 3.2, slope)), smooth(0.006, 0.03, -wv) * 0.8);
+    const snowAlt = smooth(sl - 0.04 * sk, sl + 0.06 * sk, alt + (jitter * 0.08 + snowN * 0.14 + Math.max(0, Math.min(0.3, curv)) * 0.35) * sk);
+    const lodge = Math.max(1 - smooth(rs * 1.1, rs * 1.9, slope), smooth(0.06, 0.2, curv + jitter * 0.08) * 0.85 * (1 - smooth(rs * 1.8, rs * 2.8, slope)), smooth(0.006, 0.03, -wv) * 0.8);
     mix(P.snow, snowAlt * lodge);
     // 水際の砂浜と水中
     if (waterEnabled) {
