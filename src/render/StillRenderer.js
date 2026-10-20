@@ -12,7 +12,7 @@ import { addAurora, addRainbow } from '../core/skyExtras.js';
 import { toneMapToRGBA8 } from '../core/tonemap.js';
 import { sunIrradiance, discScaleFor } from '../core/skyModel.js';
 import { computeAtmosphere, renderMask } from './atmospherePass.js';
-import { atmosphereParams } from './atmosphereParams.js';
+import { atmosphereParams, overcastAmount } from './atmosphereParams.js';
 import { fillInstances, coniferGeometry, broadleafGeometry } from '../three/vegetationMeshes.js';
 import { detailedBroadleaf, detailedConifer, detailedGrass, detailedFlowers, detailedRock, detailedReeds, detailedFern, detailedPalm, detailedTropicalPlant } from '../three/detailedPlants.js';
 import { planetRadius } from '../core/schema.js';
@@ -844,9 +844,21 @@ export class StillJob {
         }
       }
     }
-    scene.environment = mkEnv(addNight(renderSkyEquirect(p, ew, eh, { ...opts, discScale })));
+    // 厚い雲の下では、空の光を灰色へ（雲を通った光。晴れの空の色のままだと、雷雨でもセピア色の絵になる）
+    const ov = overcastAmount(s.atmosphere);
+    const grey = (d) => {
+      if (ov <= 0) return d;
+      for (let i = 0; i < d.length; i += 4) {
+        const L = d[i] * 0.2126 + d[i + 1] * 0.7152 + d[i + 2] * 0.0722;
+        d[i] += (L * 0.95 - d[i]) * ov;
+        d[i + 1] += (L - d[i + 1]) * ov;
+        d[i + 2] += (L * 1.08 - d[i + 2]) * ov;
+      }
+      return d;
+    };
+    scene.environment = mkEnv(addNight(grey(renderSkyEquirect(p, ew, eh, { ...opts, discScale }))));
     // 背景は見た目だけなので、半精度に収まるよう太陽の芯だけ頭打ちにする（眩しさは変わらない）
-    const bg = addNight(renderSkyEquirect(p, ew, eh, opts), true);
+    const bg = addNight(grey(renderSkyEquirect(p, ew, eh, opts)), true);
     for (let i = 0; i < bg.length; i++) if (bg[i] > 65000) bg[i] = 65000;
     const rainy = s.atmosphere.precip === 'rain' || s.atmosphere.precip === 'storm';
     scene.background = discScale > 1 || rainy ? mkEnv(bg) : scene.environment;
