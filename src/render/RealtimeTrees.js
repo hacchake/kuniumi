@@ -53,7 +53,23 @@ function midBroadleaf() {
   return { trunk, crown };
 }
 function lowBroadleaf() {
-  return roundBlob(0.3, 0, 0.62, 0, 0, 0.85);
+  // 20 面の多面体の頂点を不規則に押し引きして、でこぼこの樹冠の輪郭に（三角形の数は増やさない。木ごとに向きが違うので形も違って見える）
+  const g = new THREE.IcosahedronGeometry(0.3, 0);
+  const p = g.attributes.position, n = g.attributes.normal;
+  const bump = new Map();
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.set(p.getX(i), p.getY(i), p.getZ(i));
+    const key = `${v.x.toFixed(3)},${v.y.toFixed(3)},${v.z.toFixed(3)}`;
+    if (!bump.has(key)) bump.set(key, 0.78 + rnd() * 0.42);
+    const k = bump.get(key);
+    const d = v.clone().normalize();
+    n.setXYZ(i, d.x, d.y, d.z); // 陰影は丸い樹冠として
+    p.setXYZ(i, v.x * k, v.y * k * 0.85 + 0.62, v.z * k);
+  }
+  return g;
 }
 
 export class RealtimeTrees {
