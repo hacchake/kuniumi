@@ -47,7 +47,8 @@ export function createVegetationRules(ctx) {
   const habitat = (H, slope, wv, nearShore = false) => {
     const alt = (H - sea) / Math.max(1, top - sea);
     return (
-      (1 - smooth(rs * 0.45, rs * 0.85, slope)) *
+      // 草（nearShore）は岩が出始める傾斜の近くまで生える（山の草地は 35° ほどの斜面にも続く）。木はそれより手前まで
+      (nearShore ? 1 - smooth(rs * 0.7, rs * 1.15, slope) : 1 - smooth(rs * 0.45, rs * 0.85, slope)) *
       (1 - smooth(sl - 0.28, sl - 0.1, alt)) *
       (nearShore ? smooth(shoreBand * 0.1 + 0.1, shoreBand * 0.6 + 0.4, H - sea) : smooth(shoreBand * 1.2, shoreBand * 3, H - sea)) *
       (1 - smooth(0.006, 0.03, wv))
