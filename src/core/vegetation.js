@@ -17,6 +17,17 @@ export function defaultVegetation() {
     treeHeight: 16, // 木の高さの目安 (m)
     conifer: 0.5, // 針葉樹の割合（標高が高いほど増える）
     grass: 0.6, // 足元の草の量（一枚絵で、カメラが地面に近いときだけ）
+    // 植生の層（UltraScenery の生態の層にあたる）。どれも既定値で今までと同じ見た目
+    treeSpacing: 1, // 木の間隔の倍率（小さいほど密に、大きいほどまばらに）
+    treeAltMin: 0, // 木が生える高さの下限・上限（水面 = 0、いちばん高い所 = 1）
+    treeAltMax: 1,
+    treeSlope: 1, // 木が生えられる斜面の急さの倍率
+    grassHeight: 1, // 草の丈の倍率（一枚絵）
+    ferns: 1, // シダ（森の下草）の量の倍率（一枚絵）
+    reeds: 1, // 葦の量の倍率（一枚絵）
+    rocks: 1, // 岩・石の量の倍率（一枚絵）
+    rockSize: 1, // 岩・石の大きさの倍率（一枚絵）
+    flowers: 0.25, // 野の花：草の株のうち花をつける割合（一枚絵）
     litter: 0.6, // 木の下の落ち葉・落ち針の量（一枚絵で、カメラが地面に近いときだけ）
     tropical: 0, // 熱帯の割合（一枚絵で、広葉樹のうちヤシになる割合。下草も大きな葉の熱帯の株が混ざる）
     seed: 77,
@@ -49,11 +60,11 @@ export function createVegetationRules(ctx) {
 
   // 植物が育てる土地か（0..1）：急斜面・雪線近く・水辺・土砂のたまり場は苦手
   // nearShore: 草のように水際のすぐ近くまで育つもの
-  const habitat = (H, slope, wv, nearShore = false, w = sea) => {
+  const habitat = (H, slope, wv, nearShore = false, w = sea, slopeK = 1) => {
     const alt = (H - sea) / Math.max(1, top - sea);
     return (
       // 草（nearShore）は岩が出始める傾斜の近くまで生える（山の草地は 35° ほどの斜面にも続く）。木はそれより手前まで
-      (nearShore ? 1 - smooth(rs * 0.7, rs * 1.15, slope) : 1 - smooth(rs * 0.45, rs * 0.85, slope)) *
+      (nearShore ? 1 - smooth(rs * 0.7, rs * 1.15, slope) : 1 - smooth(rs * 0.45 * slopeK, rs * 0.85 * slopeK, slope)) *
       (1 - smooth(sl - 0.28, sl - 0.1, alt)) *
       (nearShore ? smooth(shoreBand * 0.1 + 0.1, shoreBand * 0.6 + 0.4, H - w) : smooth(shoreBand * 1.2, shoreBand * 3, H - w)) *
       (1 - smooth(0.006, 0.03, wv))
@@ -72,7 +83,12 @@ export function createVegetationRules(ctx) {
     veg,
     // 木の密度（0..1）。地表の色づけにも使う。手で植えた・伐った所（veg.paint）はそれを重ねる
     forest(H, slope, wv, x, z) {
-      const hab = habitat(H, slope, wv, false, wAt(x, z));
+      let hab = habitat(H, slope, wv, false, wAt(x, z), veg.treeSlope ?? 1);
+      // 木が生える高さの範囲（既定の 0〜1 なら制限しない）
+      if ((veg.treeAltMin ?? 0) > 0 || (veg.treeAltMax ?? 1) < 1) {
+        const alt = (H - sea) / Math.max(1, top - sea);
+        hab *= smooth((veg.treeAltMin ?? 0) - 0.03, (veg.treeAltMin ?? 0) + 0.03, alt) * (1 - smooth((veg.treeAltMax ?? 1) - 0.03, (veg.treeAltMax ?? 1) + 0.03, alt));
+      }
       let d = veg.trees > 0 ? hab * clump(x, z) * Math.min(1, veg.trees * 1.6) : 0;
       if (paint) {
         for (const p of paint(x, z)) {
@@ -98,7 +114,7 @@ export function createVegetationRules(ctx) {
       if (!(veg.grass > 0)) return 0;
       const f = this.forest(H, slope, wv, x, z);
       const n = smooth(0.3, 0.6, valueNoise(x / 10, z / 10, seed + 17));
-      return smooth(0.15, 0.5, f) * n * (1 - smooth(rs * 0.5, rs * 0.9, slope));
+      return Math.min(1, smooth(0.15, 0.5, f) * n * (1 - smooth(rs * 0.5, rs * 0.9, slope)) * (veg.ferns ?? 1));
     },
     // 葦（ヨシ）の密度（0..1）：水際の緩い所に群れて生える（浅瀬にも少し入る）
     reeds(H, slope, x, z) {
@@ -108,7 +124,7 @@ export function createVegetationRules(ctx) {
       const band = smooth(-0.7, -0.15, above) * (1 - smooth(shoreBand * 0.5 + 0.3, shoreBand * 1.6 + 1, above));
       const flat = 1 - smooth(rs * 0.2, rs * 0.45, slope);
       const clumps = smooth(0.38, 0.62, valueNoise(x / 14, z / 14, seed + 13) * 0.75 + valueNoise(x / 3, z / 3, seed + 14) * 0.25);
-      return band * flat * clumps * Math.min(1, veg.grass * 1.4);
+      return Math.min(1, band * flat * clumps * Math.min(1, veg.grass * 1.4) * (veg.reeds ?? 1));
     },
     // 岩・石の密度（0..1）：斜面ほど多く、岩肌の手前・水際（石の河原・磯）にも。急な崖そのものと雪の上には置かない
     rocks(H, slope, wv, x, z) {
@@ -121,7 +137,7 @@ export function createVegetationRules(ctx) {
       let d = 0.03 + 0.3 * smooth(0.08, 0.25, slope) * steep;
       d += 0.55 * (1 - smooth(shoreBand * 0.3, shoreBand * 1.2, Math.abs(above))); // 水際
       d += 0.25 * smooth(0.004, 0.03, -wv); // 侵食で削られた谷筋
-      return Math.min(1, d * steep * (0.4 + 1.2 * n * n));
+      return Math.min(1, d * steep * (0.4 + 1.2 * n * n) * (veg.rocks ?? 1));
     },
     // 針葉樹になる確率：標高が高いほど増える
     coniferChance(H) {
@@ -162,7 +178,7 @@ export function placeVegetation(rules, size, sample, heightAt, view, { maxTrees 
   // 置く範囲は「木が 1 画素ほどに見える距離」まで。数千 km の大地でも、カメラの近くから順に調べる
   const near = treeIndex();
   if (veg.trees > 0) {
-    const cell = Math.max(5, veg.treeHeight * 0.55);
+    const cell = treeCellSize(veg);
     const pix = (2 * Math.tan(halfV)) / (view.height || 1080);
     const reach = Math.min(size * 1.5, Math.max(1500, veg.treeHeight / pix));
     const ci = Math.floor(C[0] / cell), cj = Math.floor(C[2] / cell);
@@ -220,7 +236,7 @@ export function placeVegetation(rules, size, sample, heightAt, view, { maxTrees 
             if (tr.trunk < 0.35) continue;
             const pg = rules.grass(sm.h, sm.slope, sm.wv, x, z);
             if (r1r > Math.sqrt(pg) * (1 - 0.92 * tr.canopy) * (1 - smooth(radius * 0.6, radius, d) * 0.7)) continue;
-            out.grass.push(x, heightAt(x, z) - 0.02, z, 0.35 + r2 * 0.45, r3 * Math.PI * 2);
+            out.grass.push(x, heightAt(x, z) - 0.02, z, (0.35 + r2 * 0.45) * (veg.grassHeight ?? 1), r3 * Math.PI * 2);
             count++;
           }
         }
@@ -249,7 +265,7 @@ export function placeVegetation(rules, size, sample, heightAt, view, { maxTrees 
           const sm = sample(x, z);
           if (a > rules.rocks(sm.h, sm.slope, sm.wv, x, z)) continue;
           // 大きさは小さいものほど多く（大岩はまれ）
-          const s = smin + (smax - smin) * b * b;
+          const s = (smin + (smax - smin) * b * b) * (veg.rockSize ?? 1);
           if (near.at(x, z).trunk < s * 0.5 + 0.2) continue; // 幹にめり込ませない
           // 足元の地面を岩の幅で測る：細かい起伏まで入れた傾きが大きい所や段の縁では転がり落ちるので置かない。
           // 置くときは足元のいちばん低い所に合わせて沈める（縁に引っかかって浮かないように）
@@ -404,7 +420,7 @@ function paintIndex(strokes) {
 }
 
 export function treeCellSize(veg) {
-  return Math.max(5, veg.treeHeight * 0.55);
+  return Math.max(5, veg.treeHeight * 0.55) * (veg.treeSpacing ?? 1);
 }
 export function treeAt(i, j, rules, size, sample, heightAt, accept = null) {
   const veg = rules.veg;

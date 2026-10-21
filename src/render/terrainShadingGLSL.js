@@ -9,7 +9,7 @@ export const TERRAIN_SHADING_GLSL = /* glsl */ `
   uniform vec3 tShore, tLow, tHigh, tRock, tSnow, tSoil, tForest;
   uniform float tSea, tTop, tShoreBand, tRockSlope, tSnowLine, tHeightScale;
   uniform float tWater; // 1 = 水あり
-  uniform float tTrees, tVegSeed;
+  uniform float tTrees, tVegSeed, tTreeSlope, tTreeAltMin, tTreeAltMax;
   uniform ivec2 tOriginI; // 計算の原点 / 65536 m（精度対策）
 
   float tSmooth( float a, float b, float x ) { float t = clamp( ( x - a ) / ( b - a ), 0.0, 1.0 ); return t * t * ( 3.0 - 2.0 * t ); }
@@ -111,10 +111,12 @@ export const TERRAIN_SHADING_GLSL = /* glsl */ `
   // 木の密度（core/vegetation.js の forest と同じ）
   float tForestAt( float H, float slope, float wv, float clump ) {
     float alt = ( H - tSea ) / max( 1.0, tTop - tSea );
-    float habitat = ( 1.0 - tSmooth( tRockSlope * 0.45, tRockSlope * 0.85, slope ) )
+    float habitat = ( 1.0 - tSmooth( tRockSlope * 0.45 * tTreeSlope, tRockSlope * 0.85 * tTreeSlope, slope ) )
       * ( 1.0 - tSmooth( tSnowLine - 0.28, tSnowLine - 0.1, alt ) )
       * tSmooth( tShoreBand * 1.2, tShoreBand * 3.0, H - tSea )
       * ( 1.0 - tSmooth( 0.006, 0.03, wv ) );
+    // 木が生える高さの範囲（植生の層。既定の 0〜1 なら制限しない）
+    if ( tTreeAltMin > 0.0 || tTreeAltMax < 1.0 ) habitat *= tSmooth( tTreeAltMin - 0.03, tTreeAltMin + 0.03, alt ) * ( 1.0 - tSmooth( tTreeAltMax - 0.03, tTreeAltMax + 0.03, alt ) );
     float d = tTrees > 0.0 ? habitat * clump * min( 1.0, tTrees * 1.6 ) : 0.0;
     d += ( max( d, 0.15 + 0.8 * habitat ) - d ) * tPaintAdd;
     return d * ( 1.0 - tPaintCut );
@@ -167,7 +169,7 @@ const lin = (hex) => new THREE.Color().setRGB(...hexToRgb(hex), THREE.SRGBColorS
 export function createTerrainShadingUniforms() {
   const u = {};
   for (const k of ['tShore', 'tLow', 'tHigh', 'tRock', 'tSnow', 'tSoil', 'tForest']) u[k] = { value: new THREE.Color() };
-  for (const k of ['tSea', 'tTop', 'tShoreBand', 'tRockSlope', 'tSnowLine', 'tHeightScale', 'tWater', 'tTrees', 'tVegSeed']) u[k] = { value: 0 };
+  for (const k of ['tSea', 'tTop', 'tShoreBand', 'tRockSlope', 'tSnowLine', 'tHeightScale', 'tWater', 'tTrees', 'tVegSeed', 'tTreeSlope', 'tTreeAltMin', 'tTreeAltMax']) u[k] = { value: 0 };
   u.tOriginI = { value: new THREE.Vector2() }; // ivec2 として渡る（整数で入れる）
   return u;
 }
@@ -193,4 +195,7 @@ export function updateTerrainShadingUniforms(u, s) {
   u.tWater.value = w.enabled ? 1 : 0;
   u.tTrees.value = veg.trees;
   u.tVegSeed.value = veg.seed | 0;
+  u.tTreeSlope.value = veg.treeSlope ?? 1;
+  u.tTreeAltMin.value = veg.treeAltMin ?? 0;
+  u.tTreeAltMax.value = veg.treeAltMax ?? 1;
 }

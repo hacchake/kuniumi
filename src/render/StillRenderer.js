@@ -776,10 +776,14 @@ export class StillJob {
       // 葦（水際）。季節で色を変える（秋冬は枯れ色）
       const reedCol = new THREE.Color({ spring: '#6f8a3c', autumn: '#a08a52', winter: '#9a8a68' }[s.terrain.season] ?? '#6a7d38');
       split(P.reeds ?? [], 2).forEach((list, i) => add(detailedReeds(i + 1), reedCol, list, { side: THREE.DoubleSide, roughness: 0.6, colorVar: 0.25, seed: 31 + i }));
-      // 野の花：草の株の 4 つに 1 つ（冬は咲かない）
-      if (s.terrain.season !== 'winter') {
+      // 野の花：草の株のうち「野の花」の割合（既定は 4 つに 1 つ。冬は咲かない）
+      const flowerK = s.vegetation.flowers ?? 0.25;
+      if (s.terrain.season !== 'winter' && flowerK > 0) {
         const fl = [];
-        for (let k = 0; k < P.grass.length; k += 20) fl.push(P.grass[k], P.grass[k + 1], P.grass[k + 2], P.grass[k + 3], P.grass[k + 4]);
+        for (let k = 0; k < P.grass.length; k += 5) {
+          const h = Math.abs(Math.sin(P.grass[k] * 3.17 + P.grass[k + 2] * 7.31) * 43758.5453) % 1;
+          if (h < flowerK) fl.push(P.grass[k], P.grass[k + 1], P.grass[k + 2], P.grass[k + 3], P.grass[k + 4]);
+        }
         add(detailedFlowers(1), new THREE.Color(1, 1, 1), fl, { side: THREE.DoubleSide, roughness: 0.6, colorVar: 0.1, seed: 13 });
       }
       this.stats.trees = (P.conifer.length + P.broadleaf.length) / 5;
