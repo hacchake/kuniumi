@@ -184,9 +184,13 @@ export const PRESETS = [
         terrain: {
           heightScale: 260,
           baseHeight: 0,
-          detail: 0.4,
-          noise: { seed: 4242, frequency: 5.5, octaves: 5, persistence: 0.35, ridged: 0.05, warp: 1.5, valley: 1.0, falloff: 0, erosion: 0 },
-          palette: { shore: '#e3c28a', low: '#d9b277', high: '#e8c690', rock: '#b88a56', snow: '#f4e6c8', snowLine: 1.2, rockSlope: 1.4, forest: '#b8915c' },
+          // 砂丘：風上はなめらかな長い斜面、稜線は鋭く（尾根の鋭さを上げ、細部の段を減らす）。
+          // 稜線が格子より鋭いので、粗い格子では稜線が段になってギザギザに見える。細かい格子にする
+          resolution: 1025,
+          detail: 0.12,
+          noise: { seed: 4242, frequency: 3.2, octaves: 3, persistence: 0.3, ridged: 0.7, warp: 0.9, valley: 1.0, falloff: 0, erosion: 0 },
+          // 砂の急斜面（滑落面）は岩肌にしない
+          palette: { shore: '#e3c28a', low: '#d9b277', high: '#e8c690', rock: '#b88a56', snow: '#f4e6c8', snowLine: 1.2, rockSlope: 2.5, forest: '#b8915c' },
         },
         vegetation: { trees: 0, grass: 0 },
         sun: { elevation: 14, azimuth: 250 },
