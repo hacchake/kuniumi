@@ -46,6 +46,8 @@ function aces(r, g, b) {
   return mul(ACES_OUT, c[0], c[1], c[2]).map((v) => Math.min(1, Math.max(0, v)));
 }
 
+const SATURATION = 1.1;
+
 const toSrgb = (c) => (c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055);
 
 // hdr: Float32Array RGBA（線形）。戻り値: ImageData 用の Uint8ClampedArray
@@ -55,6 +57,10 @@ export function toneMapToRGBA8(hdr, width, height, { mode = 'agx', exposure = 1 
   for (let i = 0, n = width * height; i < n; i++) {
     const o = i * 4;
     const c = fn(hdr[o] * exposure, hdr[o + 1] * exposure, hdr[o + 2] * exposure);
+    // 彩りを少し強める（AgX は明るい所ほど色を白へ寄せて淡くなる。リアルタイム表示の仕上げと同じ 1.1 倍。
+    // 赤錆色の岩が日なたで淡い桃色になっていた）
+    const Y = c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722;
+    for (let k = 0; k < 3; k++) c[k] = Math.min(1, Math.max(0, Y + (c[k] - Y) * SATURATION));
     // 8bit への量子化で空のグラデーションに段が出ないよう、わずかにディザを掛ける
     const d = (((i * 1103515245 + 12345) >>> 16) & 255) / 255 - 0.5;
     out[o] = toSrgb(c[0]) * 255 + d;
