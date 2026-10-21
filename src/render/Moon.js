@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { moonDirection, moonIllumination } from '../core/sun.js';
+import { loadMoonMap } from '../three/moonTexture.js';
 
 // 月：空の箱（半径 100 km）の少し内側に、満ち欠けした円盤として描く。太陽の側が光り、
-// 欠けた側もほんのり見える（地球照）。表面の海（暗い所）はノイズで。山や雲より奥。
+// 欠けた側もほんのり見える（地球照）。表面は月面図（core/moonMap.js：実際の表側の海・クレーター・光条）。山や雲より奥。
 const DIST = 90000;
 const SIZE_DEG = 1.5; // 見かけの直径（実際は約 0.52°。画面の上で形が分かるよう大きめに。写真で望遠にしたときの印象）
 
@@ -12,7 +13,20 @@ export class Moon {
     this.uniforms = {
       sunDir: { value: new THREE.Vector3(0, 1, 0) },
       gain: { value: 1 },
+      moonTex: { value: null },
+      hasTex: { value: 0 },
     };
+    // 月面図はワーカーで作る（できるまではノイズの模様）
+    loadMoonMap()
+      .then((m) => {
+        const tex = new THREE.DataTexture(m.albedo, m.W, m.H, THREE.RedFormat, THREE.FloatType);
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.minFilter = tex.magFilter = THREE.LinearFilter;
+        tex.needsUpdate = true;
+        this.uniforms.moonTex.value = tex;
+        this.uniforms.hasTex.value = 1;
+      })
+      .catch(() => {});
     this.mesh = new THREE.Mesh(
       new THREE.PlaneGeometry(r * 2, r * 2),
       new THREE.ShaderMaterial({
@@ -36,7 +50,8 @@ export class Moon {
           }`,
         fragmentShader: `
           uniform vec3 sunDir;
-          uniform float gain;
+          uniform float gain, hasTex;
+          uniform sampler2D moonTex;
           varying vec2 vUv;
           varying vec3 vRight, vUp, vFwd;
           #include <logdepthbuf_pars_fragment>
@@ -55,6 +70,12 @@ export class Moon {
             // 海（暗い所）と細かいむら
             float m = vn( vUv * 2.2 + 3.0 ) * 0.6 + vn( vUv * 6.0 ) * 0.3 + vn( vUv * 18.0 ) * 0.1;
             float albedo = mix( 0.55, 1.0, smoothstep( 0.35, 0.6, m ) );
+            if ( hasTex > 0.5 ) {
+              // 表側をこちらに向けた月の緯度・経度（右が東、上が北）。月面図は行 0 = 北緯 90°
+              float z = sqrt( 1.0 - r2 );
+              float lat = asin( clamp( vUv.y, -1.0, 1.0 ) ), lon = atan( vUv.x, z );
+              albedo = texture2D( moonTex, vec2( lon / 6.2831853 + 0.5, 0.5 - lat / 3.1415927 ) ).r * 0.9;
+            }
             float edge = 1.0 - smoothstep( 0.92, 1.0, r2 ); // 縁をなめらかに
             vec3 c = vec3( 1.0, 0.97, 0.9 ) * albedo * ( lit + 0.01 );
             gl_FragColor = vec4( c * gain, edge );

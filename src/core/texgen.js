@@ -1,5 +1,6 @@
 import { hash2 } from './noise.js';
 import { hexToRgb } from './terrainColor.js';
+import { moonAt } from './moonMap.js';
 
 // 物体の表面模様（手続きテクスチャ）を作る。Three.js 非依存（ワーカーで動かす）。
 // 画像は横に周期 scale×aspect、縦に周期 scale で継ぎ目なく繰り返す。
@@ -14,6 +15,7 @@ export const PATTERNS = [
   ['rock', '岩肌'],
   ['cells', '細胞'],
   ['craters', 'クレーター'],
+  ['moon', '月面'],
   ['stripes', '縞'],
   ['rings', '惑星の環'],
   ['checker', '市松'],
@@ -130,6 +132,13 @@ function patternFn(p, aspect) {
           h += (ring * 0.6 - bowl * 0.5) / (k + 1);
         }
         return { t: sm(0.2, 0.6, h + 0.3), h: h + 0.5, g: 0 };
+      };
+    case 'moon':
+      // 実際の月の表側をまねた月面図（core/moonMap.js）：暗い海・明るい高地・クレーター・光条。行 0 が北極。
+      // 球の模様の u = 0.25 が +z を向くので、表側（経度 0）をそこに置く（北の空の月を南から眺めると表側が見える）
+      return (u, v) => {
+        const m = moonAt(Math.PI / 2 - v * Math.PI, (u - 0.25) * Math.PI * 2);
+        return { t: sm(0.35, 1.25, m.a), h: 0.5 + m.h * 0.5, g: 0 };
       };
     case 'stripes':
       return (u, v) => {

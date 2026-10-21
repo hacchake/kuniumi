@@ -21,6 +21,7 @@ import { buildSurroundMesh } from '../core/surroundMesh.js';
 import { STILL_SEA_FLOOR } from '../core/terrainLod.js';
 import { lakeMeshData } from '../core/lakes.js';
 import { loadPlantModel } from '../three/customPlants.js';
+import { loadMoonMap, sampleMoon } from '../three/moonTexture.js';
 
 // 川・湖の印（PNG）から、粗さの地図（水 = なめらか）と、水の所を暗くした写真を作る（どちらも行 0 = 北、flipY のまま）
 async function waterTextures(maskUrl, photoTex) {
@@ -406,6 +407,14 @@ export class StillJob {
       const hit = renderMask(this.view.renderer, solid, [], camera, W, H);
       for (let i = 0; i < hit.length; i++) hit[i] = 1 - hit[i];
       addStarsScreen(hdr, W, H, camera, hit, built.starK, s.atmosphere.exposure);
+    }
+    // 月（画面の画素ごとに、月面図の模様で）
+    if (built.moon) {
+      const solid = [built.terrainMesh, built.surroundMesh, built.water, built.lakeMesh, ...built.plants, ...(built.buildingMeshes ?? []), ...objectMeshes].filter(Boolean);
+      const hit = renderMask(this.view.renderer, solid, [], camera, W, H);
+      for (let i = 0; i < hit.length; i++) hit[i] = 1 - hit[i];
+      const map = await loadMoonMap().catch(() => null);
+      addMoonScreen(hdr, W, H, camera, hit, built.moon, map);
     }
     this.#applyAtmosphere(hdr, s, built, objectMeshes, celestial, camera, W, H);
     mark('atmosphere');
@@ -863,7 +872,7 @@ export class StillJob {
     // withBow：虹も描くか（背景だけ。水面に映る周りの光には入れない）
     const addNight = (data, withBow = false) => {
       if (night <= 0) {
-        addMoon(data);
+        if (!withBow) addMoon(data); // 背景の月は画面の細かさで後から描く（addMoonScreen）
         addExtras(data, withBow);
         return data;
       }
@@ -874,7 +883,7 @@ export class StillJob {
           for (let k = 0; k < 3; k++) data[o + k] += NIGHT_SKY[k] * night * up;
         }
       }
-      addMoon(data);
+      if (!withBow) addMoon(data);
       addExtras(data, withBow);
       return data;
     };
@@ -965,10 +974,14 @@ export class StillJob {
     if (starK > 0.01) addStarsAndMilkyWay(bg, ew, eh, starK, s.atmosphere.exposure, false); // 星は画面の細かさで後から（addStarsScreen）
     for (let i = 0; i < bg.length; i++) if (bg[i] > 65000) bg[i] = 65000;
     const rainy = s.atmosphere.precip === 'rain' || s.atmosphere.precip === 'storm';
-    scene.background = discScale > 1 || rainy || starK > 0.01 ? mkEnv(bg) : scene.environment;
+    // 見えている月（背景は画面の細かさで描くので、光源とは別の背景にする）
+    const moonAge = s.sun.moonAge ?? 12;
+    const moonDir = moonDirection(sunDirection(s.sun.elevation, s.sun.azimuth), moonAge);
+    const moon = moonIllumination(moonAge) >= 0.01 && moonDir[1] >= -0.02 ? { dir: moonDir, sun: sunDirection(s.sun.elevation, s.sun.azimuth), gain: (0.9 / Math.max(0.02, s.atmosphere.exposure)) * (1 - 0.75 * (1 - night)) } : null;
+    scene.background = discScale > 1 || rainy || starK > 0.01 || moon ? mkEnv(bg) : scene.environment;
 
     scene.updateMatrixWorld(true);
-    return { starK, scene, terrainMesh, surroundMesh, water, lakeMesh, plants, buildingMeshes, textures, skyP: p, skyBG: { data: bg, w: ew, h: eh } };
+    return { starK, moon, scene, terrainMesh, surroundMesh, water, lakeMesh, plants, buildingMeshes, textures, skyP: p, skyBG: { data: bg, w: ew, h: eh } };
   }
 
   #camera(s, aspect) {
@@ -1310,7 +1323,7 @@ function addStarsAndMilkyWay(data, ew, eh, k, exposure, stars = true) {
 }
 // 向き d の星の明るさ（色ごと）を out へ。格子ごとにまれに 1 つ。画素（角度 pixAng）より小さい星は、画素に合わせて広げて明るさの総量を保つ
 // b: 天の川の濃さ（天の川の中は暗い星が多い）
-function starAt(d, b, pixAng, out) {
+function starAt(d, b, pixAng, out, minSig = 0.13) {
   out[0] = out[1] = out[2] = 0;
   for (let l = 0; l < 2; l++) {
     const sc = l === 0 ? 180 : 520;
@@ -1321,7 +1334,7 @@ function starAt(d, b, pixAng, out) {
     if (h <= th) continue;
     const px = cx + sHash(cx + 1.37, cy + 1.37, cz + 1.37), py = cy + sHash(cx + 2.11, cy + 2.11, cz + 2.11), pz = cz + sHash(cx + 3.73, cy + 3.73, cz + 3.73);
     const dd2 = (qx - px) ** 2 + (qy - py) ** 2 + (qz - pz) ** 2;
-    const sig = Math.max(0.13, pixAng * sc * 0.6); // 星の広がり（格子の単位）
+    const sig = Math.max(minSig, pixAng * sc * 0.6); // 星の広がり（格子の単位）
     const e = Math.exp(-dd2 / (2 * sig * sig)) * ((0.13 * 0.13) / (sig * sig));
     const bb = Math.pow((h - th) / (1 - th), 3) * (l === 0 ? 1 : 0.35) * e;
     const tint = sHash(cx + 7.7, cy + 7.7, cz + 7.7);
@@ -1349,11 +1362,50 @@ function addStarsScreen(hdr, W, H, camera, sky, k, exposure) {
       const lum = (hdr[q] * 0.2126 + hdr[q + 1] * 0.7152 + hdr[q + 2] * 0.0722) * exposure;
       const fade = Math.exp(-lum * 6) * Math.min(1, Math.max(0, (d[1] + 0.02) / 0.08)) * sky[i];
       if (fade < 0.01) continue;
-      starAt(d, milkyBand(d), pixAng, st3);
+      starAt(d, milkyBand(d), pixAng, st3, 0); // 画面では望遠でも 1 画素ほどの点に
       const g = g0 * fade;
       hdr[q] += st3[0] * g;
       hdr[q + 1] += st3[1] * g;
       hdr[q + 2] += st3[2] * g;
+    }
+  }
+}
+
+// 空の月を画面の画素ごとに描く（直径 1.5°。全天画像に描くと数画素の円盤になり模様が見えない）。
+// moon: { dir: 月の向き, sun: 太陽の向き, gain }, map: 月面図（無ければ一様な明るさ）
+function addMoonScreen(hdr, W, H, camera, sky, moon, map) {
+  const m = moon.dir, S = moon.sun;
+  const rho = THREE.MathUtils.degToRad(0.75), sinR = Math.sin(rho);
+  // 円盤の右（東）と上（北）：月を見る向きと、世界の上から
+  const fwd = new THREE.Vector3(...m);
+  const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
+  const up = new THREE.Vector3().crossVectors(right, fwd).normalize();
+  const pixAng = THREE.MathUtils.degToRad(camera.fov) / H;
+  const v = new THREE.Vector3(), o = new THREE.Vector3().setFromMatrixPosition(camera.matrixWorld);
+  // 月が写る画素の範囲だけ調べる
+  const c = fwd.clone().multiplyScalar(1000).add(o).project(camera);
+  if (c.z > 1) return;
+  const cx = (c.x * 0.5 + 0.5) * W, cy = (0.5 - c.y * 0.5) * H, rp = rho / pixAng + 3;
+  for (let y = Math.max(0, Math.floor(cy - rp)); y < Math.min(H, Math.ceil(cy + rp)); y++) {
+    for (let x = Math.max(0, Math.floor(cx - rp)); x < Math.min(W, Math.ceil(cx + rp)); x++) {
+      const i = y * W + x;
+      if (!(sky[i] > 0.01)) continue;
+      v.set(((x + 0.5) / W) * 2 - 1, 1 - ((y + 0.5) / H) * 2, 0.5).unproject(camera).sub(o).normalize();
+      const cm = v.dot(fwd);
+      // 縁は画素の大きさだけぼかす
+      const edge = THREE.MathUtils.clamp((Math.acos(Math.min(1, cm)) - rho) / -pixAng + 0.5, 0, 1);
+      if (edge <= 0) continue;
+      const ox = v.dot(right) / sinR, oy = v.dot(up) / sinR;
+      const r2 = Math.min(1, ox * ox + oy * oy), z = Math.sqrt(1 - r2);
+      // 面の向き（世界）：円盤の中心から外へ ox・oy、こちら向きに z
+      const nx = right.x * ox + up.x * oy - fwd.x * z, ny = right.y * ox + up.y * oy - fwd.y * z, nz = right.z * ox + up.z * oy - fwd.z * z;
+      const lit = THREE.MathUtils.smoothstep(nx * S[0] + ny * S[1] + nz * S[2], -0.04, 0.12) + 0.01;
+      const alb = map ? sampleMoon(map, Math.asin(Math.max(-1, Math.min(1, oy))), Math.atan2(ox, z)) * 0.9 : 1;
+      const k = moon.gain * lit * alb * edge * sky[i] * (v.y > 0 ? 1 : 0.5);
+      const q = i * 4;
+      hdr[q] += k;
+      hdr[q + 1] += k * 0.97;
+      hdr[q + 2] += k * 0.9;
     }
   }
 }

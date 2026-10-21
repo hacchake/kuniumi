@@ -42,7 +42,7 @@ export const MATERIAL_PRESETS = [
   { id: 'lava-world', name: '溶岩の星', m: { pattern: 'lava', color: '#1d0f0a', color2: '#ff5a1a', glowColor: '#ff6a20', scale: 5, bump: 0.6, roughness: 0.8, glow: 3 } },
   { id: 'blue-planet', name: '青い惑星', m: { pattern: 'planet', color: '#2f5f8f', color2: '#5e7b3c', scale: 2, bump: 0.3, roughness: 0.6 } },
   { id: 'gas-giant', name: 'ガス惑星', m: { pattern: 'gas', color: '#d8b48a', color2: '#8a5a3a', scale: 2, bump: 0, roughness: 0.9 } },
-  { id: 'moon', name: '月', m: { pattern: 'craters', color: '#4a4846', color2: '#b8b4ae', scale: 2, bump: 0.8, roughness: 0.95 } },
+  { id: 'moon', name: '月', m: { pattern: 'moon', color: '#3e3c3a', color2: '#c4c0b8', scale: 1, bump: 0.6, roughness: 0.95 } },
   { id: 'ice', name: '氷', m: { pattern: 'cells', color: '#cfe8f5', color2: '#7fb0d0', scale: 4, bump: 0.3, roughness: 0.15, transmission: 0.6 } },
   { id: 'gold', name: '黄金', m: { pattern: 'solid', color: '#e2b84a', color2: '#e2b84a', bump: 0, roughness: 0.25, metalness: 1 } },
   { id: 'chrome', name: '鏡面', m: { pattern: 'solid', color: '#f0f0f0', color2: '#f0f0f0', bump: 0, roughness: 0.02, metalness: 1 } },

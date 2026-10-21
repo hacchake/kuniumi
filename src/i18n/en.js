@@ -208,6 +208,7 @@ export const EN = {
   '木の高さ': 'Tree height',
   '針葉樹の割合': 'Conifer ratio',
   '削る強さ': 'Erosion strength',
+  '月面': 'Lunar surface',
   '自分のモデル': 'Custom plants',
   '針葉樹': 'Conifer',
   '広葉樹': 'Broadleaf',
