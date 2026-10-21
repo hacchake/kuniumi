@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { createVegetationRules, treeAt, treeCellSize } from '../core/vegetation.js';
 import { coniferGeometry, fillInstances, grassGeometry } from '../three/vegetationMeshes.js';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // リアルタイム表示の木。一枚絵と同じ規則・同じハッシュで、同じ所に同じ木が立つ（core/vegetation.js の treeAt）。
 // カメラの周りを 256 m の区画に分けて、足りない区画を毎フレーム少しずつ生やす（数千 km の大地でも止まらない）。
@@ -243,7 +243,11 @@ if ( kTreeSnow > 0.0 ) diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.8, 0.83
     this.grassGroup.add(this.grass);
     this.grassAt = null;
     // 岩：でこぼこの多面体を少し平たく（地面に半分埋める）
-    const rockGeo = new THREE.IcosahedronGeometry(0.5, 1);
+    // 頂点をつないでなめらかな陰に（20 面体のままだと面ごとに平らな陰の多面体に見える）
+    const rockBase = new THREE.IcosahedronGeometry(0.5, 2);
+    rockBase.deleteAttribute('normal');
+    rockBase.deleteAttribute('uv');
+    const rockGeo = mergeVertices(rockBase);
     {
       const p = rockGeo.attributes.position;
       for (let i = 0; i < p.count; i++) {
