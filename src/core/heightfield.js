@@ -73,8 +73,13 @@ export function createNoiseSampler(params, { refNyquist, extraOctaves = 0 } = {}
 // 縁に山がかかったまま正方形で切れると、断崖や水越しの直線の境目になるため
 export function edgeFade(u, v, falloff) {
   if (!(falloff > 0)) return 1;
-  const e = Math.max(Math.abs(u * 2 - 1), Math.abs(v * 2 - 1));
-  const t = Math.min(1, Math.max(0, (e - 0.78) / 0.22));
+  // 四辺からの距離で沈める。辺に沿って沈み始める所をゆるく波打たせる（まっすぐだと、島の海岸が
+  // 定規で引いたような直線になった）。いちばん外（辺の上）では必ず底まで沈む
+  const x = u * 2 - 1, y = v * 2 - 1;
+  const ex = Math.abs(x) + 0.06 * (Math.sin(4.7 * y + 1.1) * 0.6 + Math.sin(11.9 * y + 2.3) * 0.4);
+  const ey = Math.abs(y) + 0.06 * (Math.sin(5.3 * x + 0.7) * 0.6 + Math.sin(12.7 * x + 1.9) * 0.4);
+  const e = Math.max(ex, ey);
+  const t = Math.min(1, Math.max(0, (e - 0.74) / 0.2));
   return 1 - t * t * (3 - 2 * t) * Math.min(1, falloff * 2);
 }
 
