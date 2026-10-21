@@ -162,6 +162,9 @@ export class GpuTerrain {
       tHasWaterMask: { value: 0 },
       tPaint: { value: null }, // 森の筆のマスク（R = 植えた量、G = 伐った量。大地の範囲、行 0 = 北）
       tHasPaint: { value: 0 },
+      tLakeTex: { value: null }, // 窪地の湖の水面の高さ（m、高さ場の格子点ごと。湖のそばでなければ −1e9）
+      tHasLake: { value: 0 },
+      tLakeRes: { value: 2 },
       tHasPhoto: { value: 0 },
       tOriginUV: { value: new THREE.Vector2() },
       tOriginW: { value: new THREE.Vector2() }, // 原点（世界座標）
@@ -204,7 +207,7 @@ export class GpuTerrain {
           .replace('#include <beginnormal_vertex>', 'vec3 objectNormal; vec3 kTP; kTerrainVertex( kTP, objectNormal );')
           .replace('#include <begin_vertex>', 'vec3 transformed = kTP;');
         shader.fragmentShader = shader.fragmentShader
-          .replace('#include <common>', `#include <common>\n${TERRAIN_SHADING_GLSL}\nvarying float vTH, vTSlope, vTWear, vTJit, vTClump;\nvarying vec2 vTLocal, vTDetGrad;\nuniform vec2 tOriginW;\nuniform float tClipHalf, tHasPhoto, tHasWaterMask, tHasPaint, tSeason, tWinterSnow, tLightsI, tWet, tSnowCover, tSnowFloor;\nuniform sampler2D tPhoto, tWaterMask, tLights, tPaint;\n${CURVE_GLSL}\n${FIELD_GLSL}`)
+          .replace('#include <common>', `#include <common>\n${TERRAIN_SHADING_GLSL}\nvarying float vTH, vTSlope, vTWear, vTJit, vTClump;\nvarying vec2 vTLocal, vTDetGrad;\nuniform vec2 tOriginW;\nuniform float tLakeRes, tHasLake;\nuniform sampler2D tLakeTex;\nuniform float tClipHalf, tHasPhoto, tHasWaterMask, tHasPaint, tSeason, tWinterSnow, tLightsI, tWet, tSnowCover, tSnowFloor;\nuniform sampler2D tPhoto, tWaterMask, tLights, tPaint;\n${CURVE_GLSL}\n${FIELD_GLSL}`)
           // 面の向きと傾きは画素ごとに高さ場から出す（頂点の補間だと、区画の細かさが変わる所で線が出る）
           .replace(
             '#include <normal_fragment_begin>',
@@ -238,6 +241,7 @@ export class GpuTerrain {
               'tFineJit = tJitterFine( vTLocal, kPix );\n' +
               'float kJ = vTJit + tFineJit;\n' +
               'if ( tHasPaint > 0.5 ) { vec2 kPn = texture2D( tPaint, clamp( tUV( vTLocal ), 0.0, 1.0 ) ).rg; tPaintAdd = kPn.r; tPaintCut = kPn.g; }\n' +
+              'if ( tHasLake > 0.5 ) { vec2 kLu = clamp( tUV( vTLocal ), 0.0, 1.0 ) * ( tLakeRes - 1.0 ) + 0.5; tLakeL = texture2D( tLakeTex, kLu / tLakeRes ).r; }\n' +
               'tStrataAA = fwidth( vTH );\n' +
               // くぼみの度合い：高さ場の格子 1.5 マスの幅で、周り 4 点の平均と比べる（一枚絵と同じ）
               '{ float kCe = tSize / ( tRes - 1.0 ) * 1.5; float kH0 = tCoarseH( vTLocal ); tCurv = ( ( tCoarseH( vTLocal + vec2( kCe, 0.0 ) ) + tCoarseH( vTLocal - vec2( kCe, 0.0 ) ) + tCoarseH( vTLocal + vec2( 0.0, kCe ) ) + tCoarseH( vTLocal - vec2( 0.0, kCe ) ) ) * 0.25 - kH0 ) / kCe; tSnowN = tValueNoise( vTLocal, 800.0, 591 ) * 0.6 + tValueNoise( vTLocal, 260.0, 592 ) * 0.4 - 0.5; }\n' +
@@ -385,6 +389,22 @@ export class GpuTerrain {
   }
 
   // 森の筆（vegetation.paint）を地面の色の森にも効かせる：大地の範囲を 512 画素のマスクに描く
+  // 窪地の湖（core/lakes.js の findLakes の結果、無ければ null）：湖の岸も水際の色に
+  setLakes(grid) {
+    this.uniforms.tLakeTex.value?.dispose();
+    this.uniforms.tLakeTex.value = null;
+    this.uniforms.tHasLake.value = 0;
+    if (!grid?.lakes.length) return;
+    const data = new Float32Array(grid.shore.length);
+    for (let k = 0; k < data.length; k++) data[k] = grid.shore[k] === -Infinity ? -1e9 : grid.shore[k];
+    const tex = new THREE.DataTexture(data, grid.res, grid.res, THREE.RedFormat, THREE.FloatType);
+    tex.minFilter = tex.magFilter = THREE.NearestFilter;
+    tex.needsUpdate = true;
+    this.uniforms.tLakeTex.value = tex;
+    this.uniforms.tLakeRes.value = grid.res;
+    this.uniforms.tHasLake.value = 1;
+  }
+
   setPaint(strokes, size) {
     if (!strokes?.length) {
       this.uniforms.tHasPaint.value = 0;

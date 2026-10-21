@@ -108,6 +108,8 @@ export const TERRAIN_SHADING_GLSL = /* glsl */ `
   // 手で植えた・伐った量（森の筆。描く側がその点のマスクから入れる）
   float tPaintAdd = 0.0;
   float tPaintCut = 0.0;
+  // その点の窪地の湖の水面（湖のそばでなければとても低い値）。描く側が湖の地図から入れる
+  float tLakeL = -1e9;
   // 木の密度（core/vegetation.js の forest と同じ）
   float tForestAt( float H, float slope, float wv, float clump ) {
     float alt = ( H - tSea ) / max( 1.0, tTop - tSea );
@@ -151,12 +153,16 @@ export const TERRAIN_SHADING_GLSL = /* glsl */ `
       tSmooth( 0.06, 0.2, tCurv + jitter * 0.08 ) * 0.85 * ( 1.0 - tSmooth( tRockSlope * 1.8, tRockSlope * 2.8, slope ) ) ),
       tSmooth( 0.006, 0.03, - wv ) * 0.8 );
     col = mix( col, tSnow, snowAlt * lodge );
-    if ( tWater > 0.5 ) {
-      float above = H - tSea;
+    // 窪地の湖のそばでは、その湖の水面を基準にする（湖の岸は砂浜を細く。core/terrainColor.js と同じ）
+    bool kLake = tLakeL > tSea;
+    float kWl = kLake ? tLakeL : tSea;
+    float kBand = kLake ? min( tShoreBand, 4.0 ) : tShoreBand;
+    if ( tWater > 0.5 || kLake ) {
+      float above = H - kWl;
       // 砂浜の上の縁：色むらで大きく波打たせる（等高線そのままだと定規で引いた直線になる）
-      col = mix( col, tShore, ( 1.0 - tSmooth( tShoreBand * 0.5, tShoreBand * 1.6, above + jitter * tShoreBand * 1.6 ) ) * ( 1.0 - tSmooth( 0.4, 0.9, slope ) ) );
+      col = mix( col, tShore, ( 1.0 - tSmooth( kBand * 0.5, kBand * 1.6, above + jitter * kBand * 1.6 ) ) * ( 1.0 - tSmooth( 0.4, 0.9, slope ) ) );
       if ( above < 0.0 ) {
-        float deep = tSmooth( 0.0, tShoreBand * 6.0, - above );
+        float deep = tSmooth( 0.0, kBand * 6.0, - above );
         col *= vec3( 1.0 - deep * 0.55, 1.0 - deep * 0.45, 1.0 - deep * 0.35 );
       }
     }

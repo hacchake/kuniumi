@@ -1,5 +1,6 @@
 import { hash2 } from './noise.js';
 import { createVegetationRules, shoreBandOf } from './vegetation.js';
+import { lakeLevelAt } from './lakes.js';
 
 // 高さ場から地表の色テクスチャ（RGBA, 行0 = 北）を作る。
 // リアルタイム表示と glTF 書き出しで同じ絵を使うため、シェーダではなく CPU で焼く。
@@ -120,10 +121,15 @@ export function createTerrainShader(opts) {
     const snowAlt = smooth(sl - 0.04 * sk, sl + 0.06 * sk, alt + (jitter * 0.08 + snowN * 0.14 + Math.max(0, Math.min(0.3, curv)) * 0.35) * sk);
     const lodge = Math.max(1 - smooth(rs * 1.1, rs * 1.9, slope), smooth(0.06, 0.2, curv + jitter * 0.08) * 0.85 * (1 - smooth(rs * 1.8, rs * 2.8, slope)), smooth(0.006, 0.03, -wv) * 0.8);
     mix(P.snow, snowAlt * lodge);
-    // 水際の砂浜と水中
-    if (waterEnabled) {
-      const above = H - sea;
-      mix(P.shore, (1 - smooth(shoreBand * 0.5, shoreBand * 1.6, above + jitter * shoreBand)) * (1 - smooth(0.4, 0.9, slope)) * (1 - grassy * 0.85));
+    // 水際の砂浜と水中。窪地の湖（opts.lakes）のそばでは、その湖の水面を基準にする（湖の岸は砂浜を細く）
+    let wl = sea, band = shoreBand, lake = false;
+    if (opts.lakes && x !== undefined) {
+      const L = lakeLevelAt(opts.lakes, opts.size ?? 1, x, z);
+      if (L > sea) (wl = L), (band = Math.min(shoreBand, 4)), (lake = true);
+    }
+    if (waterEnabled || lake) {
+      const above = H - wl;
+      mix(P.shore, (1 - smooth(band * 0.5, band * 1.6, above + jitter * band)) * (1 - smooth(0.4, 0.9, slope)) * (1 - grassy * 0.85));
       // 近景：波打ち際の濡れて暗い土と、浅い水底の小石のまだら
       if (opts.fine && x !== undefined && above < 1.2) {
         mix(bedCol, (1 - smooth(-0.2, 1.2, above)) * 0.5);
@@ -134,11 +140,11 @@ export function createTerrainShader(opts) {
         col[1] *= k;
         col[2] *= k;
       }
-      if (above < 0 && opts.seaFloor && scatterCol) {
+      if (above < 0 && opts.seaFloor && scatterCol && !lake) {
         // 一枚絵：深くなるほど水の散乱色へ（海の底は opts.seaFloor の深さで受け止めている）
         mix(scatterCol, smooth(1, opts.seaFloor, -above));
       } else if (above < 0) {
-        const deep = smooth(0, shoreBand * 6, -above);
+        const deep = smooth(0, band * 6, -above);
         col[0] *= 1 - deep * 0.55;
         col[1] *= 1 - deep * 0.45;
         col[2] *= 1 - deep * 0.35;

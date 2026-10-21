@@ -156,6 +156,8 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
     season: terrain.season, // 季節の地表の色（リアルタイム表示と同じ式）
     winterSnow: terrain.winterSnow,
     waterColor: water.color,
+    lakes, // 窪地の湖の岸も水際の色に
+    size,
   });
   const col = [0, 0, 0];
   const G = N + 3; // 法線用に 1 マス外側も計算する

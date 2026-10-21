@@ -747,6 +747,7 @@ void main() {`)
       this.lakes = null;
       if (this.lakeWater) this.lakeWater.visible = false;
       this.trees.setLakes(null);
+      this.gpuTerrain.setLakes(null);
       return;
     }
     // 窪地を埋めた面は高さ場だけで決まるので、高さ場が同じなら使い回す
@@ -766,6 +767,7 @@ void main() {`)
     });
     this.lakes = grid;
     this.trees.setLakes(grid);
+    this.gpuTerrain.setLakes(grid);
     if (!grid.lakes.length) {
       if (this.lakeWater) this.lakeWater.visible = false;
       return;
