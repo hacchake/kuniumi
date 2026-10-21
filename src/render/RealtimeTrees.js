@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { createVegetationRules, treeAt, treeCellSize } from '../core/vegetation.js';
-import { coniferGeometry, fillInstances } from '../three/vegetationMeshes.js';
+import { coniferGeometry, fillInstances, grassGeometry } from '../three/vegetationMeshes.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // リアルタイム表示の木。一枚絵と同じ規則・同じハッシュで、同じ所に同じ木が立つ（core/vegetation.js の treeAt）。
@@ -14,6 +14,8 @@ const THIN = 1000; // これより遠い木は間引く
 const MAX_FAR = 60000;
 const MAX_NEAR = 6000;
 const BLOCKS_PER_FRAME = 6;
+// 足元の草：カメラが地面に近いとき（GRASS_ABOVE m 以内）、周り GRASS_R m に GRASS_CELL m ごと 1 株まで
+const GRASS_R = 35, GRASS_CELL = 0.55, GRASS_MAX = 6000, GRASS_ABOVE = 40;
 
 // 遠景用の軽い形（1 本あたり十数〜数十三角形）
 function lowConifer() {
@@ -208,6 +210,19 @@ if ( kTreeSnow > 0.0 ) diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.8, 0.83
       broadleaf: [mk(lowBroadleaf(), brdCrown, MAX_FAR, false)],
       palm: [mk(mergeGeometries([onlyPosNormal(palmFar.trunk), onlyPosNormal(palmFar.crown)]), palmCrown, MAX_FAR, false)],
     };
+    // 足元の草（一枚絵と同じ草の規則で、生える所だけ）
+    this.grassGroup = new THREE.Group();
+    this.grassGroup.name = 'Grass';
+    parent.add(this.grassGroup);
+    this.grassMat = mat(new THREE.Color('#5d7a30'), true);
+    this.grassMat.side = THREE.DoubleSide;
+    this.grass = new THREE.InstancedMesh(grassGeometry(), this.grassMat, GRASS_MAX);
+    this.grass.count = 0;
+    this.grass.frustumCulled = false;
+    this.grass.receiveShadow = true;
+    this.grass.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.grassGroup.add(this.grass);
+    this.grassAt = null;
     this.blocks = new Map(); // "bi,bj" → { conifer: [...], broadleaf: [...] }（世界座標）
     this.key = null;
     this.origin = new THREE.Vector2(NaN, NaN);
@@ -227,6 +242,8 @@ if ( kTreeSnow > 0.0 ) diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.8, 0.83
     this.dirty = true;
     brdCrown.color.set({ spring: '#4c7a26', autumn: '#9a4614', winter: '#4d4136' }[season] ?? '#2e4d1f');
     conCrown.color.set(season === 'winter' ? '#3b4a42' : '#1b3317');
+    // 草も季節の色に（一枚絵の草の色と同じ考え：秋は黄土色、冬は枯れ草色、春は明るい若草色）
+    this.grassMat.color.set({ spring: '#6f9a3a', autumn: '#9a8a4a', winter: '#8f7c5c' }[season] ?? '#5d7a30');
   }
 
   // 風の揺れ：dt で時間を進め、強さは天気から（ふだんはそよ風、雨で強く、雷雨で大きく）
@@ -270,7 +287,11 @@ if ( kTreeSnow > 0.0 ) diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.8, 0.83
     const t = s.terrain;
     const enabled = veg && (veg.trees > 0 || veg.paint?.length) && terrain; // 木の量が 0 でも、手で植えた所には立てる
     this.group.visible = !!enabled;
-    if (!enabled) return;
+    if (!enabled) {
+      this.grass.count = 0;
+      this.grassAt = null;
+      return;
+    }
     // シーン（地形・植生・水）が変わったら作り直す
     // シーンは不変更新なので、地形・植生・水の入れ物が同じなら中身も同じ
     if (t !== this.lastT || veg !== this.lastV || s.water !== this.lastW || this.lakes !== this.lastLakes) {
@@ -290,6 +311,7 @@ if ( kTreeSnow > 0.0 ) diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.8, 0.83
     // 地面から高く離れたら木は見分けられないので置かない（森の色だけ）
     const ground = terrain.groundAt(cam.x, cam.z);
     const above = cam.y - ground;
+    this.#updateGrass(cam, terrain, above);
     const reach = Math.min(Math.max(600, veg.treeHeight * 120), Math.max(0, 4000 - above * 2));
     if (reach <= 0) {
       this.#setCounts(0);
@@ -357,6 +379,37 @@ if ( kTreeSnow > 0.0 ) diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.8, 0.83
       }
     }
     return hit;
+  }
+
+  // 足元の草：カメラが 4 m 動くか、植生が変わったら置き直す
+  #updateGrass(cam, terrain, above) {
+    const veg = this.rules?.veg;
+    if (!veg || !(veg.grass > 0) || above > GRASS_ABOVE) {
+      this.grass.count = 0;
+      this.grassAt = null;
+      return;
+    }
+    if (this.grassAt && this.grassAt.key === this.key && Math.hypot(cam.x - this.grassAt.x, cam.z - this.grassAt.z) < 4) return;
+    this.grassAt = { x: cam.x, z: cam.z, key: this.key };
+    const ox = Math.round(cam.x / 256) * 256, oz = Math.round(cam.z / 256) * 256;
+    this.grassGroup.position.set(ox, 0, oz);
+    const list = [];
+    const i0 = Math.floor((cam.x - GRASS_R) / GRASS_CELL), i1 = Math.ceil((cam.x + GRASS_R) / GRASS_CELL);
+    const j0 = Math.floor((cam.z - GRASS_R) / GRASS_CELL), j1 = Math.ceil((cam.z + GRASS_R) / GRASS_CELL);
+    const hash = (i, j, k) => Math.abs(Math.sin(i * 12.9898 + j * 78.233 + k * 37.719) * 43758.5453) % 1;
+    for (let j = j0; j <= j1 && list.length < GRASS_MAX * 5; j++) {
+      for (let i = i0; i <= i1; i++) {
+        const x = (i + hash(i, j, 1)) * GRASS_CELL, z = (j + hash(i, j, 2)) * GRASS_CELL;
+        const d = Math.hypot(x - cam.x, z - cam.z);
+        if (d > GRASS_R || d < 0.8) continue;
+        const sm = terrain.sample(x, z);
+        const pg = this.rules.grass(sm.h, sm.slope, sm.wv, x, z) * (1 - Math.max(0, (d - GRASS_R * 0.7) / (GRASS_R * 0.3)) * 0.8);
+        if (hash(i, j, 3) > Math.sqrt(pg)) continue;
+        list.push(x - ox, terrain.groundAt(x, z) - 0.03, z - oz, (0.35 + hash(i, j, 4) * 0.45) * (veg.grassHeight ?? 1), hash(i, j, 5) * Math.PI * 2);
+        if (list.length >= GRASS_MAX * 5) break;
+      }
+    }
+    fillInstances(this.grass, list, 0.35, 9);
   }
 
   #grow(bi, bj, size, terrain) {
