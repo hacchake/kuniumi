@@ -947,7 +947,10 @@ export class StillJob {
       }
       return d;
     };
-    scene.environment = mkEnv(addNight(grey(renderSkyEquirect(p, ew, eh, { ...opts, discScale }))));
+    // 厚い雲が空を覆うと、直射日光は雲に遮られて地面まで届かない（光源の全天画像には雲が入っていないので、
+    // そのままでは雷雨の山にも晴れの日のくっきりした影が落ちた）。光源の太陽だけを雲の量に応じて弱める
+    const sunThrough = 1 - 0.92 * Math.min(1, ov / 0.85);
+    scene.environment = mkEnv(addNight(grey(renderSkyEquirect(p, ew, eh, { ...opts, sunScale: opts.sunScale * sunThrough, discScale }))));
     // 背景は見た目だけなので、半精度に収まるよう太陽の芯だけ頭打ちにする（眩しさは変わらない）
     const bg = addNight(grey(renderSkyEquirect(p, ew, eh, opts)), true);
     // 夜空の星と天の川（リアルタイム表示の RealtimeAtmosphere と同じ式）。背景の見た目だけで、光源には入れない
