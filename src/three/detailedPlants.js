@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { mulberry32 } from '../core/noise.js';
 
 // 一枚絵用の細かい植物（高さ 1 の単位形状。置くときに木の高さを掛ける）。
@@ -250,7 +250,11 @@ export function detailedFlowers(seed = 1) {
 // 岩：細かい多面体を、大きなうねりと細かい凹凸でゆがめ、底を平らに（地面に埋まる）。くぼみは暗く、上面は少し苔むした色
 export function detailedRock(seed = 1) {
   const rand = mulberry32(seed * 7331 + 17);
-  const g = new THREE.IcosahedronGeometry(0.5, 4);
+  // 20 面体は頂点を共有しないので、そのままでは面ごとに平らな陰（角ばった多面体）になる。頂点をつないでなめらかな陰に
+  const g0 = new THREE.IcosahedronGeometry(0.5, 4);
+  g0.deleteAttribute('normal');
+  g0.deleteAttribute('uv');
+  const g = mergeVertices(g0);
   const p = g.attributes.position;
   // 方向ごとの凹凸：ランダムな方向の波を重ねる
   const waves = Array.from({ length: 9 }, (_, k) => ({ d: randDir(rand), f: 2 + k * 1.6 + rand() * 2, a: 0.16 / (1 + k * 0.7), ph: rand() * 6.28 }));
@@ -262,6 +266,8 @@ export function detailedRock(seed = 1) {
     const dir = v.clone().normalize();
     let disp = 0;
     for (const w of waves) disp += Math.sin(dir.dot(w.d) * w.f + w.ph) * w.a;
+    // 表面の細かいざらつき（近くで見たときの岩らしさ）
+    disp += (Math.sin(dir.x * 41 + dir.y * 17) * Math.sin(dir.z * 37 - dir.y * 23) + Math.sin(dir.x * 83 - dir.z * 59) * 0.5) * 0.012;
     // 角張らせる：値を段に寄せる
     const r = 0.5 * (1 + disp);
     v.copy(dir).multiplyScalar(r);
@@ -276,7 +282,7 @@ export function detailedRock(seed = 1) {
   }
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
   g.computeVertexNormals();
-  return g;
+  return g.toNonIndexed();
 }
 
 // 葦（ヨシ）の株：背の高い細い葉を 40 本ほど、まっすぐ上へ（先は風でしなる）。何本かは穂を付ける。根元は暗く、先は枯れ色寄り
