@@ -33,11 +33,14 @@ export function addAurora(d, north, time, out, k = 1) {
   hy /= hl;
   const az = Math.atan2(hx, hy);
   // 下の縁はほぼ同じ高さ（上空約 100 km）にそろい、細かく折れ曲がる（大きくうねらせると V 字の山のように見える）
-  const wave = noise1(az * 2 + time * 0.03) * 0.06 + noise1(az * 7 - time * 0.05) * 0.04 + noise1(az * 19 + time * 0.08) * 0.015;
+  // 大きなうねりは控えめに（強いと、下の縁が遠くの山の稜線のように見えた）。細かい折れ目を主に
+  const wave = noise1(az * 2 + time * 0.03) * 0.025 + noise1(az * 7 - time * 0.05) * 0.03 + noise1(az * 19 + time * 0.08) * 0.015;
   // 下の縁：北の空に東西へのびる帯を下から見上げた形。真北で最も高く、東西へ離れるほど遠くなって地平線へ下がる（仰角 = atan(tan(h) cos(方位))）
   const base = Math.atan(Math.tan(0.16 + wave) * Math.max(0.05, Math.cos(az)));
   const above = el - base;
-  let band = smooth(-0.03, 0, above) * Math.exp(-Math.max(above, 0) * 4);
+  // 下の縁はくっきりと明るく（電子が最も深く降りる所。実際のオーロラは縁がいちばん明るい）、上へ薄れていく
+  const up = Math.max(above, 0);
+  let band = smooth(-0.008, 0, above) * (Math.exp(-up * 4) + 0.7 * Math.exp(-up * 45));
   band *= smooth(1.9, 0.6, Math.abs(az));
   if (band < 1e-4) return;
   let rays = noise2(az * 40 + time * 0.25, above * 2) * 0.6 + noise2(az * 110 - time * 0.4, 0) * 0.4;
