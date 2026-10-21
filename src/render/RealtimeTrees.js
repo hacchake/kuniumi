@@ -34,7 +34,18 @@ function roundBlob(r, x, y, z, detail = 0, sy = 1) {
 
 // 近景用の広葉樹（一枚絵の形は 1 本 2000 三角形近いので、リアルタイム用に 100 三角形ほどの形）
 function midBroadleaf() {
-  const trunk = new THREE.CylinderGeometry(0.022, 0.04, 0.5, 5, 1).translate(0, 0.25, 0);
+  // 幹：縦の畝（樹皮）と根元の張り出し。辺を増やして、近くで角ばった柱に見えないように
+  const trunk = new THREE.CylinderGeometry(0.022, 0.04, 0.5, 12, 4).translate(0, 0.25, 0);
+  {
+    const p = trunk.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      const a = Math.atan2(z, x), t = y / 0.5;
+      const k = (1 - 0.12 * (0.5 - 0.5 * Math.cos(a * 7 + t * 2))) * (1 + 0.35 * Math.exp(-t * 10));
+      p.setXYZ(i, x * k, y, z * k);
+    }
+    trunk.computeVertexNormals();
+  }
   const blobs = [
     [0, 0.62, 0, 0.26],
     [0.13, 0.55, 0.06, 0.18],
