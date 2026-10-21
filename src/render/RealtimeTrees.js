@@ -344,13 +344,13 @@ if ( kTreeSnow > 0.0 ) diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.8, 0.83
       this.lastV = veg;
       this.lastW = s.water;
       this.lakesVer = this.lakesVer ?? 0;
-      const key = JSON.stringify([t.mode, t.heightmap?.id, !!this.photo, t.noise, t.size, t.heightScale, t.baseHeight, t.palette, t.detail, veg, s.water.level, s.water.enabled, t.resolution, this.lakesVer]);
+      const key = JSON.stringify([t.mode, t.heightmap?.id, !!this.photo, t.noise, t.size, t.heightScale, t.baseHeight, t.palette, t.detail, veg, s.water.level, s.water.enabled, t.resolution, this.lakesVer, t.season, t.winterSnow]);
       if (key !== this.key) {
         this.key = key;
         this.blocks.clear();
         // 岩の色：地形の岩肌の色に少し明るい灰色を混ぜる（一枚絵と同じ）
         this.rockMat.color.set(t.palette.rock ?? '#8a8379').lerp(new THREE.Color('#8e8880'), 0.3);
-        this.rules = createVegetationRules({ heightScale: t.heightScale, baseHeight: t.baseHeight, waterLevel: s.water.level, waterEnabled: s.water.enabled, palette: t.palette, vegetation: veg, realWorld: t.mode === 'heightmap' && !!t.heightmap?.geo, photo: this.photo, size: t.size, lakes: this.lakes });
+        this.rules = createVegetationRules({ heightScale: t.heightScale, baseHeight: t.baseHeight, waterLevel: s.water.level, waterEnabled: s.water.enabled, palette: t.palette, vegetation: veg, realWorld: t.mode === 'heightmap' && !!t.heightmap?.geo, photo: this.photo, size: t.size, lakes: this.lakes, season: t.season, winterSnow: t.winterSnow });
         this.dirty = true;
       }
     }

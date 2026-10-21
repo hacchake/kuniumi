@@ -251,7 +251,7 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
   // ---- 木と草 ----
   let plants = null;
   if (vegetation) {
-    const rules = createVegetationRules({ heightScale, baseHeight, waterLevel: water.level, waterEnabled: water.enabled, palette: terrain.palette, vegetation, realWorld: terrain.mode === 'heightmap' && !!terrain.heightmap?.geo, photo, size, lakes });
+    const rules = createVegetationRules({ heightScale, baseHeight, waterLevel: water.level, waterEnabled: water.enabled, palette: terrain.palette, vegetation, realWorld: terrain.mode === 'heightmap' && !!terrain.heightmap?.geo, photo, size, lakes, season: terrain.season, winterSnow: terrain.winterSnow });
     plants = placeVegetation(rules, size, surface.coarse, (x, z) => heightAt(x, z, 0.5), view);
     // 木・草・岩の根元の位置も同じように移して曲げる（幹の傾きは近くでは無視できる）
     for (const list of [plants.conifer, plants.broadleaf, plants.grass, plants.rocks, plants.reeds, plants.ferns, plants.litter, plants.needles]) {

@@ -54,6 +54,9 @@ export function createVegetationRules(ctx) {
   // その地点のいちばん近い水面：海と、窪地の湖（ctx.lakes）の高い方。湖の中と岸辺にも木を立てない
   const lakes = ctx.lakes ?? null;
   const wAt = lakes ? (x, z) => Math.max(sea, lakeLevelAt(lakes, ctx.size ?? 1, x, z)) : () => sea;
+  // 冬の雪に覆われる度合い（0..1。地表の色の冬の雪と同じ式）。草や下草は雪の下に隠れる
+  const ws = ctx.winterSnow ?? 600;
+  const snowCover = ctx.season === 'winter' ? (H, slope) => (H >= sea ? smooth(ws - 150, ws + 250, H) * (1 - smooth(0.55, 1, slope)) : 0) : () => 0;
   const top = baseHeight + heightScale;
   const shoreBand = shoreBandOf(heightScale, baseHeight, sea, !!ctx.realWorld);
   const rs = palette.rockSlope;
@@ -83,6 +86,7 @@ export function createVegetationRules(ctx) {
   const paint = paintIndex(veg.paint);
   return {
     veg,
+    snowCover,
     // 木の密度（0..1）。地表の色づけにも使う。手で植えた・伐った所（veg.paint）はそれを重ねる
     forest(H, slope, wv, x, z) {
       let hab = habitat(H, slope, wv, false, wAt(x, z), veg.treeSlope ?? 1);
@@ -109,14 +113,14 @@ export function createVegetationRules(ctx) {
       const open = 0.35 + 0.65 * smooth(0.3, 0.7, valueNoise(x / 8, z / 8, seed + 5));
       // 森の中は日陰で草が減る（下草はシダなどに）
       const shade = 1 - 0.65 * smooth(0.3, 0.8, this.forest(H, slope, wv, x, z));
-      return habitat(H, slope, wv, true, wAt(x, z)) * open * shade * Math.min(1, veg.grass * 1.4);
+      return habitat(H, slope, wv, true, wAt(x, z)) * open * shade * Math.min(1, veg.grass * 1.4) * (1 - 0.9 * snowCover(H, slope));
     },
     // シダ（森の下草）の密度（0..1）：木の多い所の、湿った緩い地面に
     fern(H, slope, wv, x, z) {
       if (!(veg.grass > 0)) return 0;
       const f = this.forest(H, slope, wv, x, z);
       const n = smooth(0.3, 0.6, valueNoise(x / 10, z / 10, seed + 17));
-      return Math.min(1, smooth(0.15, 0.5, f) * n * (1 - smooth(rs * 0.5, rs * 0.9, slope)) * (veg.ferns ?? 1));
+      return Math.min(1, smooth(0.15, 0.5, f) * n * (1 - smooth(rs * 0.5, rs * 0.9, slope)) * (veg.ferns ?? 1)) * (1 - snowCover(H, slope));
     },
     // 葦（ヨシ）の密度（0..1）：水際の緩い所に群れて生える（浅瀬にも少し入る）
     reeds(H, slope, x, z) {
@@ -126,7 +130,7 @@ export function createVegetationRules(ctx) {
       const band = smooth(-0.7, -0.15, above) * (1 - smooth(shoreBand * 0.5 + 0.3, shoreBand * 1.6 + 1, above));
       const flat = 1 - smooth(rs * 0.2, rs * 0.45, slope);
       const clumps = smooth(0.38, 0.62, valueNoise(x / 14, z / 14, seed + 13) * 0.75 + valueNoise(x / 3, z / 3, seed + 14) * 0.25);
-      return Math.min(1, band * flat * clumps * Math.min(1, veg.grass * 1.4) * (veg.reeds ?? 1));
+      return Math.min(1, band * flat * clumps * Math.min(1, veg.grass * 1.4) * (veg.reeds ?? 1)) * (1 - 0.7 * snowCover(H, slope));
     },
     // 岩・石の密度（0..1）：斜面ほど多く、岩肌の手前・水際（石の河原・磯）にも。急な崖そのものと雪の上には置かない
     rocks(H, slope, wv, x, z) {
@@ -345,6 +349,7 @@ export function placeVegetation(rules, size, sample, heightAt, view, { maxTrees 
           if (a > tr.canopy * Math.min(1, veg.litter * 1.4)) continue;
           const sm = sample(x, z);
           if (sm.slope > 0.8) continue; // 急な斜面には溜まらない
+          if (b < rules.snowCover(sm.h, sm.slope)) continue; // 冬の雪の下に埋もれる
           (tr.kind === 'conifer' ? out.needles : out.litter).push(x, heightAt(x, z) - 0.01, z, cell * (1.7 + b * 0.8), c * Math.PI * 2);
         }
       }
