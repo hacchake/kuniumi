@@ -300,7 +300,13 @@
       <div class="k">谷の平らさ</div><div><span class="lo">V 字の谷</span> <span class="hi">広く平らな谷底（盆地・平野）</span></div>
       <div class="k">外周の沈み</div><div>四辺を海に沈める。<span class="lo">どこまでも続く大地</span> <span class="hi">海に浮かぶ島</span></div>
       <div class="k">侵食</div><div>雨粒が地面を削る。谷筋・ガリー・扇状地ができ、ぐっと本物らしくなる。</div>
+      <div class="k">削る強さ</div><div><span class="lo">浅くやさしい谷</span> <span class="hi">深く鋭く刻まれた谷</span></div>
+      <div class="k">土砂の堆積</div><div><span class="lo">削りっぱなしの荒々しい谷</span> <span class="hi">谷底や山裾に広い扇状地</span></div>
+      <div class="k">流れのまっすぐさ</div><div><span class="lo">くねくね蛇行する谷</span> <span class="hi">長くまっすぐ流れ下る谷</span></div>
     </div>
+
+    <h3>ハイトマップに重ねる</h3>
+    <p>ハイトマップを読み込んだら、<span class="ui">ハイトマップに重ねる</span> で「地形の性格」のノイズを混ぜられる。<span class="ui">足す</span> で起伏を加え、<span class="ui">掛ける</span> でノイズの低い所を沈め、<span class="ui">高い方</span>・<span class="ui">低い方</span> でどちらかを選ぶ。<span class="ui">雨で削る</span> を入れると、<strong>読み込んだ地形にも侵食の谷が刻まれる</strong>。</p>
 
     <h3>手彫り：神の手で地形を直す</h3>
     <p>パネル <span class="ui">大地</span> の <span class="ui">手彫り</span> で筆を選び、景観を<strong>左ドラッグ</strong>（見回しは右ドラッグ）。筆の <span class="ui">半径</span> と <span class="ui">強さ</span> も変えられる。</p>
@@ -350,10 +356,24 @@
       <div class="k">木の高さ</div><div>木の背丈の目安（m）</div>
       <div class="k">針葉樹の割合</div><div>標高が高いほど針葉樹が増える</div>
       <div class="k">草（一枚絵）</div><div>カメラが地面に近いとき、足元に草と野の花・水際に葦・森の下にシダ</div>
+      <div class="k">落ち葉（一枚絵）</div><div>木の下に落ち葉（針葉樹の下は落ち針）。草は幹の根元を避け、樹冠の下では薄くなる</div>
       <div class="k">熱帯（ヤシ・一枚絵）</div><div>広葉樹の一部をヤシに、下草に幅広の葉の株を</div>
     </div>
 
+    <h3>植生の層：生態系を設計する</h3>
+    <div class="param">
+      <div class="k">木の間隔</div><div><span class="lo">うっそうとした密林</span> <span class="hi">まばらな疎林・サバンナ</span></div>
+      <div class="k">木の生える高さ</div><div>下限を上げると低地が草原に、上限を下げると<strong>森林限界</strong>ができて山の上が草地や岩肌に</div>
+      <div class="k">木が登れる急斜面</div><div><span class="lo">平らな所だけの森</span> <span class="hi">崖のような斜面にも森が登る</span></div>
+      <div class="k">草の丈・野の花</div><div>足元の草の背丈と、花の咲く割合（一枚絵）</div>
+      <div class="k">シダ・葦・岩</div><div>森の下草、水際の葦、岩と石の量と大きさ（一枚絵）</div>
+    </div>
+
+    <h3>自分のモデル</h3>
+    <p><span class="ui">自分のモデル</span> で、一枚絵の針葉樹・広葉樹・草・下草・岩を<strong>自分の glb に置き換えられる</strong>。根元が地面に、木や草は高さ、岩は最も長い辺がいつもの大きさに揃う。色は素材の色（模様があればその平均の色）。キノコの森でも、水晶の荒野でも思いのままだ。</p>
+
     <h3>水</h3>
+    <p><span class="ui">窪地の湖</span> を上げると、雨水が流れ出られない窪地に水がたまって<strong>山の中の湖</strong>になる（1 であふれる寸前まで）。海を切っていても効く。</p>
     <p><span class="ui">水をはる</span> で海や湖ができる。<span class="ui">水位</span> を上げ下げすると、海岸線がみるみる変わる。<span class="ui">揺らぎ</span> と <span class="ui">波の大きさ</span> を下げると鏡のような水面に。</p>
     <div class="box point"><span class="tag">ここがポイント！</span>
       <p>水位を上げて谷に海を入れると、<strong>入り江とフィヨルド</strong>ができる。基準の標高と水位の組み合わせが、島の形を決める最大のレバーだ！</p>
