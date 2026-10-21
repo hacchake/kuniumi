@@ -72,6 +72,56 @@ function lowBroadleaf() {
   return g;
 }
 
+// ヤシ（熱帯）：しなった細い幹と、先端から放射状に垂れる葉。近景は 10 枚、遠景は 6 枚の葉
+function palmGeometry(fronds, segs, trunkSides) {
+  const lean = 0.12, top = new THREE.Vector3(lean, 0.86, 0);
+  const at = (t) => new THREE.Vector3(lean * t * t, 0.86 * t, 0);
+  const parts = [];
+  const N = Math.max(2, Math.round(segs / 2));
+  for (let k = 0; k < N; k++) {
+    const a = at(k / N), b = at(Math.min(1, (k + 1) / N + 0.02));
+    const d = new THREE.Vector3().subVectors(b, a);
+    const g = new THREE.CylinderGeometry(0.016 - (k / N) * 0.004, 0.022 - (k / N) * 0.004, d.length(), trunkSides, 1, true).translate(0, d.length() / 2, 0);
+    g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()));
+    g.translate(a.x, a.y, a.z);
+    parts.push(g.toNonIndexed());
+  }
+  const trunk = mergeGeometries(parts);
+  // 葉：先端から外へ、弓なりに垂れる細長い帯（両面に見えるよう裏向きの三角形も入れる）
+  const pos = [];
+  for (let f = 0; f < fronds; f++) {
+    const az = (f / fronds) * Math.PI * 2 + (f % 2) * 0.3;
+    const dir = new THREE.Vector3(Math.cos(az), 0, Math.sin(az)), side = new THREE.Vector3(-dir.z, 0, dir.x);
+    const L = 0.36 + (f % 3) * 0.03;
+    const pt = (t) => top.clone().addScaledVector(dir, L * t).setY(top.y + L * (0.35 * t - 0.75 * t * t));
+    for (let k = 0; k < segs; k++) {
+      const t0 = k / segs, t1 = (k + 1) / segs;
+      const w0 = 0.07 * Math.sin(Math.PI * Math.min(1, t0 * 1.1 + 0.08)), w1 = 0.07 * Math.sin(Math.PI * Math.min(1, t1 * 1.1 + 0.08));
+      const a = pt(t0), b = pt(t1);
+      const al = a.clone().addScaledVector(side, -w0), ar = a.clone().addScaledVector(side, w0);
+      const bl = b.clone().addScaledVector(side, -w1), br = b.clone().addScaledVector(side, w1);
+      for (const tri of [[al, bl, br], [al, br, ar], [al, br, bl], [al, ar, br]]) for (const v of tri) pos.push(v.x, v.y, v.z);
+    }
+  }
+  const crown = new THREE.BufferGeometry();
+  crown.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  crown.computeVertexNormals();
+  // 陰影は樹冠全体として（上向き寄り）
+  const n = crown.attributes.normal;
+  for (let i = 0; i < n.count; i++) {
+    const v = new THREE.Vector3(n.getX(i), Math.abs(n.getY(i)) + 0.6, n.getZ(i)).normalize();
+    n.setXYZ(i, v.x, v.y, v.z);
+  }
+  return { trunk, crown };
+}
+
+// 位置と法線だけの形に（ほかの属性が違う形どうしをまとめるため）
+function onlyPosNormal(g) {
+  const c = g.clone();
+  for (const k of Object.keys(c.attributes)) if (k !== 'position' && k !== 'normal') c.deleteAttribute(k);
+  return c;
+}
+
 export class RealtimeTrees {
   // patchMaterial: 雲の影・丸みの差し込み
   constructor(parent, patchMaterial) {
@@ -145,13 +195,18 @@ if ( kTreeSnow > 0.0 ) diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.8, 0.83
     const brdCrown = mat(new THREE.Color('#2e4d1f'), true);
     this.crowns = { conCrown, brdCrown };
     const wood = mat(trunk);
+    // ヤシ（植生の「熱帯」の割合だけ、広葉樹の代わりに。一枚絵と同じく）
+    const palmWood = mat(new THREE.Color('#6d5f4c')), palmCrown = mat(new THREE.Color('#3f6a26'));
+    const palmNear = palmGeometry(10, 6, 6), palmFar = palmGeometry(6, 3, 3);
     this.near = {
       conifer: [mk(con.trunk, wood, MAX_NEAR, true), mk(con.crown, conCrown, MAX_NEAR, true)],
       broadleaf: [mk(brd.trunk, wood, MAX_NEAR, true), mk(brd.crown, brdCrown, MAX_NEAR, true)],
+      palm: [mk(palmNear.trunk, palmWood, MAX_NEAR, true), mk(palmNear.crown, palmCrown, MAX_NEAR, true)],
     };
     this.far = {
       conifer: [mk(lowConifer(), conCrown, MAX_FAR, false)],
       broadleaf: [mk(lowBroadleaf(), brdCrown, MAX_FAR, false)],
+      palm: [mk(mergeGeometries([onlyPosNormal(palmFar.trunk), onlyPosNormal(palmFar.crown)]), palmCrown, MAX_FAR, false)],
     };
     this.blocks = new Map(); // "bi,bj" → { conifer: [...], broadleaf: [...] }（世界座標）
     this.key = null;
@@ -329,11 +384,14 @@ if ( kTreeSnow > 0.0 ) diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.8, 0.83
     // 原点は 4096 m ごと（木の座標を小さな数で持つ）
     const ox = Math.round(cam.x / 4096) * 4096, oz = Math.round(cam.z / 4096) * 4096;
     this.group.position.set(ox, 0, oz);
-    const lists = { near: { conifer: [], broadleaf: [] }, far: { conifer: [], broadleaf: [] } };
+    const lists = { near: { conifer: [], broadleaf: [], palm: [] }, far: { conifer: [], broadleaf: [], palm: [] } };
+    const trop = Math.max(0, Math.min(1, this.rules?.veg.tropical ?? 0));
     for (const b of this.blocks.values()) {
-      for (const kind of ['conifer', 'broadleaf']) {
-        const L = b[kind];
+      for (const kind0 of ['conifer', 'broadleaf']) {
+        const L = b[kind0];
         for (let k = 0; k < L.length; k += 5) {
+          // 熱帯：広葉樹の一部をヤシに（場所ごとの乱数で決めるので、視点を動かしても同じ木がヤシ）
+          const kind = kind0 === 'broadleaf' && trop > 0 && Math.abs(Math.sin(L[k] * 12.9898 + L[k + 2] * 78.233) * 43758.5453) % 1 < trop ? 'palm' : kind0;
           const d = Math.hypot(L[k] - cam.x, L[k + 2] - cam.z);
           if (d > reach) continue;
           if (d < NEAR) {
@@ -344,12 +402,12 @@ if ( kTreeSnow > 0.0 ) diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.8, 0.83
           // 1 km より先は 2 本に 1 本へ間引き、少し大きくして森の見た目の密度を保つ
           if (d > THIN && (k / 5) % 2 === 1) continue;
           // 遠景の広葉樹は樹冠を少し大きく：隣と重なって、一本ずつの点ではなく森のかたまりに見えるように
-          const grow = kind === 'broadleaf' ? 1.15 : 1;
+          const grow = kind0 === 'broadleaf' ? 1.15 : 1;
           lists.far[kind].push(L[k] - ox, L[k + 1], L[k + 2] - oz, L[k + 3] * (d > THIN ? 1.25 : 1) * grow, L[k + 4]);
         }
       }
     }
-    for (const kind of ['conifer', 'broadleaf']) {
+    for (const kind of ['conifer', 'broadleaf', 'palm']) {
       const near = clampList(lists.near[kind], MAX_NEAR), far = clampList(lists.far[kind], MAX_FAR);
       const [trunk, crown] = this.near[kind];
       fillInstances(trunk, near, 0, 1);
@@ -371,7 +429,7 @@ if ( kTreeSnow > 0.0 ) diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.8, 0.83
   }
 
   #setCounts(n) {
-    for (const g of [this.near, this.far]) for (const k of ['conifer', 'broadleaf']) for (const m of g[k]) m.count = n;
+    for (const g of [this.near, this.far]) for (const k of ['conifer', 'broadleaf', 'palm']) for (const m of g[k]) m.count = n;
     this.lastBuild = null;
   }
 }
