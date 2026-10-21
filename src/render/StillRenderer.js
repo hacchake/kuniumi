@@ -816,9 +816,31 @@ export class StillJob {
         split(broadFar, brdCols.length, 7.3).forEach((sub, j) => add(j ? g.crown.clone() : g.crown, brdCols[j], sub, { colorVar: 0.3, seed: 60 + j, roughness: 0.7 }));
         this.stats.treesLite += broadFar.length / 5;
       }
+      // 冬の落葉樹は葉を落とす：葉は 4 枚に 1 枚だけ残し（梢の細い枝先と、わずかに残る枯れ葉）、枝ぶりが見える裸の木に
+      const bareCrown = (g) => {
+        const src = g.attributes.position.array, nrm = g.attributes.normal.array, col = g.attributes.color.array;
+        const keep = [];
+        for (let f = 0; f < src.length / 18; f++) if (f % 4 === 0) keep.push(f);
+        const out = new THREE.BufferGeometry();
+        const P = new Float32Array(keep.length * 18), N = new Float32Array(keep.length * 18), C = new Float32Array(keep.length * 18);
+        keep.forEach((f, k) => {
+          P.set(src.subarray(f * 18, f * 18 + 18), k * 18);
+          N.set(nrm.subarray(f * 18, f * 18 + 18), k * 18);
+          C.set(col.subarray(f * 18, f * 18 + 18), k * 18);
+        });
+        out.setAttribute('position', new THREE.BufferAttribute(P, 3));
+        out.setAttribute('normal', new THREE.BufferAttribute(N, 3));
+        out.setAttribute('color', new THREE.BufferAttribute(C, 3));
+        return out;
+      };
       split(broadNear, 3).forEach((list, i) => {
         const g = detailedBroadleaf(i + 1);
         add(g.trunk, trunk, list);
+        if (s.terrain.season === 'winter') {
+          add(bareCrown(g.crown), new THREE.Color('#4a3e33'), list, { side: THREE.DoubleSide, colorVar: 0.25, seed: 5 + i, roughness: 0.8 });
+          g.crown.dispose();
+          return;
+        }
         split(list, brdCols.length, 7.3).forEach((sub, j) => add(j ? g.crown.clone() : g.crown, brdCols[j], sub, { side: THREE.DoubleSide, colorVar: 0.3, seed: 5 + i * 7 + j, roughness: 0.7 }));
       });
       // 草の葉の色：低地の色から。季節で枯れ色へ寄せる（秋は黄土色、冬は枯れ草色）
