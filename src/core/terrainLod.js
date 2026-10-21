@@ -23,7 +23,7 @@ export const STILL_SEA_FLOOR = 12;
 // place: { ox, oz, cx, cz, R } 書き出す座標の原点 (ox, oz) と、星の丸みの中心 (cx, cz)・半径 R（どれも世界座標）。
 //   数千 km の大地でも Float32 の精度を落とさないよう、原点を注視点へずらしてから丸みで曲げる
 // photo: 地表の衛星写真の画素 { data, width, height }（あれば色と木の広がりに使う）
-export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000, onProgress, vegetation, heightmapImage = null, place = null, photo = null, refField = null } = {}) {
+export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000, onProgress, vegetation, heightmapImage = null, place = null, photo = null, refField = null, lakes = null } = {}) {
   const P = place ?? { ox: 0, oz: 0, cx: 0, cz: 0, R: 0 };
   const pcx = P.cx - P.ox, pcz = P.cz - P.oz;
   const pp = [0, 0, 0], pn = [0, 0, 0];
@@ -249,7 +249,7 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
   // ---- 木と草 ----
   let plants = null;
   if (vegetation) {
-    const rules = createVegetationRules({ heightScale, baseHeight, waterLevel: water.level, waterEnabled: water.enabled, palette: terrain.palette, vegetation, realWorld: terrain.mode === 'heightmap' && !!terrain.heightmap?.geo, photo, size });
+    const rules = createVegetationRules({ heightScale, baseHeight, waterLevel: water.level, waterEnabled: water.enabled, palette: terrain.palette, vegetation, realWorld: terrain.mode === 'heightmap' && !!terrain.heightmap?.geo, photo, size, lakes });
     plants = placeVegetation(rules, size, surface.coarse, (x, z) => heightAt(x, z, 0.5), view);
     // 木・草・岩の根元の位置も同じように移して曲げる（幹の傾きは近くでは無視できる）
     for (const list of [plants.conifer, plants.broadleaf, plants.grass, plants.rocks, plants.reeds, plants.ferns, plants.litter, plants.needles]) {

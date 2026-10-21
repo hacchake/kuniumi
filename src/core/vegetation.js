@@ -1,6 +1,7 @@
 import { valueNoise } from './terrainColor.js';
 import { photoForest } from '../io/photo.js';
 import { mulberry32, hash2 } from './noise.js';
+import { lakeLevelAt } from './lakes.js';
 
 // 植生（森と草地）の規則。Three.js 非依存。
 // 「どこに木が生えるか」を 1 か所で決め、地表の色（遠くの森は暗い緑）と、一枚絵での木の配置の両方に使う。
@@ -37,6 +38,9 @@ export function createVegetationRules(ctx) {
   const veg = { ...defaultVegetation(), ...(ctx.vegetation ?? {}) };
   const { heightScale, baseHeight, waterEnabled, palette } = ctx;
   const sea = waterEnabled ? ctx.waterLevel : baseHeight - 1;
+  // その地点のいちばん近い水面：海と、窪地の湖（ctx.lakes）の高い方。湖の中と岸辺にも木を立てない
+  const lakes = ctx.lakes ?? null;
+  const wAt = lakes ? (x, z) => Math.max(sea, lakeLevelAt(lakes, ctx.size ?? 1, x, z)) : () => sea;
   const top = baseHeight + heightScale;
   const shoreBand = shoreBandOf(heightScale, baseHeight, sea, !!ctx.realWorld);
   const rs = palette.rockSlope;
@@ -45,13 +49,13 @@ export function createVegetationRules(ctx) {
 
   // 植物が育てる土地か（0..1）：急斜面・雪線近く・水辺・土砂のたまり場は苦手
   // nearShore: 草のように水際のすぐ近くまで育つもの
-  const habitat = (H, slope, wv, nearShore = false) => {
+  const habitat = (H, slope, wv, nearShore = false, w = sea) => {
     const alt = (H - sea) / Math.max(1, top - sea);
     return (
       // 草（nearShore）は岩が出始める傾斜の近くまで生える（山の草地は 35° ほどの斜面にも続く）。木はそれより手前まで
       (nearShore ? 1 - smooth(rs * 0.7, rs * 1.15, slope) : 1 - smooth(rs * 0.45, rs * 0.85, slope)) *
       (1 - smooth(sl - 0.28, sl - 0.1, alt)) *
-      (nearShore ? smooth(shoreBand * 0.1 + 0.1, shoreBand * 0.6 + 0.4, H - sea) : smooth(shoreBand * 1.2, shoreBand * 3, H - sea)) *
+      (nearShore ? smooth(shoreBand * 0.1 + 0.1, shoreBand * 0.6 + 0.4, H - w) : smooth(shoreBand * 1.2, shoreBand * 3, H - w)) *
       (1 - smooth(0.006, 0.03, wv))
     );
   };
@@ -68,7 +72,7 @@ export function createVegetationRules(ctx) {
     veg,
     // 木の密度（0..1）。地表の色づけにも使う。手で植えた・伐った所（veg.paint）はそれを重ねる
     forest(H, slope, wv, x, z) {
-      const hab = habitat(H, slope, wv);
+      const hab = habitat(H, slope, wv, false, wAt(x, z));
       let d = veg.trees > 0 ? hab * clump(x, z) * Math.min(1, veg.trees * 1.6) : 0;
       if (paint) {
         for (const p of paint(x, z)) {
@@ -87,7 +91,7 @@ export function createVegetationRules(ctx) {
       const open = 0.35 + 0.65 * smooth(0.3, 0.7, valueNoise(x / 8, z / 8, seed + 5));
       // 森の中は日陰で草が減る（下草はシダなどに）
       const shade = 1 - 0.65 * smooth(0.3, 0.8, this.forest(H, slope, wv, x, z));
-      return habitat(H, slope, wv, true) * open * shade * Math.min(1, veg.grass * 1.4);
+      return habitat(H, slope, wv, true, wAt(x, z)) * open * shade * Math.min(1, veg.grass * 1.4);
     },
     // シダ（森の下草）の密度（0..1）：木の多い所の、湿った緩い地面に
     fern(H, slope, wv, x, z) {
@@ -98,8 +102,8 @@ export function createVegetationRules(ctx) {
     },
     // 葦（ヨシ）の密度（0..1）：水際の緩い所に群れて生える（浅瀬にも少し入る）
     reeds(H, slope, x, z) {
-      if (!waterEnabled || !(veg.grass > 0)) return 0;
-      const above = H - sea;
+      if ((!waterEnabled && !lakes) || !(veg.grass > 0)) return 0;
+      const above = H - wAt(x, z);
       if (above < -0.7 || above > shoreBand * 1.6 + 1) return 0;
       const band = smooth(-0.7, -0.15, above) * (1 - smooth(shoreBand * 0.5 + 0.3, shoreBand * 1.6 + 1, above));
       const flat = 1 - smooth(rs * 0.2, rs * 0.45, slope);
@@ -108,7 +112,7 @@ export function createVegetationRules(ctx) {
     },
     // 岩・石の密度（0..1）：斜面ほど多く、岩肌の手前・水際（石の河原・磯）にも。急な崖そのものと雪の上には置かない
     rocks(H, slope, wv, x, z) {
-      const above = H - sea;
+      const above = H - wAt(x, z);
       if (above < -0.8) return 0; // 水の底には置かない（浅瀬の石は置く）
       const n = valueNoise(x / 40, z / 40, seed + 9);
       // 岩は転がり落ちて止まる所に：緩い斜面（斜面の裾・谷筋・水際）に多く、急な斜面には置かない

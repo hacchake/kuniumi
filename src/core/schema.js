@@ -89,6 +89,7 @@ export function createDefaultScene() {
       color: '#0f3a4a',
       distortion: 3.7,
       waveScale: 1.0,
+      lakes: 0, // 窪地の湖：雨水が流れ出られない窪地を、深さのこの割合まで水で満たす（0 = なし）。海を切っていても効く
     },
     sun: {
       elevation: 16, // 地平線からの高度 (度)

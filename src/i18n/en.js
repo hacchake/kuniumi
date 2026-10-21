@@ -208,6 +208,8 @@ export const EN = {
   '木の高さ': 'Tree height',
   '針葉樹の割合': 'Conifer ratio',
   '削る強さ': 'Erosion strength',
+  '窪地の湖': 'Basin lakes',
+  '雨水が流れ出られない窪地に水をためて湖にする。1 であふれる寸前まで満たす。海を切っていても効く': 'Fills closed basins with water to form lakes. 1 fills them to the brim. Works even with the sea off',
   'ハイトマップに重ねる': 'Heightmap mix',
   '重ね方': 'Blend mode',
   '重ねない': 'None',

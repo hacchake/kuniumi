@@ -4,7 +4,7 @@ import { decodePng } from '../core/png16.js';
 import { decodePhoto } from '../io/photo.js';
 
 self.onmessage = async (e) => {
-  const { terrain, water, view, maxTriangles, vegetation, place, refField } = e.data;
+  const { terrain, water, view, maxTriangles, vegetation, place, refField, lakes } = e.data;
   try {
     // ハイトマップ地形は画像を解釈して渡す（16bit のまま）
     let heightmapImage = null;
@@ -22,6 +22,7 @@ self.onmessage = async (e) => {
       photo,
       place,
       refField,
+      lakes,
       onProgress: (p) => self.postMessage({ progress: p }),
     });
     const transfer = [r.positions.buffer, r.normals.buffer, r.colors.buffer, r.uvs.buffer, r.index.buffer];

@@ -19,6 +19,7 @@ import { planetRadius } from '../core/schema.js';
 import { curvePoint, DISC_RATIO, DISC_SEG } from '../core/curvature.js';
 import { buildSurroundMesh } from '../core/surroundMesh.js';
 import { STILL_SEA_FLOOR } from '../core/terrainLod.js';
+import { lakeMeshData } from '../core/lakes.js';
 
 // 川・湖の印（PNG）から、粗さの地図（水 = なめらか）と、水の所を暗くした写真を作る（どちらも行 0 = 北、flipY のまま）
 async function waterTextures(maskUrl, photoTex) {
@@ -378,7 +379,7 @@ export class StillJob {
     const noReflectIds = new Set(s.objects.filter((o) => o.reflect === false).map((o) => o.id));
     const noReflect = objectMeshes.filter((m) => noReflectIds.has(m.userData.kuniumiId));
     if (noReflect.length) {
-      const others = [built.terrainMesh, built.surroundMesh, built.water, ...built.plants, ...(built.buildingMeshes ?? []), ...objectMeshes.filter((m) => !noReflect.includes(m))].filter(Boolean);
+      const others = [built.terrainMesh, built.surroundMesh, built.water, built.lakeMesh, ...built.plants, ...(built.buildingMeshes ?? []), ...objectMeshes.filter((m) => !noReflect.includes(m))].filter(Boolean);
       const mask = renderMask(this.view.renderer, noReflect, others, camera, W, H);
       for (const m of noReflect) built.scene.remove(m);
       this.ui.onStatus(t('水面に映さない物体を抜いて、もう一度描いています…'));
@@ -443,6 +444,8 @@ export class StillJob {
         vegetation: s.vegetation,
         place: this.place,
         // リアルタイム表示の高さ場（同じ地形のときだけ）。一枚絵の地面をそれに合わせる
+        // 窪地の湖（木や草を湖の中と岸辺に置かない）
+        lakes: (s.water.lakes ?? 0) > 0 && this.view.lakes?.lakes.length ? { shore: this.view.lakes.shore.slice(), res: this.view.lakes.res } : null,
         refField: s.terrain.mode !== 'heightmap' && this.view.terrainService?.field ? { field: this.view.terrainService.field.slice(), res: this.view.terrainService.res } : null,
       });
     });
@@ -557,19 +560,14 @@ export class StillJob {
     }
 
     // 水：透過・屈折・吸収をもつ本物の水。さざ波は法線マップ
-    let water = null;
-    if (s.water.enabled) {
-      const span = Math.max(t.size * 30, 2000000); // 水平線（高さ数 km から百数十 km 先）より遠くまで
-      // 丸い星では、注視点を中心に近くは細かく遠くは粗い円盤を、球面に沿って曲げる
-      const R = this.place.R;
-      const wgeo = R > 0 ? curvedDisc(R, s.water.level) : new THREE.PlaneGeometry(span, span, 1, 1);
-      if (!(R > 0)) wgeo.rotateX(-Math.PI / 2);
+    // 水の素材（海と窪地の湖で同じ）。level: その水面の標高（波の模様を貼る範囲をカメラの高さから決める）
+    const makeWater = (level) => {
       // 波：カメラの真下を中心に、繰り返さない波の法線マップを貼る（太陽のきらめき・映り込みの揺らぎ）。
       // 繰り返す法線マップはパストレーサのテクスチャ合成で継ぎ目が線になるので、範囲の外は平らにして「表面の粗さ」に任せる。
       // 粗さは「揺らぎ」「波の大きさ」から決める（太陽の照り返しが広がり、遠くの水面が空を柔らかく映す）
       const tint = new THREE.Color(s.water.color);
       const rough = Math.min(0.25, 0.015 + s.water.distortion * 0.008 * s.water.waveScale) * 0.75;
-      const camH = Math.max(1, s.camera.position[1] - s.water.level);
+      const camH = Math.max(1, s.camera.position[1] - level);
       // 範囲は見ている先の海を覆うように：カメラの高さの 12 倍ほどの広さを、視線の向き（水平）へずらして置く
       const waveW = Math.min(12000, Math.max(800, camH * 12 + 600));
       const fx = s.camera.target[0] - s.camera.position[0], fz = s.camera.target[2] - s.camera.position[2];
@@ -577,7 +575,6 @@ export class StillJob {
       const ahead = waveW * 0.4;
       const waveC = [s.camera.position[0] - this.place.ox + (fx / fl) * ahead, s.camera.position[2] - this.place.oz + (fz / fl) * ahead];
       const waveTex = waveNormalMap(1536, waveW, s.water.distortion, s.water.waveScale, (s.vegetation?.seed ?? 77) + 5);
-      addWaveUV(wgeo, waveC, waveW);
       // 上空（20 km 以上）から見下ろすときは、海底は見えないので「透ける水」をやめ、暗い水の色と表面の反射だけにする。
       // 透ける水のままだと、球面に沿わせた三角形の面ごとに屈折がずれ、同心円の縞になる
       const fromSky = R > 0 && s.camera.position[1] > 20000;
@@ -596,7 +593,18 @@ export class StillJob {
           });
       if (!this.tuning.noWaves) wmat.normalMap = waveTex;
       wmat.normalScale = new THREE.Vector2(1, 1);
-      this.disposers.push(() => waveTex.dispose());
+      this.disposers.push(() => (waveTex.dispose(), wmat.dispose()));
+      return { wmat, waveC, waveW };
+    };
+    let water = null;
+    const R = this.place.R;
+    if (s.water.enabled) {
+      const span = Math.max(t.size * 30, 2000000); // 水平線（高さ数 km から百数十 km 先）より遠くまで
+      // 丸い星では、注視点を中心に近くは細かく遠くは粗い円盤を、球面に沿って曲げる
+      const wgeo = R > 0 ? curvedDisc(R, s.water.level) : new THREE.PlaneGeometry(span, span, 1, 1);
+      if (!(R > 0)) wgeo.rotateX(-Math.PI / 2);
+      const { wmat, waveC, waveW } = makeWater(s.water.level);
+      addWaveUV(wgeo, waveC, waveW);
       water = new THREE.Mesh(wgeo, wmat);
       if (!(R > 0)) water.position.y = s.water.level;
       scene.add(water);
@@ -610,7 +618,36 @@ export class StillJob {
       const bed = new THREE.Mesh(bgeo, new THREE.MeshStandardMaterial({ color: bedCol, roughness: 1 }));
       if (!(R > 0)) bed.position.y = bedY;
       scene.add(bed);
-      this.disposers.push(() => (wgeo.dispose(), wmat.dispose(), bgeo.dispose(), bed.material.dispose()));
+      this.disposers.push(() => (wgeo.dispose(), bgeo.dispose(), bed.material.dispose()));
+    }
+    // 窪地の湖（リアルタイム表示で見つけた湖と同じ）。水面の三角形を、地形と同じように原点をずらして丸みで曲げる
+    let lakeMesh = null;
+    const lakeGrid = (s.water.lakes ?? 0) > 0 ? this.view.lakes : null;
+    if (lakeGrid?.lakes.length) {
+      const w = lakeMeshData(lakeGrid, t.size);
+      const P = this.place, pcx = P.cx - P.ox, pcz = P.cz - P.oz, pp = [0, 0, 0];
+      const pos = new Float32Array(w.length);
+      for (let k = 0; k < w.length; k += 3) {
+        curvePoint(w[k] - P.ox, w[k + 1], w[k + 2] - P.oz, pcx, pcz, P.R, pp);
+        pos[k] = pp[0];
+        pos[k + 1] = pp[1];
+        pos[k + 2] = pp[2];
+      }
+      const lgeo = new THREE.BufferGeometry();
+      lgeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      lgeo.computeVertexNormals();
+      // 波の模様の範囲は、カメラにいちばん近い湖の高さで決める
+      const cx = s.camera.position[0], cz = s.camera.position[2];
+      let near = lakeGrid.lakes[0].level, nd = Infinity;
+      for (let k = 0; k < w.length; k += 300) {
+        const d = Math.hypot(w[k] - cx, w[k + 2] - cz);
+        if (d < nd) (nd = d), (near = w[k + 1]);
+      }
+      const { wmat, waveC, waveW } = makeWater(near);
+      addWaveUV(lgeo, waveC, waveW);
+      lakeMesh = new THREE.Mesh(lgeo, wmat);
+      scene.add(lakeMesh);
+      this.disposers.push(() => lgeo.dispose());
     }
 
     // 物体（リアルタイム表示と同じ形と素材）。原点をずらし、置き場所を丸みで曲げる（天体は空にあるので曲げない）
@@ -878,7 +915,7 @@ export class StillJob {
     scene.background = discScale > 1 || rainy || starK > 0.01 ? mkEnv(bg) : scene.environment;
 
     scene.updateMatrixWorld(true);
-    return { scene, terrainMesh, surroundMesh, water, plants, buildingMeshes, textures, skyP: p, skyBG: { data: bg, w: ew, h: eh } };
+    return { scene, terrainMesh, surroundMesh, water, lakeMesh, plants, buildingMeshes, textures, skyP: p, skyBG: { data: bg, w: ew, h: eh } };
   }
 
   #camera(s, aspect) {
@@ -942,6 +979,7 @@ export class StillJob {
     const meshes = [{ object: built.terrainMesh }];
     if (built.surroundMesh) meshes.push({ object: built.surroundMesh });
     if (built.water) meshes.push({ object: built.water, noShadow: true });
+    if (built.lakeMesh) meshes.push({ object: built.lakeMesh, noShadow: true });
     for (const m of built.plants) meshes.push({ object: m });
     for (const m of built.buildingMeshes ?? []) meshes.push({ object: m });
     for (const m of objectMeshes) meshes.push({ object: m, celestial: celestial.has(m.userData.kuniumiId) });
@@ -955,7 +993,7 @@ export class StillJob {
     // 昼や夕方は昼の月のように淡くかすみ、夜はくっきり見える
     const celMeshes = objectMeshes.filter((m) => celestial.has(m.userData.kuniumiId));
     if (celMeshes.length && built.skyBG) {
-      const others = [built.terrainMesh, built.surroundMesh, built.water, ...built.plants, ...(built.buildingMeshes ?? []), ...objectMeshes.filter((m) => !celestial.has(m.userData.kuniumiId))].filter(Boolean);
+      const others = [built.terrainMesh, built.surroundMesh, built.water, built.lakeMesh, ...built.plants, ...(built.buildingMeshes ?? []), ...objectMeshes.filter((m) => !celestial.has(m.userData.kuniumiId))].filter(Boolean);
       const mask = renderMask(this.view.renderer, celMeshes, others, camera, W, H);
       const { data: bg, w: ew, h: eh } = built.skyBG;
       const ip = camera.projectionMatrixInverse, cw = camera.matrixWorld;

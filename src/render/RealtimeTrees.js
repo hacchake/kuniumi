@@ -199,6 +199,13 @@ if ( kTreeSnow > 0.0 ) diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.8, 0.83
     this.lastT = null;
   }
 
+  // 窪地の湖（core/lakes.js の findLakes の結果、無ければ null）。湖の中と岸辺には木を立てない
+  setLakes(grid) {
+    if (grid === this.lakes) return;
+    this.lakes = grid;
+    this.lakesVer = (this.lakesVer ?? 0) + 1;
+  }
+
   update(s, cam, terrain, fwd = null) {
     this.fwd = fwd ? new THREE.Vector3(fwd.x, 0, fwd.z) : null;
     const lookDown = !fwd || Math.abs(fwd.y) / Math.max(1e-6, fwd.length()) > 0.75;
@@ -211,15 +218,17 @@ if ( kTreeSnow > 0.0 ) diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.8, 0.83
     if (!enabled) return;
     // シーン（地形・植生・水）が変わったら作り直す
     // シーンは不変更新なので、地形・植生・水の入れ物が同じなら中身も同じ
-    if (t !== this.lastT || veg !== this.lastV || s.water !== this.lastW) {
+    if (t !== this.lastT || veg !== this.lastV || s.water !== this.lastW || this.lakes !== this.lastLakes) {
+      this.lastLakes = this.lakes;
       this.lastT = t;
       this.lastV = veg;
       this.lastW = s.water;
-      const key = JSON.stringify([t.mode, t.heightmap?.id, !!this.photo, t.noise, t.size, t.heightScale, t.baseHeight, t.palette, t.detail, veg, s.water.level, s.water.enabled, t.resolution]);
+      this.lakesVer = this.lakesVer ?? 0;
+      const key = JSON.stringify([t.mode, t.heightmap?.id, !!this.photo, t.noise, t.size, t.heightScale, t.baseHeight, t.palette, t.detail, veg, s.water.level, s.water.enabled, t.resolution, this.lakesVer]);
       if (key !== this.key) {
         this.key = key;
         this.blocks.clear();
-        this.rules = createVegetationRules({ heightScale: t.heightScale, baseHeight: t.baseHeight, waterLevel: s.water.level, waterEnabled: s.water.enabled, palette: t.palette, vegetation: veg, realWorld: t.mode === 'heightmap' && !!t.heightmap?.geo, photo: this.photo, size: t.size });
+        this.rules = createVegetationRules({ heightScale: t.heightScale, baseHeight: t.baseHeight, waterLevel: s.water.level, waterEnabled: s.water.enabled, palette: t.palette, vegetation: veg, realWorld: t.mode === 'heightmap' && !!t.heightmap?.geo, photo: this.photo, size: t.size, lakes: this.lakes });
         this.dirty = true;
       }
     }

@@ -11,6 +11,7 @@ import { createColorTexture } from '../three/terrainMesh.js';
 import { GpuTerrain, ORIGIN_STEP } from './GpuTerrain.js';
 import { createCurveUniforms, curvePoint } from './curvatureGLSL.js';
 import { createWaterDisc, curveWater } from './waterDisc.js';
+import { fillDepressions, findLakes, lakeMeshData } from '../core/lakes.js';
 import { planetRadius } from '../core/schema.js';
 import { WalkControls } from './WalkControls.js';
 import { WalkAudio } from './WalkAudio.js';
@@ -51,7 +52,7 @@ const SHORE_GLSL = /* glsl */ `
 if ( kShoreOn > 0.5 ) {
   vec2 kSw = vKFlat.xz + kWaterOrigin;
   float kIn;
-  float kDep = kWaterLevel - kShoreH( kSw - tOriginW, kIn );
+  float kDep = vKFlat.y - kShoreH( kSw - tOriginW, kIn ); // 水面（海・湖）の高さからの深さ
   if ( kIn > 0.5 && kDep < 12.0 ) {
     float kNear = 1.0 - smoothstep( 300.0, 2500.0, length( eye - worldPosition.xyz ) );
     // 浅いほど海底の砂が透けて明るい青緑に
@@ -495,40 +496,51 @@ void main() {`)
     this.gizmo.setSize(0.9);
     const helper = this.gizmo.getHelper();
     this.scene.add(helper);
-    // 水面の映り込みにはギズモを描かない
-    const waterBefore = this.water.onBeforeRender;
-    this.water.onBeforeRender = (...args) => {
-      const vis = helper.visible;
-      helper.visible = false;
-      // 映り込みの中では空の雲（2D）を描く。画面の雲は立体として後から重ねるので、映り込みにも雲が要る
-      const cov = this.sky.material.uniforms.cloudCoverage;
-      const saved = cov.value;
-      cov.value = this.reflectClouds ?? saved;
-      // 映り込みの地形は細部の起伏を省いて軽くする（揺らぐ水面では見分けがつかない）
-      const det = this.gpuTerrain.uniforms.tDetailAmt;
-      const detO = this.surround?.terrain.uniforms.tDetailAmt;
-      const savedDetO = detO?.value;
-      if (detO) detO.value = 0;
-      const savedDet = det.value;
-      det.value = 0;
-      // 映り込みには木を描かない（揺らぐ水面では見分けがつかず、重い）
-      const treesVis = this.trees.group.visible;
-      this.trees.group.visible = false;
-      const bVis = this.buildings?.group.visible;
-      if (this.buildings) this.buildings.group.visible = false;
-      // 「水面に映す」を切った物体は映り込みから外す
-      const noReflect = new Set(this.store.get().objects.filter((o) => o.reflect === false).map((o) => o.id));
-      const hidden = noReflect.size ? this.objects.meshes.filter((m) => noReflect.has(m.userData.kuniumiId) && m.visible) : [];
-      for (const m of hidden) m.visible = false;
-      waterBefore.apply(this.water, args);
-      for (const m of hidden) m.visible = true;
-      this.trees.group.visible = treesVis;
-      if (this.buildings) this.buildings.group.visible = bVis;
-      det.value = savedDet;
-      if (detO) detO.value = savedDetO;
-      cov.value = saved;
-      helper.visible = vis;
+    // 水面（海・湖）の映り込みを描く前後で、映さない物を隠す
+    this.wrapReflection = (mesh) => {
+      const waterBefore = mesh.onBeforeRender;
+      mesh.onBeforeRender = (...args) => {
+        // 別の水面の映り込みを描いている最中は、映り込みの中の映り込みを描かない（重くなるだけ）
+        if (this.inReflection) return;
+        this.inReflection = true;
+        const vis = helper.visible;
+        helper.visible = false;
+        // 映り込みの中では空の雲（2D）を描く。画面の雲は立体として後から重ねるので、映り込みにも雲が要る
+        const cov = this.sky.material.uniforms.cloudCoverage;
+        const saved = cov.value;
+        cov.value = this.reflectClouds ?? saved;
+        // 映り込みの地形は細部の起伏を省いて軽くする（揺らぐ水面では見分けがつかない）
+        const det = this.gpuTerrain.uniforms.tDetailAmt;
+        const detO = this.surround?.terrain.uniforms.tDetailAmt;
+        const savedDetO = detO?.value;
+        if (detO) detO.value = 0;
+        const savedDet = det.value;
+        det.value = 0;
+        // 映り込みには木を描かない（揺らぐ水面では見分けがつかず、重い）
+        const treesVis = this.trees.group.visible;
+        this.trees.group.visible = false;
+        const bVis = this.buildings?.group.visible;
+        if (this.buildings) this.buildings.group.visible = false;
+        // 「水面に映す」を切った物体は映り込みから外す
+        const noReflect = new Set(this.store.get().objects.filter((o) => o.reflect === false).map((o) => o.id));
+        const hidden = noReflect.size ? this.objects.meshes.filter((m) => noReflect.has(m.userData.kuniumiId) && m.visible) : [];
+        for (const m of hidden) m.visible = false;
+        try {
+          waterBefore.apply(mesh, args);
+        } finally {
+          this.inReflection = false;
+        }
+        for (const m of hidden) m.visible = true;
+        this.trees.group.visible = treesVis;
+        if (this.buildings) this.buildings.group.visible = bVis;
+        det.value = savedDet;
+        if (detO) detO.value = savedDetO;
+        cov.value = saved;
+        helper.visible = vis;
+      };
     };
+    this.wrapReflection(this.water);
+    if (this.lakeWater) this.wrapReflection(this.lakeWater);
     this.gizmo.addEventListener('dragging-changed', (e) => {
       this.controls.enabled = !e.value;
       if (!e.value) this.#commitGizmo();
@@ -689,6 +701,7 @@ void main() {`)
       cu.cloudThick.value = atm.clouds.thickness;
     }
 
+    if (has('water') || has('terrain')) this.#scheduleLakes();
     if (has('water')) {
       const w = s.water;
       this.water.visible = w.enabled;
@@ -715,6 +728,140 @@ void main() {`)
     }
   }
 
+  // ---- 窪地の湖（water.lakes）----
+  // 高さ場・水の設定が変わったら、次のフレームの前にまとめて 1 回だけ作り直す
+  #scheduleLakes() {
+    if (this.lakeQueued) return;
+    this.lakeQueued = true;
+    queueMicrotask(() => {
+      this.lakeQueued = false;
+      this.#updateLakes(this.store.get());
+    });
+  }
+
+  #updateLakes(s) {
+    const amount = s.water.lakes ?? 0;
+    const td = this.terrainData;
+    const t = s.terrain;
+    if (!(amount > 0) || !td) {
+      this.lakes = null;
+      if (this.lakeWater) this.lakeWater.visible = false;
+      this.trees.setLakes(null);
+      return;
+    }
+    // 窪地を埋めた面は高さ場だけで決まるので、高さ場が同じなら使い回す
+    if (this.lakeFill?.field !== td.field) this.lakeFill = { field: td.field, filled: fillDepressions(td.field, td.res) };
+    const key = [td.field, amount, s.water.enabled, s.water.level, t.baseHeight, t.heightScale, t.size];
+    if (this.lakeKey && key.every((v, i) => v === this.lakeKey[i])) {
+      if (this.lakeWater) this.lakeWater.visible = this.lakes.lakes.length > 0;
+      return;
+    }
+    this.lakeKey = key;
+    const grid = findLakes(td.field, this.lakeFill.filled, td.res, {
+      baseHeight: t.baseHeight,
+      heightScale: t.heightScale,
+      amount,
+      sea: s.water.enabled ? s.water.level : null,
+      minCells: 6,
+    });
+    this.lakes = grid;
+    this.trees.setLakes(grid);
+    if (!grid.lakes.length) {
+      if (this.lakeWater) this.lakeWater.visible = false;
+      return;
+    }
+    // 映り込みの鏡は 1 枚なので、見ている先にいちばん近い湖の水面に合わせる（#pickLakeMirror）。
+    // 高さの違うほかの湖は、鏡が合わないので地平の色（霧の色）を映す
+    const cell = t.size / (grid.res - 1);
+    this.lakeSpots = grid.lakes.map((l) => {
+      let x = 0, z = 0;
+      for (const c of l.cells) {
+        const i = c % grid.res;
+        x += i * cell - t.size / 2;
+        z += ((c - i) / grid.res) * cell - t.size / 2;
+      }
+      return { x: x / l.cells.length, z: z / l.cells.length, r: Math.sqrt(l.cells.length) * cell * 0.6, level: l.level };
+    });
+    const L0 = this.lakeSpots[0].level;
+    // Water は XY 平面を x 軸まわりに −90° 回して水平にする：ローカル (x, y, z) → 世界 (x, z, −y)
+    const w = lakeMeshData(grid, t.size);
+    const pos = new Float32Array(w.length);
+    const lv = new Float32Array(w.length / 3);
+    for (let k = 0; k < w.length; k += 3) {
+      pos[k] = w[k];
+      pos[k + 1] = -w[k + 2];
+      pos[k + 2] = w[k + 1] - L0;
+      lv[k / 3] = w[k + 1];
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('kLake', new THREE.BufferAttribute(lv, 1));
+    const nrm = new Float32Array(pos.length);
+    for (let i = 2; i < nrm.length; i += 3) nrm[i] = 1;
+    geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+    if (!this.lakeWater) {
+      // 海と同じ水の素材（手を入れたシェーダと、時間・波・色などの uniform を共有）。映り込みの鏡だけは湖のもの
+      const lake = new Water(geo, { textureWidth: 512, textureHeight: 512, waterNormals: this.water.material.uniforms.normalSampler.value, fog: true });
+      const own = new Set(['mirrorSampler', 'textureMatrix', 'kWaterLevel', 'eye', 'kSphereDepth']);
+      const su = this.water.material.uniforms;
+      for (const k of Object.keys(su)) if (!own.has(k)) lake.material.uniforms[k] = su[k];
+      lake.material.uniforms.kWaterLevel = { value: L0 };
+      // 球面の深さの書き直しは遠くの海岸のためのもの。湖は近いので、三角形の深さのままでよい
+      lake.material.uniforms.kSphereDepth = { value: 0 };
+      lake.material.uniforms.kMirrorLevel = { value: L0 };
+      // 湖ごとの水面の高さ（頂点の値）と鏡の高さが違う所は、映り込みの代わりに霧の色（地平の色）を映す
+      lake.material.vertexShader = this.water.material.vertexShader
+        .replace('void main() {', 'attribute float kLake;\nvarying float vKLake;\nvoid main() {\n  vKLake = kLake;');
+      const fs = this.water.material.fragmentShader;
+      const refl = /vec3 reflectionSample = vec3\( texture2D\( mirrorSampler, mirrorCoord\.xy \/ mirrorCoord\.w \+ distortion \) \);/;
+      lake.material.fragmentShader = refl.test(fs)
+        ? fs.replace('uniform sampler2D mirrorSampler;', 'uniform sampler2D mirrorSampler;\nuniform float kMirrorLevel;\nvarying float vKLake;').replace(
+            refl,
+            (m) => `${m}
+          #ifdef USE_FOG
+          reflectionSample = mix( fogColor, reflectionSample, 1.0 - smoothstep( 1.0, 6.0, abs( vKLake - kMirrorLevel ) ) );
+          #endif`,
+          )
+        : fs;
+      lake.material.needsUpdate = true;
+      lake.rotation.x = -Math.PI / 2;
+      lake.frustumCulled = false;
+      this.lakeWater = lake;
+      this.wrapReflection?.(lake);
+      this.world.add(lake);
+    } else {
+      this.lakeWater.geometry.dispose();
+      this.lakeWater.geometry = geo;
+    }
+    this.lakeWater.position.set(0, L0, 0);
+    this.lakeWater.material.uniforms.kWaterLevel.value = L0;
+    this.lakeWater.material.uniforms.kMirrorLevel.value = L0;
+    this.lakeMirror = L0;
+    this.lakeWater.visible = true;
+  }
+
+  // 映り込みの鏡を、見ている先（注視点）にいちばん近い湖の水面へ動かす
+  #pickLakeMirror() {
+    const lw = this.lakeWater;
+    if (!lw?.visible || !this.lakeSpots?.length) return;
+    const p = this.controls.target;
+    let best = null, bd = Infinity;
+    for (const l of this.lakeSpots) {
+      const d = Math.max(0, Math.hypot(p.x - l.x, p.z - l.z) - l.r);
+      if (d < bd) (bd = d), (best = l);
+    }
+    if (!best || best.level === this.lakeMirror) return;
+    const L = best.level;
+    const pos = lw.geometry.attributes.position, lv = lw.geometry.attributes.kLake;
+    for (let i = 0; i < lv.count; i++) pos.array[i * 3 + 2] = lv.array[i] - L;
+    pos.needsUpdate = true;
+    lw.geometry.computeBoundingSphere();
+    lw.position.y = L;
+    lw.material.uniforms.kWaterLevel.value = L;
+    lw.material.uniforms.kMirrorLevel.value = L;
+    this.lakeMirror = L;
+  }
+
   #onTerrain({ field, res, wear, fieldChanged, colors, texSize }) {
     const s = this.store.get();
     if (colors) {
@@ -727,6 +874,7 @@ void main() {`)
       if (!colors) this.colorKey = null;
       // 周りの地形を範囲の高さ場に合わせ直す（以前の取り込みの標高の幅を求めるにも高さ場が要る）
       this.#updateSurround(s);
+      this.#scheduleLakes();
       // 高さ場が変わった：経路などを地面に置き直してもらう
       queueMicrotask(() => this.onTerrainField?.());
     }
@@ -1083,6 +1231,7 @@ void main() {`)
     }
     // 世界座標のうちに：水面をカメラの真下へ、太陽の影をカメラの見ている辺りへ
     this.water.position.set(cam.position.x, s.water.level, cam.position.z);
+    this.#pickLakeMirror();
     this.#placeSun(s);
     if (this.terrain) this.trees.update(s, cam.position, this.treeTerrain, this.controls.target.clone().sub(cam.position));
     if (this.terrain) this.buildings.update(s, cam.position, (x, z) => this.gpuTerrain.groundAt(x, z));

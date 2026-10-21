@@ -75,6 +75,7 @@ const HINTS = {
   'atmosphere.fogHeight': '霧が薄まっていく高さの目安',
   'atmosphere.rays': '霧が日光を前へ散らす度合い。逆光で光の筋がはっきりする',
   'water.level': '水面の標高',
+  'water.lakes': '雨水が流れ出られない窪地に水をためて湖にする。1 であふれる寸前まで満たす。海を切っていても効く',
   'water.distortion': '水面の揺らぎ・映り込みの崩れ',
   'render.still.size': '一枚絵の大きさのひな形。選ぶと幅と高さが変わる',
   'render.still.samples': '1 画素あたりの光の計算回数。多いほどなめらかで時間がかかる（ノイズ除去があれば 32〜128 で十分）',
@@ -236,6 +237,7 @@ const SECTIONS = [
       { path: 'water.color', label: '水の色', type: 'color' },
       { path: 'water.distortion', label: '揺らぎ', min: 0, max: 8, step: 0.1 },
       { path: 'water.waveScale', label: '波の大きさ', min: 0.1, max: 4, step: 0.01 },
+      { path: 'water.lakes', label: '窪地の湖', min: 0, max: 1, step: 0.01 },
     ],
   },
   {
@@ -744,7 +746,9 @@ export class Panel {
     const seed = this.bindings.find((b) => b.f.path === 'terrain.noise.seed');
     seed.el.closest('.row').classList.toggle('dim', !noise);
     for (const b of this.bindings) {
-      if (b.f.path.startsWith('water.') && b.f.path !== 'water.enabled') b.el.closest('.row').classList.toggle('dim', !s.water.enabled);
+      // 水の色・揺らぎ・波は、海を切っていても湖があれば効く
+      const lakeToo = ['water.color', 'water.distortion', 'water.waveScale'].includes(b.f.path) && s.water.lakes > 0;
+      if (b.f.path.startsWith('water.') && b.f.path !== 'water.enabled' && b.f.path !== 'water.lakes') b.el.closest('.row').classList.toggle('dim', !s.water.enabled && !lakeToo);
     }
   }
 }

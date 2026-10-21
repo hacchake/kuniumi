@@ -37,7 +37,7 @@ export function createWaterDisc(maxR) {
 
 // Water の頂点を星の丸みにそって曲げ、波の模様は世界座標（原点を足し戻した座標）で引く
 export function curveWater(material, curveUniforms, origin) {
-  Object.assign(material.uniforms, curveUniforms, { kWaterOrigin: { value: origin }, kWaterLevel: { value: 0 } });
+  Object.assign(material.uniforms, curveUniforms, { kWaterOrigin: { value: origin }, kWaterLevel: { value: 0 }, kSphereDepth: { value: 1 } });
   const vs = material.vertexShader;
   const body = /mirrorCoord = modelMatrix \* vec4\( position, 1\.0 \);[\s\S]*?vec4 mvPosition =\s*modelViewMatrix \* vec4\( position, 1\.0 \);/;
   if (!body.test(vs)) return false;
@@ -59,14 +59,14 @@ export function curveWater(material, curveUniforms, origin) {
   // 遠くの波は画素より細かくなり白い粒になるので、遠いほど滑らかな水面へ寄せる
   const noiseLine = /vec4 noise = getNoise\( worldPosition\.xz \* size \);\s*vec3 surfaceNormal = normalize\( noise\.xzy \* vec3\( 1\.5, 1\.0, 1\.5 \) \);/;
   material.fragmentShader = material.fragmentShader
-    .replace('uniform sampler2D mirrorSampler;', `uniform sampler2D mirrorSampler;\nuniform vec2 kWaterOrigin;\nuniform float kWaterLevel;\nvarying vec3 vKFlat;\n${CURVE_GLSL}`)
+    .replace('uniform sampler2D mirrorSampler;', `uniform sampler2D mirrorSampler;\nuniform vec2 kWaterOrigin;\nuniform float kWaterLevel, kSphereDepth;\nvarying vec3 vKFlat;\n${CURVE_GLSL}`)
     // 丸い星では、水面の三角形（弦）は本当の球面より内側にたわむ。遠くでは数百 m になり、海岸と前後を取り違えて縞になる。
     // そこで画素ごとに視線と海の球面の交点を求め、その深さを書く
     .replace(
       '#include <logdepthbuf_fragment>',
       `#include <logdepthbuf_fragment>
       #if defined( USE_LOGARITHMIC_DEPTH_BUFFER )
-      if ( kPlanetR > 0.0 ) {
+      if ( kPlanetR > 0.0 && kSphereDepth > 0.5 ) {
         // 球の中心からの距離（約 640 万 m）どうしを引くと、32bit の小数では 0.5 m ほどずれる。
         // 低い陸（海抜 0.5〜2 m）と前後を取り違えて縞・ちらつきになるので、曲げの中心（地表）からの相対で解く：
         //   |e + (0, R, 0) + t d|² = (R + L)²  →  t² + 2 b t + c = 0,  b = d·e + R d.y,  c = |e|² + 2R (e.y − L) − L²
