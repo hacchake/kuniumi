@@ -770,10 +770,28 @@ export class StillJob {
       const liteBroadleaf = () => (lite.b ??= (({ trunk, crown }) => ({ trunk: shade(trunk, 1), crown: shade(crown, 0.75) }))(broadleafGeometry()));
       const [conNear, conFar] = custom.conifer ? [[], []] : nearFar(P.conifer);
       if (custom.conifer) add(custom.conifer.clone(), white, P.conifer, { side: THREE.DoubleSide, colorVar: 0.25, seed: 3 });
+      // 冬：雪の積もる高さより上の針葉樹は、上を向いた葉に雪を乗せる（素材の色は頂点の色に掛かるので、
+      // 雪の木は素材を白にして、緑と雪を頂点の色に焼き込む）
+      const winter = s.terrain.season === 'winter';
+      const wsY = (s.terrain.winterSnow ?? 600) + 50;
+      const snowyCrown = (g) => {
+        const c = g.clone(), col = c.attributes.color, n = c.attributes.normal;
+        const base = conCol.clone(); // 線形の色
+        for (let i = 0; i < col.count; i++) {
+          const k = Math.min(1, Math.max(0, (n.getY(i) - 0.25) / 0.6)) * 0.85;
+          col.setXYZ(i, base.r * col.getX(i) * (1 - k) + 0.85 * k, base.g * col.getY(i) * (1 - k) + 0.88 * k, base.b * col.getZ(i) * (1 - k) + 0.93 * k);
+        }
+        col.needsUpdate = true;
+        return c;
+      };
       split(conNear, 3).forEach((list, i) => {
         const g = detailedConifer(i + 1);
         add(g.trunk, trunk, list);
-        add(g.crown, conCol, list, { side: THREE.DoubleSide, colorVar: 0.25, seed: 3 + i });
+        if (!winter) return add(g.crown, conCol, list, { side: THREE.DoubleSide, colorVar: 0.25, seed: 3 + i });
+        const snowy = [], bare = [];
+        for (let k = 0; k < list.length; k += 5) (list[k + 1] > wsY ? snowy : bare).push(list[k], list[k + 1], list[k + 2], list[k + 3], list[k + 4]);
+        add(g.crown, conCol, bare, { side: THREE.DoubleSide, colorVar: 0.25, seed: 3 + i });
+        add(snowyCrown(g.crown), new THREE.Color(1, 1, 1), snowy, { side: THREE.DoubleSide, colorVar: 0.15, seed: 3 + i });
       });
       if (conFar.length) {
         const g = liteConifer();
