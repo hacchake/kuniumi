@@ -594,7 +594,27 @@ export class StillJob {
           });
       if (!this.tuning.noWaves) wmat.normalMap = waveTex;
       wmat.normalScale = new THREE.Vector2(1, 1);
-      this.disposers.push(() => (waveTex.dispose(), wmat.dispose()));
+      // 波の模様が届かない遠くの水面：平らなままだと太陽や月が丸い鏡像のまま映り、二つ目の太陽に見える。
+      // 本物の海では遠くの波が映り込みを縦に引き伸ばして光の道になるので、波の強さに応じて表面を粗くする
+      // （粗さの地図は波の模様と同じ範囲に貼り、範囲の外は端の値＝遠くの粗さが続く）。穏やかな水面は鏡のまま
+      const farRough = Math.min(0.32, rough + s.water.distortion * 0.05 * s.water.waveScale);
+      let roughTex = null;
+      if (!fromSky && farRough > rough * 1.2) {
+        const N = 64, rd = new Uint8Array(N * N * 4);
+        for (let j = 0; j < N; j++)
+          for (let i = 0; i < N; i++) {
+            const e = Math.max(Math.abs((i + 0.5) / N - 0.5), Math.abs((j + 0.5) / N - 0.5)) * 2; // 0 = 中心、1 = 端
+            const t = Math.min(1, Math.max(0, (e - 0.7) / 0.28));
+            const g = (rough + (farRough - rough) * t * t * (3 - 2 * t)) / farRough;
+            rd.set([255, Math.round(g * 255), 255, 255], (j * N + i) * 4);
+          }
+        roughTex = new THREE.DataTexture(rd, N, N, THREE.RGBAFormat);
+        roughTex.magFilter = roughTex.minFilter = THREE.LinearFilter;
+        roughTex.needsUpdate = true;
+        wmat.roughness = farRough;
+        wmat.roughnessMap = roughTex;
+      }
+      this.disposers.push(() => (waveTex.dispose(), roughTex?.dispose(), wmat.dispose()));
       return { wmat, waveC, waveW };
     };
     let water = null;
