@@ -63,7 +63,8 @@ export const PRESETS = [
       },
       vegetation: { trees: 0.95, conifer: 0.7, treeHeight: 20 },
       sun: { elevation: 11, azimuth: 95 },
-      atmosphere: { turbidity: 5, rayleigh: 2.4, mieCoefficient: 0.012, haze: 0.95, fogHeight: 1500, rays: 0.85, clouds: 0.2, exposure: 0.13 },
+      // 谷霧：濃い霧を低く（250 m で薄まる）たまらせ、峰だけが霧の海から突き出る（霧を山の高さまで厚くすると、全体が一様にかすむだけ）
+      atmosphere: { turbidity: 5, rayleigh: 2.4, mieCoefficient: 0.012, haze: 4, fogHeight: 250, rays: 0.85, clouds: 0.2, exposure: 0.13 },
       water: { level: 0, color: '#1c3a3e' },
       camera: { position: [-4800, 1500, 5200], target: [200, 300, -200], fov: 45 },
     },

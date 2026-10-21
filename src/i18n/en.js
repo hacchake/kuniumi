@@ -339,6 +339,7 @@ export const EN = {
   '太陽のまわりの明るいにじみの強さ': 'Strength of the bright glow around the sun',
   '太陽のにじみの広がり（大きいほど太陽の近くに集まる）': 'Spread of the sun glow (higher keeps it closer to the sun)',
   '地表付近の霧・かすみの濃さ': 'Density of fog and haze near the ground',
+  '地表付近の霧・かすみの濃さ。「霧の厚み」を薄く（数百 m）して濃くすると、谷に霧の海ができる': 'Density of fog and haze near the ground. Make the fog thin (a few hundred m) and dense for a sea of fog in the valleys',
   '空から降りそそぐ光の強さ（1 = 物理的に正しい）': 'Strength of skylight (1 = physically correct)',
   '写真の露出。明るすぎ・暗すぎを調整する': 'Camera exposure. Adjust if too bright or dark',
   '雲の量（0 = 快晴）': 'Amount of cloud (0 = clear sky)',
