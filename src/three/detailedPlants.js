@@ -50,7 +50,7 @@ class Leaves {
 
 // 樹皮のある幹：縦に走る溝（ねじれと途切れのある畝）と、根元の張り出し。溝は細く暗く、畝は明るく（頂点の色）。
 // 近くで見たとき、つるりとした円柱に見えないように
-function barkLimb(a, b, r0, r1, seed, { ridges = 14, depth = 0.14, flare = 0.4 } = {}) {
+function barkLimb(a, b, r0, r1, seed, { ridges = 14, depth = 0.22, flare = 0.4 } = {}) {
   const rand = mulberry32(seed * 977 + 3);
   const d = new THREE.Vector3().subVectors(b, a);
   const len = d.length();
@@ -70,7 +70,8 @@ function barkLimb(a, b, r0, r1, seed, { ridges = 14, depth = 0.14, flare = 0.4 }
     const base = flare * Math.exp(-t * 14) * (0.6 + 0.4 * Math.max(0, Math.cos(ang * 5 + ph[3])));
     const k = (1 - depth * (1 - ridge)) * (1 + base);
     p.setXYZ(i, x * k, y, z * k);
-    const v = (0.55 + 0.55 * ridge) * (0.9 + rand() * 0.2);
+    // 割れ目の奥は日が届かず暗い（畝との明暗の差が小さいと、日陰の幹がのっぺりする）
+    const v = (0.36 + 0.95 * ridge * ridge) * (0.9 + rand() * 0.2);
     col.set([v * 1.04, v, v * 0.94], i * 3);
   }
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
@@ -150,7 +151,7 @@ export function detailedBroadleaf(seed = 1) {
 export function detailedConifer(seed = 1) {
   const rand = mulberry32(seed * 104729 + 7);
   // 針葉樹の樹皮は細かく浅い縦の割れ目
-  const wood = [barkLimb(new THREE.Vector3(0, -0.02, 0), new THREE.Vector3(0, 0.97, 0), 0.026, 0.004, seed + 50, { ridges: 18, depth: 0.12, flare: 0.3 })];
+  const wood = [barkLimb(new THREE.Vector3(0, -0.02, 0), new THREE.Vector3(0, 0.97, 0), 0.026, 0.004, seed + 50, { ridges: 18, depth: 0.18, flare: 0.3 })];
   const leaves = new Leaves();
   for (let y = 0.1; y < 0.95; y += 0.022 + rand() * 0.01) {
     const t = (y - 0.12) / 0.83; // 0 = 下、1 = 頂
