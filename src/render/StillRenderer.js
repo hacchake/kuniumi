@@ -615,7 +615,8 @@ export class StillJob {
       // 波の模様が届かない遠くの水面：平らなままだと太陽や月が丸い鏡像のまま映り、二つ目の太陽に見える。
       // 本物の海では遠くの波が映り込みを縦に引き伸ばして光の道になるので、波の強さに応じて表面を粗くする
       // （粗さの地図は波の模様と同じ範囲に貼り、範囲の外は端の値＝遠くの粗さが続く）。穏やかな水面は鏡のまま
-      const farRough = Math.min(0.32, rough + s.water.distortion * 0.05 * s.water.waveScale);
+      // 粗くしすぎると地平の明るい霞を広く映して、海全体が白っぽく濁る（既定の揺らぎ 3.7 で緑灰色の海になった）
+      const farRough = Math.min(0.2, rough + s.water.distortion * 0.025 * s.water.waveScale);
       let roughTex = null;
       if (!fromSky && farRough > rough * 1.2) {
         const N = 64, rd = new Uint8Array(N * N * 4);

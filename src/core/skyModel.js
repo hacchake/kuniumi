@@ -41,12 +41,17 @@ export function skyParams(atmosphere, sunDir) {
   const sunfade = 1 - clamp(1 - Math.exp(sunDir[1] / 450000), 0, 1);
   const rayleighCoef = atmosphere.rayleigh - (1 - sunfade);
   const betaR = TOTAL_RAYLEIGH.map((v) => v * rayleighCoef);
+  // 太陽の光（円盤と、地面を照らす光）の減り方は、空の青さの設定を 1.4 までに抑えて計算する。
+  // 空を青くするための強い値（既定 2.2）のままだと、高度 16° の太陽でも青が赤の 3 割しか届かず、
+  // 昼の光が黄色く、霞が黄緑に濁った（夕日は大気が厚いので、抑えてもちゃんと赤くなる）
+  const betaRSun = TOTAL_RAYLEIGH.map((v) => v * Math.min(rayleighCoef, 1.4));
   const c = 0.2 * atmosphere.turbidity * 10e-18;
   const betaM = MIE_CONST.map((v) => 0.434 * c * v * atmosphere.mieCoefficient);
   return {
     sunDir,
     sunE,
     betaR,
+    betaRSun,
     betaM,
     g: atmosphere.mieDirectionalG,
     clouds: {
@@ -122,7 +127,10 @@ export function skyRadiance(p, dir, out, opts = {}) {
   const c0 = discScale === 1 ? SUN_COS : Math.cos(SUN_RADIUS * discScale);
   const disc = sunDisc ? (clamp(((cosT - c0) * 50000) / k2, 0, 1) * SUN_BOOST * sunScale) / k2 : 0;
   const base = [0, 0.0003, 0.00075];
-  for (let c = 0; c < 3; c++) tex[c] = (Lin[c] + L0[c]) * 0.04 + 760 * disc * Math.min(p.sunE * Fex[c], 80) + base[c];
+  for (let c = 0; c < 3; c++) {
+    const fexSun = disc > 0 ? Math.exp(-((p.betaRSun ?? p.betaR)[c] * sR + p.betaM[c] * sM)) : 0;
+    tex[c] = (Lin[c] + L0[c]) * 0.04 + 760 * disc * Math.min(p.sunE * fexSun, 80) + base[c];
+  }
 
   const cl = p.clouds;
   if (clouds && dy > 0 && cl.coverage > 0) {
@@ -166,7 +174,7 @@ export function sunIrradiance(p) {
   const zenith = Math.acos(Math.max(0, sd[1]));
   const inv = 1 / (Math.cos(zenith) + 0.15 * Math.pow(93.885 - (zenith * 180) / PI, -1.253));
   return [0, 1, 2].map((c) => {
-    const fex = Math.exp(-(p.betaR[c] * RAYLEIGH_ZENITH * inv + p.betaM[c] * MIE_ZENITH * inv));
+    const fex = Math.exp(-((p.betaRSun ?? p.betaR)[c] * RAYLEIGH_ZENITH * inv + p.betaM[c] * MIE_ZENITH * inv));
     // 地平線の下に沈んだ太陽は照らさない（sunE は地平線付近で 0 へ落ちる）
     return 760 * Math.min(p.sunE * fex, 80) * SUN_BOOST * SUN_SOLID_ANGLE * (sd[1] > -0.02 ? 1 : 0);
   });
