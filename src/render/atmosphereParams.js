@@ -3,6 +3,13 @@ import { skyParams, sunIrradiance, skyRadiance } from '../core/skyModel.js';
 
 // シーン JSON から、雲と霧の計算に渡す値を組み立てる（一枚絵・リアルタイム表示で共通）
 // 厚い雲に覆われた空の光の灰色の度合い（0..1）：雲の量 0.65 から効き始め、全天の雲で 0.85
+// 自動露出が寄せる明るさの目標（晴れた景色のふつうの明るさ 0.12）。雨や雷雨の日は暗さが雰囲気なので低めに
+// （ふつうの明るさまで持ち上げると、嵐がただの明るい曇り空に見える）
+export function exposureKeyTarget(a) {
+  const p = a.precip;
+  return 0.12 * (p === 'storm' ? 0.5 : p === 'rain' ? 0.75 : 1);
+}
+
 export function overcastAmount(a) {
   const t = Math.min(1, Math.max(0, ((a.clouds ?? 0) - 0.65) / 0.35));
   return t * t * (3 - 2 * t) * 0.85;

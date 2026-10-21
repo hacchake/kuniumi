@@ -12,7 +12,7 @@ import { addAurora, addRainbow } from '../core/skyExtras.js';
 import { toneMapToRGBA8 } from '../core/tonemap.js';
 import { sunIrradiance, discScaleFor } from '../core/skyModel.js';
 import { computeAtmosphere, renderMask } from './atmospherePass.js';
-import { atmosphereParams, overcastAmount } from './atmosphereParams.js';
+import { atmosphereParams, overcastAmount, exposureKeyTarget } from './atmosphereParams.js';
 import { fillInstances, coniferGeometry, broadleafGeometry } from '../three/vegetationMeshes.js';
 import { detailedBroadleaf, detailedConifer, detailedGrass, detailedFlowers, detailedRock, detailedReeds, detailedFern, detailedLitter, detailedPalm, detailedTropicalPlant } from '../three/detailedPlants.js';
 import { planetRadius } from '../core/schema.js';
@@ -413,7 +413,9 @@ export class StillJob {
       const n = W * H;
       for (let i = 0; i < n * 4; i += 4) sum += Math.log(1e-4 + (hdr[i] * 0.2126 + hdr[i + 1] * 0.7152 + hdr[i + 2] * 0.0722) * exposure);
       const key = Math.exp(sum / n);
-      const k = Math.min(aeMax, Math.max(aeMax > 2 ? 0.7 : 1, Math.pow(0.12 / Math.max(1e-6, key), 0.6)));
+      // 下限も目標に合わせて下げる（雷雨は明るい霧が画面を占めて明るく測れるので、0.7 倍止まりでは暗くならなかった）
+      const target = exposureKeyTarget(s.atmosphere);
+      const k = Math.min(aeMax, Math.max(aeMax > 2 ? 0.7 * (target / 0.12) : 1, Math.pow(target / Math.max(1e-6, key), 0.6)));
       exposure *= k;
       this.stats.autoExposure = Math.round(k * 100) / 100;
     }

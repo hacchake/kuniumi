@@ -34,7 +34,7 @@ import { createWaterNormals } from '../three/waterNormals.js';
 import { TextureService } from '../three/TextureService.js';
 import { ObjectLayer } from '../three/objectLayer.js';
 import { RealtimeAtmosphere } from './RealtimeAtmosphere.js';
-import { atmosphereParams } from './atmosphereParams.js';
+import { atmosphereParams, exposureKeyTarget } from './atmosphereParams.js';
 import { createCloudUniforms, patchStandardMaterial, patchWaterMaterial } from './cloudShadowPatch.js';
 
 const R2D = 180 / Math.PI;
@@ -1344,7 +1344,7 @@ void main() {`)
         // 暗すぎるときに明るくするだけ（開けた景色は空が大きく写って明るめに測れるので、暗くはしない）
         // 夕景（太陽が地平線近く）は最大 2 倍まで、夜は補わない
         const aeMax = s.sun.elevation > 5 ? 4 : s.sun.elevation > -4 ? 2 : 1;
-        this.aeTarget = Math.min(aeMax, Math.max(1, Math.pow(0.12 / Math.max(1e-6, key), 0.6)));
+        this.aeTarget = Math.min(aeMax, Math.max(1, Math.pow(exposureKeyTarget(s.atmosphere) / Math.max(1e-6, key), 0.6)));
       }
     } else {
       this.renderer.setRenderTarget(null);
