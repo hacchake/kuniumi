@@ -48,6 +48,39 @@ class Leaves {
   }
 }
 
+// 樹皮のある幹：縦に走る溝（ねじれと途切れのある畝）と、根元の張り出し。溝は細く暗く、畝は明るく（頂点の色）。
+// 近くで見たとき、つるりとした円柱に見えないように
+function barkLimb(a, b, r0, r1, seed, { ridges = 14, depth = 0.14, flare = 0.4 } = {}) {
+  const rand = mulberry32(seed * 977 + 3);
+  const d = new THREE.Vector3().subVectors(b, a);
+  const len = d.length();
+  const g = new THREE.CylinderGeometry(r1, r0, len, 36, 24, true).translate(0, len / 2, 0);
+  const p = g.attributes.position;
+  const ph = Array.from({ length: 4 }, () => rand() * Math.PI * 2);
+  const twist = (rand() - 0.5) * 1.2;
+  const col = new Float32Array(p.count * 3);
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    const t = y / len;
+    const ang = Math.atan2(z, x);
+    // 畝の模様：角度に沿った縞を、高さでゆっくりねじり、ところどころで途切れさせる
+    const w = ang * ridges + twist * t * 6 + Math.sin(t * 9 + ph[0]) * 0.8 + Math.sin(t * 23 + ph[1] + ang * 3) * 0.35;
+    const ridge = Math.pow(Math.abs(Math.sin(w / 2)), 0.6) * (0.75 + 0.25 * Math.sin(t * 31 + ph[2] + ang * 5));
+    // 根元の張り出し：太く、根の分かれ目で凸凹に
+    const base = flare * Math.exp(-t * 14) * (0.6 + 0.4 * Math.max(0, Math.cos(ang * 5 + ph[3])));
+    const k = (1 - depth * (1 - ridge)) * (1 + base);
+    p.setXYZ(i, x * k, y, z * k);
+    const v = (0.55 + 0.55 * ridge) * (0.9 + rand() * 0.2);
+    col.set([v * 1.04, v, v * 0.94], i * 3);
+  }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.computeVertexNormals();
+  g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(up, d.clone().normalize()));
+  g.translate(a.x, a.y, a.z);
+  return g.toNonIndexed();
+}
+const withColor = (list) => list.map((g) => (g.attributes.color ? g : tint(g, 1)));
+
 // 頂点の色を明るさ v で一様に
 function tint(g, v = 1) {
   const n = g.attributes.position.count;
@@ -67,7 +100,7 @@ export function detailedBroadleaf(seed = 1) {
   const leaves = new Leaves();
   const crownC = new THREE.Vector3(0, 0.66, 0);
   const trunkTop = new THREE.Vector3((rand() - 0.5) * 0.04, 0.42 + rand() * 0.06, (rand() - 0.5) * 0.04);
-  wood.push(limb(new THREE.Vector3(0, -0.02, 0), trunkTop, 0.034, 0.024, 8));
+  wood.push(barkLimb(new THREE.Vector3(0, -0.02, 0), trunkTop, 0.034, 0.024, seed));
   const nMain = 5 + Math.floor(rand() * 2);
   for (let b = 0; b < nMain; b++) {
     const a = (b / nMain) * Math.PI * 2 + rand() * 0.8;
@@ -108,7 +141,7 @@ export function detailedBroadleaf(seed = 1) {
     }
   }
   return {
-    trunk: tint(mergeGeometries(wood), 1),
+    trunk: mergeGeometries(withColor(wood)),
     crown: leaves.geometry(),
   };
 }
@@ -116,7 +149,8 @@ export function detailedBroadleaf(seed = 1) {
 // 針葉樹：まっすぐな幹と、下ほど長く垂れる枝の段。枝に沿って針葉の房のカード
 export function detailedConifer(seed = 1) {
   const rand = mulberry32(seed * 104729 + 7);
-  const wood = [limb(new THREE.Vector3(0, -0.02, 0), new THREE.Vector3(0, 0.97, 0), 0.026, 0.004, 7)];
+  // 針葉樹の樹皮は細かく浅い縦の割れ目
+  const wood = [barkLimb(new THREE.Vector3(0, -0.02, 0), new THREE.Vector3(0, 0.97, 0), 0.026, 0.004, seed + 50, { ridges: 18, depth: 0.12, flare: 0.3 })];
   const leaves = new Leaves();
   for (let y = 0.1; y < 0.95; y += 0.022 + rand() * 0.01) {
     const t = (y - 0.12) / 0.83; // 0 = 下、1 = 頂
@@ -145,7 +179,7 @@ export function detailedConifer(seed = 1) {
       }
     }
   }
-  return { trunk: tint(mergeGeometries(wood), 1), crown: leaves.geometry() };
+  return { trunk: mergeGeometries(withColor(wood)), crown: leaves.geometry() };
 }
 
 // 草の株：細い葉を 48 本ほど、幅 0.5 ほどに広げる（根元は暗く先は明るい）
