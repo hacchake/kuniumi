@@ -22,11 +22,16 @@ function lowConifer() {
   return new THREE.ConeGeometry(0.2, 0.85, 6, 1).translate(0, 0.575, 0);
 }
 // 少ない三角形の多面体を、面の向きを中心から放射状にして丸く見せる
+// 頂点は位置ごとの乱数で押し引きして、きれいな多面体でなくでこぼこの葉の塊に（同じ頂点は同じだけ動かし、割れ目を作らない）
 function roundBlob(r, x, y, z, detail = 0, sy = 1) {
   const g = new THREE.IcosahedronGeometry(r, detail);
   const p = g.attributes.position, n = g.attributes.normal;
   for (let i = 0; i < p.count; i++) {
-    const v = new THREE.Vector3(p.getX(i), p.getY(i), p.getZ(i)).normalize();
+    const v = new THREE.Vector3(p.getX(i), p.getY(i), p.getZ(i));
+    const h = Math.abs(Math.sin(v.x * 91.7 + v.y * 47.3 + v.z * 23.9 + x * 13.1) * 43758.5453) % 1;
+    const k = 0.82 + h * 0.36;
+    p.setXYZ(i, v.x * k, v.y * k, v.z * k);
+    v.normalize();
     n.setXYZ(i, v.x, v.y, v.z);
   }
   return g.scale(1, sy, 1).translate(x, y, z);
