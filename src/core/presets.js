@@ -319,8 +319,9 @@ export const PRESETS = [
       sun: { elevation: -20, azimuth: 300, moonAge: 0.5 },
       atmosphere: { turbidity: 1.5, rayleigh: 2.2, haze: 0.12, clouds: 0, exposure: 0.4 },
       water: { level: 0, color: '#06161c', distortion: 1 },
-      // 天の川の濃い所（銀河の中心の向き）を、湖越しに見る
-      camera: { position: [-1500, 350, 1800], target: [-3500, 1100, 1000], fov: 65 },
+      // 天の川の濃い所（銀河の中心の向き）を、湖越しに見る。その向きの手前が湖で、遠くの稜線が低い岸辺に立つ
+      // （以前の位置は目の前の山が天の川をふさいでいた）
+      camera: { position: [-3000, 48, 1200], target: [-4864, 668, 478], fov: 65 },
     },
   },
   {

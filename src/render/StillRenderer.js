@@ -400,6 +400,13 @@ export class StillJob {
       }
       this.stats.noReflectPass = true;
     }
+    // 夜空の星（画面の画素ごと）。空が見えている所だけ、霧や大気を重ねる前に
+    if (built.starK > 0.01) {
+      const solid = [built.terrainMesh, built.surroundMesh, built.water, built.lakeMesh, ...built.plants, ...(built.buildingMeshes ?? []), ...objectMeshes].filter(Boolean);
+      const hit = renderMask(this.view.renderer, solid, [], camera, W, H);
+      for (let i = 0; i < hit.length; i++) hit[i] = 1 - hit[i];
+      addStarsScreen(hdr, W, H, camera, hit, built.starK, s.atmosphere.exposure);
+    }
     this.#applyAtmosphere(hdr, s, built, objectMeshes, celestial, camera, W, H);
     mark('atmosphere');
     if (st.bloom > 0) applyBloom(hdr, W, H, st.bloom);
@@ -955,13 +962,13 @@ export class StillJob {
     const bg = addNight(grey(renderSkyEquirect(p, ew, eh, opts)), true);
     // 夜空の星と天の川（リアルタイム表示の RealtimeAtmosphere と同じ式）。背景の見た目だけで、光源には入れない
     const starK = night * (1 - 0.85 * (s.atmosphere.clouds ?? 0)) * (8 / Math.max(0.02, s.atmosphere.exposure / 0.12));
-    if (starK > 0.01) addStarsAndMilkyWay(bg, ew, eh, starK, s.atmosphere.exposure);
+    if (starK > 0.01) addStarsAndMilkyWay(bg, ew, eh, starK, s.atmosphere.exposure, false); // 星は画面の細かさで後から（addStarsScreen）
     for (let i = 0; i < bg.length; i++) if (bg[i] > 65000) bg[i] = 65000;
     const rainy = s.atmosphere.precip === 'rain' || s.atmosphere.precip === 'storm';
     scene.background = discScale > 1 || rainy || starK > 0.01 ? mkEnv(bg) : scene.environment;
 
     scene.updateMatrixWorld(true);
-    return { scene, terrainMesh, surroundMesh, water, lakeMesh, plants, buildingMeshes, textures, skyP: p, skyBG: { data: bg, w: ew, h: eh } };
+    return { starK, scene, terrainMesh, surroundMesh, water, lakeMesh, plants, buildingMeshes, textures, skyP: p, skyBG: { data: bg, w: ew, h: eh } };
   }
 
   #camera(s, aspect) {
@@ -1265,9 +1272,9 @@ function milkyBand(d) {
   return Math.exp(-(lat * lat) / (w * w)) * (0.35 + 0.65 * core * core);
 }
 // data: 全天画像（行 0 = 真下）。k: 星の明るさ（リアルタイムの starI と同じ尺度）、exposure: 空の明るさとの比べに使う露出
-function addStarsAndMilkyWay(data, ew, eh, k, exposure) {
+function addStarsAndMilkyWay(data, ew, eh, k, exposure, stars = true) {
   const pixAng = (2 * Math.PI) / ew; // 1 画素の角度
-  const d = [0, 0, 0];
+  const d = [0, 0, 0], st3 = [0, 0, 0];
   for (let r = Math.floor(eh / 2); r < eh; r++) {
     const lat = ((r + 0.5) / eh - 0.5) * Math.PI;
     const y = Math.sin(lat), cl = Math.cos(lat);
@@ -1288,21 +1295,10 @@ function addStarsAndMilkyWay(data, ew, eh, k, exposure) {
         const m = b * (0.4 + 0.9 * n * n) * rift * 0.07;
         sr += 0.85 * m; sg += 0.82 * m; sb += 0.78 * m;
       }
-      // 星：格子ごとにまれに 1 つ。全天画像の画素より小さい星は、画素に合わせて広げて明るさの総量を保つ
-      for (let l = 0; l < 2; l++) {
-        const sc = l === 0 ? 180 : 520;
-        const qx = d[0] * sc, qy = d[1] * sc, qz = d[2] * sc;
-        const cx = Math.floor(qx), cy = Math.floor(qy), cz = Math.floor(qz);
-        const h = sHash(cx, cy, cz);
-        const th = l === 0 ? 0.988 : 0.975 - 0.02 * b;
-        if (h <= th) continue;
-        const px = cx + sHash(cx + 1.37, cy + 1.37, cz + 1.37), py = cy + sHash(cx + 2.11, cy + 2.11, cz + 2.11), pz = cz + sHash(cx + 3.73, cy + 3.73, cz + 3.73);
-        const dd2 = (qx - px) ** 2 + (qy - py) ** 2 + (qz - pz) ** 2;
-        const sig = Math.max(0.13, pixAng * sc * 0.6); // 星の広がり（格子の単位）
-        const e = Math.exp(-dd2 / (2 * sig * sig)) * ((0.13 * 0.13) / (sig * sig));
-        const bb = Math.pow((h - th) / (1 - th), 3) * (l === 0 ? 1 : 0.35) * e;
-        const tint = sHash(cx + 7.7, cy + 7.7, cz + 7.7);
-        sr += (1 + (0.7 - 1) * tint) * bb; sg += (0.78 + (0.82 - 0.78) * tint) * bb; sb += (0.6 + (1 - 0.6) * tint) * bb;
+      // 星（stars = false なら描かない：一枚絵では画面の細かさで後から描く。addStarsScreen）
+      if (stars) {
+        starAt(d, b, pixAng, st3);
+        sr += st3[0]; sg += st3[1]; sb += st3[2];
       }
       // リアルタイムでは表示の値に足しているので、露出で割って空の明るさの単位に戻す
       const g = (k * fade) / Math.max(0.02, exposure);
@@ -1312,6 +1308,56 @@ function addStarsAndMilkyWay(data, ew, eh, k, exposure) {
     }
   }
 }
+// 向き d の星の明るさ（色ごと）を out へ。格子ごとにまれに 1 つ。画素（角度 pixAng）より小さい星は、画素に合わせて広げて明るさの総量を保つ
+// b: 天の川の濃さ（天の川の中は暗い星が多い）
+function starAt(d, b, pixAng, out) {
+  out[0] = out[1] = out[2] = 0;
+  for (let l = 0; l < 2; l++) {
+    const sc = l === 0 ? 180 : 520;
+    const qx = d[0] * sc, qy = d[1] * sc, qz = d[2] * sc;
+    const cx = Math.floor(qx), cy = Math.floor(qy), cz = Math.floor(qz);
+    const h = sHash(cx, cy, cz);
+    const th = l === 0 ? 0.988 : 0.975 - 0.02 * b;
+    if (h <= th) continue;
+    const px = cx + sHash(cx + 1.37, cy + 1.37, cz + 1.37), py = cy + sHash(cx + 2.11, cy + 2.11, cz + 2.11), pz = cz + sHash(cx + 3.73, cy + 3.73, cz + 3.73);
+    const dd2 = (qx - px) ** 2 + (qy - py) ** 2 + (qz - pz) ** 2;
+    const sig = Math.max(0.13, pixAng * sc * 0.6); // 星の広がり（格子の単位）
+    const e = Math.exp(-dd2 / (2 * sig * sig)) * ((0.13 * 0.13) / (sig * sig));
+    const bb = Math.pow((h - th) / (1 - th), 3) * (l === 0 ? 1 : 0.35) * e;
+    const tint = sHash(cx + 7.7, cy + 7.7, cz + 7.7);
+    out[0] += (1 + (0.7 - 1) * tint) * bb;
+    out[1] += (0.78 + (0.82 - 0.78) * tint) * bb;
+    out[2] += (0.6 + (1 - 0.6) * tint) * bb;
+  }
+}
+
+// 一枚絵の星を、画面の画素ごとに描く（全天画像に描くと、画像の 1 画素が画面の数画素に広がって星がぼやけた雪の粒になる）。
+// sky: 空が見えている割合（画素ごと、0..1）。明るさの尺度は addStarsAndMilkyWay と同じ
+function addStarsScreen(hdr, W, H, camera, sky, k, exposure) {
+  const fovY = THREE.MathUtils.degToRad(camera.fov);
+  const pixAng = fovY / H;
+  const v = new THREE.Vector3(), o = new THREE.Vector3().setFromMatrixPosition(camera.matrixWorld);
+  const d = [0, 0, 0], st3 = [0, 0, 0];
+  const g0 = k / Math.max(0.02, exposure);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      if (!(sky[i] > 0.01)) continue;
+      v.set(((x + 0.5) / W) * 2 - 1, 1 - ((y + 0.5) / H) * 2, 0.5).unproject(camera).sub(o).normalize();
+      d[0] = v.x; d[1] = v.y; d[2] = v.z;
+      const q = i * 4;
+      const lum = (hdr[q] * 0.2126 + hdr[q + 1] * 0.7152 + hdr[q + 2] * 0.0722) * exposure;
+      const fade = Math.exp(-lum * 6) * Math.min(1, Math.max(0, (d[1] + 0.02) / 0.08)) * sky[i];
+      if (fade < 0.01) continue;
+      starAt(d, milkyBand(d), pixAng, st3);
+      const g = g0 * fade;
+      hdr[q] += st3[0] * g;
+      hdr[q + 1] += st3[1] * g;
+      hdr[q + 2] += st3[2] * g;
+    }
+  }
+}
+
 function smooth01(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
