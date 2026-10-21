@@ -421,7 +421,8 @@ export function detailedPalm(seed = 1) {
   const segs = 14;
   for (let k = 0; k < segs; k++) {
     const t0 = k / segs, t1 = (k + 1) / segs;
-    wood.push(tint(limb(at(t0), at(t1), 0.026 - t0 * 0.008, 0.026 - t1 * 0.008, 7), k % 2 ? 0.85 : 1.05));
+    // 曲がった幹の継ぎ目は外側に隙間が開いて空が透け、白い輪に見えた。次の節へ少し食い込ませてふさぐ
+    wood.push(tint(limb(at(t0), at(Math.min(1, t1 + 0.02)), 0.026 - t0 * 0.008, 0.026 - t1 * 0.008, 7), k % 2 ? 0.85 : 1.05));
   }
   const top = at(1);
   const leaves = new Leaves();
