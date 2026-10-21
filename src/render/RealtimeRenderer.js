@@ -1285,6 +1285,19 @@ void main() {`)
     // 高く昇るほど「宇宙から眺める」表現へ（地表から 15 km〜120 km で切り替える）
     this.atmosphere.uniforms.spaceW.value = R > 0 ? THREE.MathUtils.smoothstep(flatPos.y, 15000, 120000) : 0;
     this.atmosphere.uniforms.starI.value = 8 / Math.max(0.02, s.atmosphere.exposure / 0.12);
+    // 月：大気の合成のときはそこで描く（場面の月の板は、大気を使わないときだけ）
+    {
+      const u = this.atmosphere.uniforms, mo = this.moon;
+      const on = this.atmosphere.enabled && mo.mesh.visible;
+      u.moonGain.value = on ? mo.uniforms.gain.value : 0;
+      if (on) {
+        u.moonDir.value.copy(mo.dir);
+        u.moonSun.value.copy(mo.uniforms.sunDir.value);
+        u.moonTex.value = mo.uniforms.moonTex.value;
+        u.moonHas.value = mo.uniforms.hasTex.value;
+      }
+      mo.mesh.material.visible = !this.atmosphere.enabled;
+    }
     this.scene.updateMatrixWorld();
     // 地名を画面の位置へ（曲げた地形と同じ式で、平らな地図の点を画面へ）
     if (this.labels) {

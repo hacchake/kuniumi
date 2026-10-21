@@ -59,6 +59,13 @@ export class RealtimeAtmosphere {
       atmoH: { value: 8000 }, // 大気の厚みの目安（スケールハイト）
       atmoTop: { value: 100000 }, // 大気の上端
       starI: { value: 8 }, // 星の明るさ
+      // 月（空の画素に、月面図の模様で描く。場面に描くと、空の画素では空気の透過率で消えてしまう）
+      moonDir: { value: new THREE.Vector3(0, 1, 0) },
+      moonSun: { value: new THREE.Vector3(0, 1, 0) },
+      moonGain: { value: 0 },
+      moonRad: { value: THREE.MathUtils.degToRad(0.75) },
+      moonTex: { value: null },
+      moonHas: { value: 0 },
       nightSky: { value: new THREE.Vector3() }, // 夜空のほのかな明るさ（地平線ほど明るい）
     };
 
@@ -144,7 +151,9 @@ export class RealtimeAtmosphere {
         uniform sampler2D sceneTex, atmTex, depthTex;
         uniform vec2 atmTexel;
         uniform mat4 invProj, camWorld;
-        uniform float starI, logDepthK;
+        uniform float starI, logDepthK, moonGain, moonRad, moonHas;
+        uniform vec3 moonDir, moonSun;
+        uniform sampler2D moonTex;
         uniform vec3 nightSky, sunDir, sunE, ambient, sunScreen;
         uniform vec2 pixel;
         // 視線方向の距離（対数の深度から）
@@ -240,6 +249,20 @@ export class RealtimeAtmosphere {
             float lum = dot( col, vec3( 0.2126, 0.7152, 0.0722 ) );
             col += ( stars( d ) + milkyWay( d ) * 0.07 ) * starI * exp( - lum * 6.0 );
             col += nightSky * a.a * ( 0.35 + 0.65 * ( 1.0 - clamp( d.y, 0.0, 1.0 ) ) );
+          }
+          // 月：表側をこちらに向けた円盤（右が東、上が北）。太陽の側が光る
+          if ( moonGain > 0.0 && texture2D( depthTex, vUv ).r >= 0.99999 && c.a > 0.5 && dot( dirV, moonDir ) > cos( moonRad ) - 1e-5 ) {
+            vec3 mr = normalize( cross( moonDir, vec3( 0.0, 1.0, 0.0 ) ) ), mu = cross( mr, moonDir );
+            float sr = sin( moonRad );
+            float ox = dot( dirV, mr ) / sr, oy = dot( dirV, mu ) / sr, r2 = ox * ox + oy * oy;
+            if ( r2 < 1.0 ) {
+              float z = sqrt( 1.0 - r2 );
+              vec3 n = mr * ox + mu * oy - moonDir * z;
+              float lit = smoothstep( -0.04, 0.12, dot( n, moonSun ) ) + 0.01;
+              float alb = moonHas > 0.5 ? texture2D( moonTex, vec2( atan( ox, z ) / 6.2831853 + 0.5, 0.5 - asin( clamp( oy, -1.0, 1.0 ) ) / 3.1415927 ) ).r * 0.9 : 0.85;
+              float edge = 1.0 - smoothstep( 0.96, 1.0, r2 );
+              col += vec3( 1.0, 0.97, 0.9 ) * alb * lit * edge * moonGain * exp( - 0.12 / max( 0.06, dirV.y + 0.04 ) );
+            }
           }
           gl_FragColor = vec4( col, 1.0 );
           #include <tonemapping_fragment>
