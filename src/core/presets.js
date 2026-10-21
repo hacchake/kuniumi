@@ -80,9 +80,11 @@ export const PRESETS = [
         season: 'autumn',
         noise: { seed: 5150, frequency: 2.8, ridged: 0.35, warp: 0.45, valley: 1.8, falloff: 0.25, erosion: 0.7 },
       },
-      vegetation: { trees: 1, conifer: 0.15, treeHeight: 18 },
+      // 紅葉の森を急な斜面にも登らせる（尾根が鋭く、いつもの斜面の上限では木が谷底にしか立たなかった）
+      vegetation: { trees: 1, conifer: 0.15, treeHeight: 18, treeSlope: 1.7 },
       sun: { elevation: 18, azimuth: 235 },
-      atmosphere: { turbidity: 5, rayleigh: 2.0, haze: 0.35, clouds: 0.4, rays: 0.7, exposure: 0.12 },
+      // 秋の澄んだ空気（かすみが濃いと紅葉の色が灰色にくすむ）
+      atmosphere: { turbidity: 3, rayleigh: 2.0, haze: 0.2, clouds: 0.4, rays: 0.7, exposure: 0.12 },
       water: { level: 0, color: '#183a40' },
       camera: { position: [3800, 1100, 4600], target: [-300, 250, 0], fov: 45 },
     },
