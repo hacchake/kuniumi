@@ -14,6 +14,21 @@ function celestial(type, position, size, material, name, rotation = [0, 0, 0], s
   return o;
 }
 
+// 環礁の形（手彫りの跡）：ノイズの島を海の底へならし（少しだけ起伏を残す）、内側を浅い礁湖にして、
+// 半径 2.2 km の輪に沿って大きさのばらついた盛り上がりを並べる。重なった所は細長い島、離れた所は水路になる
+function atollStrokes() {
+  const out = [{ x: 0, z: 0, r: 6000, flat: -22, k: 0.9 }, { x: 0, z: 0, r: 2000, flat: -5, k: 0.95 }];
+  const n = 26;
+  for (let i = 0; i < n; i++) {
+    const h = Math.abs(Math.sin(i * 12.9898 + 4.1) * 43758.5453) % 1;
+    const h2 = Math.abs(Math.sin(i * 78.233 + 1.7) * 43758.5453) % 1;
+    const a = (i / n) * Math.PI * 2 + (h - 0.5) * 0.15;
+    const R = 2200 * (0.92 + h2 * 0.16) * (1 + 0.08 * Math.sin(a * 3 + 1));
+    out.push({ x: Math.round(Math.cos(a) * R), z: Math.round(Math.sin(a) * R), r: Math.round(380 + h * 260), h: Math.round(22 + h2 * 16) });
+  }
+  return out;
+}
+
 export const PRESETS = [
   {
     id: 'azure',
@@ -115,13 +130,15 @@ export const PRESETS = [
         heightScale: 160,
         baseHeight: -45,
         noise: { seed: 808, frequency: 1.5, octaves: 7, ridged: 0.1, warp: 0.9, valley: 1.2, falloff: 0.85, erosion: 0.2 },
-        palette: { shore: '#f1e7c9', low: '#4f8a3a', high: '#6b9a44', rock: '#9a8a6a' },
+        // 南の島に雪は積もらない（雪線は起伏に対する割合なので、低い島では丘の上が雪になっていた）
+        palette: { shore: '#f1e7c9', low: '#4f8a3a', high: '#6b9a44', rock: '#9a8a6a', snowLine: 1.5 },
+        sculpt: atollStrokes(),
       },
       vegetation: { trees: 0.55, conifer: 0, treeHeight: 14, tropical: 0.75 },
       sun: { elevation: 62, azimuth: 150 },
       atmosphere: { turbidity: 2.5, rayleigh: 2.4, haze: 0.18, clouds: 0.35, cloudAltitude: 1200, exposure: 0.1 },
       water: { level: 0, color: '#13a0a6', distortion: 1.8, waveScale: 1.4 },
-      camera: { position: [-2600, 900, 3000], target: [0, 0, 0], fov: 50 },
+      camera: { position: [-3300, 520, 3900], target: [400, 0, -300], fov: 50 },
     },
   },
   {
