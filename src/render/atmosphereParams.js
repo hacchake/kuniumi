@@ -1,4 +1,4 @@
-import { sunDirection, hazeColor } from '../core/sun.js';
+import { sunDirection, hazeColor, nightFactor, NIGHT_SKY, moonDirection, moonIllumination } from '../core/sun.js';
 import { skyParams, sunIrradiance, skyRadiance } from '../core/skyModel.js';
 
 // シーン JSON から、雲と霧の計算に渡す値を組み立てる（一枚絵・リアルタイム表示で共通）
@@ -47,6 +47,16 @@ function skyAmbient(s, a) {
   return horizon.map((v, k) => v * 0.5 + (dome[k] / w) * (lh / ld) * 0.5);
 }
 
+// 夜の空の光の強さ（0..1 の夜の度合いに、月の明かりを掛け合わせる）
+function nightGlow(s) {
+  const night = nightFactor(s.sun.elevation);
+  if (night <= 0) return 0;
+  const age = s.sun.moonAge ?? 12;
+  const md = moonDirection(sunDirection(s.sun.elevation, s.sun.azimuth), age);
+  const moon = moonIllumination(age) * Math.min(1, Math.max(0, (md[1] + 0.02) / 0.3));
+  return night * (0.35 + 0.65 * moon);
+}
+
 export function atmosphereParams(s) {
   const a = s.atmosphere;
   const sunDir = sunDirection(s.sun.elevation, s.sun.azimuth);
@@ -56,7 +66,9 @@ export function atmosphereParams(s) {
     sunE: sunIrradiance(p).map((v) => v * s.sun.intensity),
     // 霧や雲に当たる空の光：地平線近くの空の明るさ
     // 厚い雲の下では、雲を通った光で灰色に
-    ambient: toOvercast(skyAmbient(s, a).map((v) => v * a.ambient * 0.8), overcastAmount(a)),
+    // 夜は空の光がほぼ 0 になり、雲や霧が真っ黒な影絵になった。地面を照らす夜の光（NIGHT_SKY）と同じ明るさを足す。
+    // 月が出ていれば明るく（満月の夜の雲は月明かりで銀灰色に見える）
+    ambient: toOvercast(skyAmbient(s, a).map((v, i) => (v + NIGHT_SKY[i] * nightGlow(s)) * a.ambient * 0.8), overcastAmount(a)),
     fog: {
       density: a.haze * 1e-4,
       height: a.fogHeight,
