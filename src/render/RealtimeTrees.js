@@ -16,6 +16,8 @@ const MAX_NEAR = 6000;
 const BLOCKS_PER_FRAME = 6;
 // 足元の草：カメラが地面に近いとき（GRASS_ABOVE m 以内）、周り GRASS_R m に GRASS_CELL m ごと 1 株まで
 const GRASS_R = 35, GRASS_CELL = 0.55, GRASS_MAX = 6000, GRASS_ABOVE = 40;
+// 足元の岩：周り ROCK_R m に ROCK_CELL m ごと 1 つまで（一枚絵と同じ岩の規則）
+const ROCK_R = 60, ROCK_CELL = 2.5, ROCK_MAX = 2500;
 
 // 遠景用の軽い形（1 本あたり十数〜数十三角形）
 function lowConifer() {
@@ -148,11 +150,12 @@ export class RealtimeTrees {
     parent.add(this.group);
     this.snowU = { value: 0 }; // 葉に乗る雪（0..1）
     this.windU = { t: { value: 0 }, amp: { value: 0.012 } }; // 風の揺れ（時間・強さ = 木の高さに対する梢の振れ）
-    const mat = (color, snow = false) => {
+    const mat = (color, snow = false, wind = true) => {
       const m = new THREE.MeshStandardMaterial({ color, roughness: 0.85, metalness: 0 });
       m.defines = { KUNIUMI_VERTEX_CLOUD: '' }; // 雲の影は頂点ごと（葉が重なっても軽く）
       patchMaterial?.(m);
-      // 風で揺れる：高い所ほど大きく（高さの 2 乗）、木ごとに位相をずらし、ときどき突風
+      // 風で揺れる：高い所ほど大きく（高さの 2 乗）、木ごとに位相をずらし、ときどき突風（岩は揺らさない）
+      if (!wind) return m;
       const prevW = m.onBeforeCompile;
       m.onBeforeCompile = (sh, r) => {
         prevW?.call(m, sh, r);
@@ -239,6 +242,26 @@ if ( kTreeSnow > 0.0 ) diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.8, 0.83
     this.grass.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.grassGroup.add(this.grass);
     this.grassAt = null;
+    // 岩：でこぼこの多面体を少し平たく（地面に半分埋める）
+    const rockGeo = new THREE.IcosahedronGeometry(0.5, 1);
+    {
+      const p = rockGeo.attributes.position;
+      for (let i = 0; i < p.count; i++) {
+        const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+        const h = Math.abs(Math.sin(x * 61.3 + y * 27.7 + z * 43.1) * 43758.5453) % 1;
+        const k = 0.8 + h * 0.35;
+        p.setXYZ(i, x * k, y * k * 0.62 + 0.12, z * k);
+      }
+      rockGeo.computeVertexNormals();
+    }
+    this.rockMat = mat(new THREE.Color('#8a8379'), false, false);
+    this.rocks = new THREE.InstancedMesh(rockGeo, this.rockMat, ROCK_MAX);
+    this.rocks.count = 0;
+    this.rocks.frustumCulled = false;
+    this.rocks.castShadow = true;
+    this.rocks.receiveShadow = true;
+    this.rocks.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.grassGroup.add(this.rocks);
     this.blocks = new Map(); // "bi,bj" → { conifer: [...], broadleaf: [...] }（世界座標）
     this.key = null;
     this.origin = new THREE.Vector2(NaN, NaN);
@@ -305,6 +328,7 @@ if ( kTreeSnow > 0.0 ) diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.8, 0.83
     this.group.visible = !!enabled;
     if (!enabled) {
       this.grass.count = 0;
+      this.rocks.count = 0;
       this.grassAt = null;
       return;
     }
@@ -320,6 +344,8 @@ if ( kTreeSnow > 0.0 ) diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.8, 0.83
       if (key !== this.key) {
         this.key = key;
         this.blocks.clear();
+        // 岩の色：地形の岩肌の色に少し明るい灰色を混ぜる（一枚絵と同じ）
+        this.rockMat.color.set(t.palette.rock ?? '#8a8379').lerp(new THREE.Color('#8e8880'), 0.3);
         this.rules = createVegetationRules({ heightScale: t.heightScale, baseHeight: t.baseHeight, waterLevel: s.water.level, waterEnabled: s.water.enabled, palette: t.palette, vegetation: veg, realWorld: t.mode === 'heightmap' && !!t.heightmap?.geo, photo: this.photo, size: t.size, lakes: this.lakes });
         this.dirty = true;
       }
@@ -400,8 +426,9 @@ if ( kTreeSnow > 0.0 ) diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.8, 0.83
   // 足元の草：カメラが 4 m 動くか、植生が変わったら置き直す
   #updateGrass(cam, terrain, above) {
     const veg = this.rules?.veg;
-    if (!veg || !(veg.grass > 0) || above > GRASS_ABOVE) {
+    if (!veg || above > GRASS_ABOVE) {
       this.grass.count = 0;
+      this.rocks.count = 0;
       this.grassAt = null;
       return;
     }
@@ -425,7 +452,23 @@ if ( kTreeSnow > 0.0 ) diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.8, 0.83
         if (list.length >= GRASS_MAX * 5) break;
       }
     }
-    fillInstances(this.grass, list, 0.35, 9);
+    fillInstances(this.grass, veg.grass > 0 ? list : [], 0.35, 9);
+    // 岩（大きさは小さいものほど多く）
+    const rocks = [];
+    const r0 = Math.floor((cam.x - ROCK_R) / ROCK_CELL), r1 = Math.ceil((cam.x + ROCK_R) / ROCK_CELL);
+    const q0 = Math.floor((cam.z - ROCK_R) / ROCK_CELL), q1 = Math.ceil((cam.z + ROCK_R) / ROCK_CELL);
+    for (let j = q0; j <= q1 && rocks.length < ROCK_MAX * 5; j++) {
+      for (let i = r0; i <= r1; i++) {
+        const x = (i + hash(i, j, 11)) * ROCK_CELL, z = (j + hash(i, j, 12)) * ROCK_CELL;
+        if (Math.hypot(x - cam.x, z - cam.z) > ROCK_R) continue;
+        const sm = terrain.sample(x, z);
+        if (hash(i, j, 13) > this.rules.rocks(sm.h, sm.slope, sm.wv, x, z) * 0.6) continue;
+        const b = hash(i, j, 14);
+        rocks.push(x - ox, terrain.groundAt(x, z) - 0.05, z - oz, (0.25 + b * b * 1.6) * (veg.rockSize ?? 1), hash(i, j, 15) * Math.PI * 2);
+        if (rocks.length >= ROCK_MAX * 5) break;
+      }
+    }
+    fillInstances(this.rocks, rocks, 0.25, 21);
   }
 
   #grow(bi, bj, size, terrain) {
