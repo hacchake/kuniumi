@@ -1058,15 +1058,26 @@ function applyBloom(hdr, W, H, amount) {
     }
   }
   const tmp = new Float32Array(small.length);
-  const r = Math.max(2, Math.round(w * 0.012));
-  for (let pass = 0; pass < 3; pass++) {
+  // 箱型のぼかしを 5 回重ねてガウス分布に近づける（3 回では太陽のような強い光のにじみが四角く見えた）。
+  // 回数を増やしたぶん半径を縮め、広がりは同じくらいに
+  const r = Math.max(2, Math.round(w * 0.012 * Math.sqrt(3 / 5)));
+  for (let pass = 0; pass < 5; pass++) {
     boxBlur(small, tmp, w, h, r, true);
     boxBlur(tmp, small, w, h, r, false);
   }
+  // 縮めた絵を双一次補間で戻す（最近傍では 4×4 画素の段が見えた）
   for (let y = 0; y < H; y++) {
+    const fy = Math.min(h - 1, Math.max(0, (y + 0.5) / f - 0.5));
+    const y0 = Math.floor(fy), y1 = Math.min(h - 1, y0 + 1), ty = fy - y0;
     for (let x = 0; x < W; x++) {
-      const o = (y * W + x) * 4, so = ((y / f | 0) * w + (x / f | 0)) * 3;
-      for (let c = 0; c < 3; c++) hdr[o + c] = hdr[o + c] * (1 - amount) + small[so + c] * amount;
+      const fx = Math.min(w - 1, Math.max(0, (x + 0.5) / f - 0.5));
+      const x0 = Math.floor(fx), x1 = Math.min(w - 1, x0 + 1), tx = fx - x0;
+      const a00 = (y0 * w + x0) * 3, a10 = (y0 * w + x1) * 3, a01 = (y1 * w + x0) * 3, a11 = (y1 * w + x1) * 3;
+      const o = (y * W + x) * 4;
+      for (let c = 0; c < 3; c++) {
+        const v = (small[a00 + c] * (1 - tx) + small[a10 + c] * tx) * (1 - ty) + (small[a01 + c] * (1 - tx) + small[a11 + c] * tx) * ty;
+        hdr[o + c] = hdr[o + c] * (1 - amount) + v * amount;
+      }
     }
   }
 }
