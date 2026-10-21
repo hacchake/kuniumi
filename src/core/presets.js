@@ -149,7 +149,8 @@ export const PRESETS = [
       terrain: { heightScale: 1300, baseHeight: -200, noise: { seed: 7272, frequency: 2.4, ridged: 0.4, falloff: 0.4 } },
       vegetation: { trees: 0.75 },
       // 太陽は見ている向きの真後ろ・低め（虹は太陽と反対側の空に出る）
-      sun: { elevation: 9, azimuth: 221 },
+      // 月は細い月（太陽のそば＝見ている向きの後ろ）に。満月に近いと太陽の反対側＝虹の輪の中に白く浮いて目障り
+      sun: { elevation: 9, azimuth: 221, moonAge: 2 },
       atmosphere: { turbidity: 6, rayleigh: 2.2, haze: 0.5, clouds: 0.45, cloudDensity: 0.7, precip: 'rain', rays: 0.6, exposure: 0.13 },
       water: { level: 0, color: '#123c48' },
       // 低い所から少し見上げる（虹は太陽と反対の点から 42° の輪なので、空の高い所に出る）
