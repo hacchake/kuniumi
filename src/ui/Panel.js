@@ -1,6 +1,7 @@
 import { getIn, RESOLUTIONS, SIZE_MIN, SIZE_MAX, createDefaultScene } from '../core/schema.js';
 import { solarPosition, moonAge } from '../core/sun.js';
 import { t } from '../i18n/index.js';
+import { pickFile, blobToDataURL } from '../io/files.js';
 
 // 天気のひな形（大気の項目をまとめて変える）
 const WEATHER = {
@@ -59,6 +60,11 @@ const HINTS = {
   'vegetation.reeds': '一枚絵の水際の葦の量の倍率',
   'vegetation.rocks': '一枚絵の足元の岩・石の量の倍率',
   'vegetation.rockSize': '一枚絵の岩・石の大きさの倍率',
+  'vegetation.models.conifer': '一枚絵の針葉樹を、自分の glb モデルに置き換える（素材の色を使う）',
+  'vegetation.models.broadleaf': '一枚絵の広葉樹を、自分の glb モデルに置き換える（素材の色を使う）',
+  'vegetation.models.grass': '一枚絵の足元の草を、自分の glb モデルに置き換える',
+  'vegetation.models.fern': '一枚絵の森の下草を、自分の glb モデルに置き換える',
+  'vegetation.models.rock': '一枚絵の岩・石を、自分の glb モデルに置き換える',
   'vegetation.trees': '森の広さと密度。リアルタイムでは森の色、一枚絵では木そのものが描かれる',
   'vegetation.grass': '一枚絵で、カメラが地面に近いときに足元へ草を置く。草は幹の根元を避け、樹冠の下では薄くなる',
   'vegetation.litter': '一枚絵で、木の下に落ち葉（針葉樹の下は落ち針）を敷く。幹に近いほど厚く積もる',
@@ -209,6 +215,18 @@ const SECTIONS = [
     ],
   },
   {
+    id: 'models',
+    title: '自分のモデル',
+    sub: 'Custom plants',
+    fields: [
+      { path: 'vegetation.models.conifer', label: '針葉樹', type: 'plantModel' },
+      { path: 'vegetation.models.broadleaf', label: '広葉樹', type: 'plantModel' },
+      { path: 'vegetation.models.grass', label: '草', type: 'plantModel' },
+      { path: 'vegetation.models.fern', label: '下草', type: 'plantModel' },
+      { path: 'vegetation.models.rock', label: '岩・石', type: 'plantModel' },
+    ],
+  },
+  {
     id: 'sun',
     title: '太陽',
     sub: 'Sun',
@@ -349,7 +367,7 @@ export class Panel {
     const changes = {};
     for (const f of sec.fields) {
       // 種と生成方法は作品の中身そのものなので戻さない
-      if (f.type === 'seed' || f.type === 'sizePreset' || f.type === 'sunTime' || f.type === 'weather' || f.type === 'cameraPath' || f.type === 'route' || f.type === 'sculpt' || f.path === 'terrain.mode') continue;
+      if (f.type === 'seed' || f.type === 'sizePreset' || f.type === 'sunTime' || f.type === 'weather' || f.type === 'cameraPath' || f.type === 'route' || f.type === 'sculpt' || f.type === 'plantModel' || f.path === 'terrain.mode') continue;
       changes[f.path] = getIn(def, f.path);
     }
     this.store.patch(changes, { source: 'ui-reset' });
@@ -475,6 +493,50 @@ export class Panel {
           const n = (v?.length ?? 0) + (this.store.get().vegetation?.paint?.length ?? 0);
           count.textContent = t('{n} 筆', { n });
           clear.disabled = !n;
+        },
+        el: box,
+      });
+      return row;
+    }
+    if (f.type === 'plantModel') {
+      // 自分のモデル（glb）で一枚絵の植物を置き換える：名前、読み込む・外す
+      const box = document.createElement('div');
+      box.className = 'path-btns';
+      const info = document.createElement('span');
+      info.className = 'path-count route-info';
+      const btn = (label, title, fn) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = label;
+        b.title = title;
+        b.onclick = (e) => {
+          e.preventDefault();
+          fn();
+        };
+        box.appendChild(b);
+        return b;
+      };
+      btn(t('読み込む…'), t('glb のモデルを選ぶ（根元を地面に、木・草は高さ、岩は最も長い辺に合わせて置く）'), async () => {
+        const file = await pickFile('.glb,model/gltf-binary');
+        if (!file) return;
+        try {
+          const glb = await blobToDataURL(new Blob([await file.arrayBuffer()], { type: 'model/gltf-binary' }));
+          const { loadPlantModel } = await import('../three/customPlants.js');
+          const m = await loadPlantModel(glb, { unitBy: f.path.endsWith('.rock') ? 'max' : 'height' });
+          this.store.set(f.path, { name: file.name, glb, triangles: m.triangles }, { source: 'ui-btn' });
+        } catch (err) {
+          window.dispatchEvent(new CustomEvent('kuniumi:toast', { detail: t('モデルを読めません: {msg}', { msg: err.message ?? err }) }));
+        }
+      });
+      const clear = btn('✕', t('いつもの形に戻す'), () => this.store.set(f.path, null, { source: 'ui-btn' }));
+      box.appendChild(info);
+      row.appendChild(box);
+      this.bindings.push({
+        f,
+        read: (v) => {
+          info.textContent = v ? `${v.name}・${Math.round(v.triangles ?? 0).toLocaleString()} ${t('面')}` : t('いつもの形');
+          info.title = info.textContent;
+          clear.disabled = !v;
         },
         el: box,
       });

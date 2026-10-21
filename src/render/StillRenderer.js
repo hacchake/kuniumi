@@ -20,6 +20,7 @@ import { curvePoint, DISC_RATIO, DISC_SEG } from '../core/curvature.js';
 import { buildSurroundMesh } from '../core/surroundMesh.js';
 import { STILL_SEA_FLOOR } from '../core/terrainLod.js';
 import { lakeMeshData } from '../core/lakes.js';
+import { loadPlantModel } from '../three/customPlants.js';
 
 // 川・湖の印（PNG）から、粗さの地図（水 = なめらか）と、水の所を暗くした写真を作る（どちらも行 0 = 北、flipY のまま）
 async function waterTextures(maskUrl, photoTex) {
@@ -670,6 +671,17 @@ export class StillJob {
     const plants = [];
     if (terrain.lod?.plants) {
       const P = terrain.lod.plants;
+      // 自分のモデルで置き換える植物（植生の「自分のモデル」）。読めなければいつもの形のまま
+      const custom = {};
+      for (const [kind, m] of Object.entries(s.vegetation.models ?? {})) {
+        if (!m?.glb) continue;
+        try {
+          custom[kind] = (await loadPlantModel(m.glb, { unitBy: kind === 'rock' ? 'max' : 'height' })).geometry;
+        } catch (err) {
+          console.warn(`植物のモデル（${kind}）を読めません`, err);
+        }
+      }
+      const white = new THREE.Color(1, 1, 1);
       const add = (geo, color, list, opts = {}) => {
         if (!list.length) return;
         const mat = new THREE.MeshStandardMaterial({ color, roughness: opts.roughness ?? 0.85, metalness: 0, side: opts.side ?? THREE.FrontSide, vertexColors: !!geo.attributes.color });
@@ -717,7 +729,8 @@ export class StillJob {
       const lite = {};
       const liteConifer = () => (lite.c ??= (({ trunk, crown }) => ({ trunk: shade(trunk, 1), crown: shade(crown, 0.72) }))(coniferGeometry()));
       const liteBroadleaf = () => (lite.b ??= (({ trunk, crown }) => ({ trunk: shade(trunk, 1), crown: shade(crown, 0.75) }))(broadleafGeometry()));
-      const [conNear, conFar] = nearFar(P.conifer);
+      const [conNear, conFar] = custom.conifer ? [[], []] : nearFar(P.conifer);
+      if (custom.conifer) add(custom.conifer.clone(), white, P.conifer, { side: THREE.DoubleSide, colorVar: 0.25, seed: 3 });
       split(conNear, 3).forEach((list, i) => {
         const g = detailedConifer(i + 1);
         add(g.trunk, trunk, list);
@@ -738,7 +751,8 @@ export class StillJob {
         add(g.trunk, palmTrunk, list);
         add(g.crown, palmCol, list, { side: THREE.DoubleSide, colorVar: 0.3, seed: 51 + i, roughness: 0.6 });
       });
-      const [broadNear, broadFar] = nearFar(broad);
+      const [broadNear, broadFar] = custom.broadleaf ? [[], []] : nearFar(broad);
+      if (custom.broadleaf) add(custom.broadleaf.clone(), white, broad, { side: THREE.DoubleSide, colorVar: 0.3, seed: 5 });
       if (broadFar.length) {
         const g = liteBroadleaf();
         add(g.trunk, trunk, broadFar);
@@ -756,17 +770,20 @@ export class StillJob {
       else if (s.terrain.season === 'winter') grassCol.lerp(new THREE.Color('#8f7c5c'), 0.7);
       else if (s.terrain.season === 'spring') grassCol.lerp(new THREE.Color('#7fb048'), 0.3);
       const grassLists = split(P.grass, 3);
-      grassLists.forEach((list, i) => add(detailedGrass(i + 1), grassCol, list, { side: THREE.DoubleSide, roughness: 0.6, colorVar: 0.35, seed: 9 + i }));
+      if (custom.grass) add(custom.grass.clone(), white, P.grass, { side: THREE.DoubleSide, roughness: 0.6, colorVar: 0.35, seed: 9 });
+      else grassLists.forEach((list, i) => add(detailedGrass(i + 1), grassCol, list, { side: THREE.DoubleSide, roughness: 0.6, colorVar: 0.35, seed: 9 + i }));
       // 岩と石（形の違う 4 種）。色は大地の岩の色を明るめに
       // 岩の色：大地の岩肌の色に少しだけ明るい灰色を混ぜる（強く寄せると草の斜面で白く光って浮く）
       const rockCol = new THREE.Color(s.terrain.palette.rock).lerp(new THREE.Color('#8e8880'), 0.3);
-      split(P.rocks ?? [], 4).forEach((list, i) => add(detailedRock(i + 1), rockCol, list, { roughness: 0.9, colorVar: 0.25, seed: 21 + i }));
+      if (custom.rock) add(custom.rock.clone(), white, P.rocks ?? [], { roughness: 0.9, colorVar: 0.25, seed: 21 });
+      else split(P.rocks ?? [], 4).forEach((list, i) => add(detailedRock(i + 1), rockCol, list, { roughness: 0.9, colorVar: 0.25, seed: 21 + i }));
       // シダ（森の下草）
       const fernCol = new THREE.Color(s.terrain.season === 'autumn' ? '#5a6a26' : '#3a6a22');
       if (s.terrain.season !== 'winter') {
         // 熱帯では、下草の一部が幅広の葉の株に
         const [trop, ferns] = split(P.ferns ?? [], 2, 5.1, tropical * 0.6);
-        split(ferns, 2).forEach((list, i) => add(detailedFern(i + 1), fernCol, list, { side: THREE.DoubleSide, roughness: 0.65, colorVar: 0.3, seed: 41 + i }));
+        if (custom.fern) add(custom.fern.clone(), white, ferns, { side: THREE.DoubleSide, roughness: 0.65, colorVar: 0.3, seed: 41 });
+        else split(ferns, 2).forEach((list, i) => add(detailedFern(i + 1), fernCol, list, { side: THREE.DoubleSide, roughness: 0.65, colorVar: 0.3, seed: 41 + i }));
         split(trop, 2).forEach((list, i) => add(detailedTropicalPlant(i + 1), new THREE.Color('#3f7a28'), list, { side: THREE.DoubleSide, roughness: 0.5, colorVar: 0.35, seed: 45 + i }));
       }
       // 落ち葉・落ち針（木の下）。季節で色を変える（秋は鮮やかな赤茶、ほかは枯れた茶）

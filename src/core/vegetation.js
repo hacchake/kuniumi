@@ -28,7 +28,9 @@ export function defaultVegetation() {
     rocks: 1, // 岩・石の量の倍率（一枚絵）
     rockSize: 1, // 岩・石の大きさの倍率（一枚絵）
     flowers: 0.25, // 野の花：草の株のうち花をつける割合（一枚絵）
-    litter: 0.6, // 木の下の落ち葉・落ち針の量（一枚絵で、カメラが地面に近いときだけ）
+    litter: 0.6,
+    // 自分のモデルで置き換える植物（一枚絵）：{ name, glb(dataURL), triangles }。null ならいつもの形
+    models: { conifer: null, broadleaf: null, grass: null, fern: null, rock: null }, // 木の下の落ち葉・落ち針の量（一枚絵で、カメラが地面に近いときだけ）
     tropical: 0, // 熱帯の割合（一枚絵で、広葉樹のうちヤシになる割合。下草も大きな葉の熱帯の株が混ざる）
     seed: 77,
     paint: [], // 手で植えた・伐った跡：[{ x, z, r, v }]（v = 1 植える、-1 伐る）。リアルタイム表示と一枚絵の両方に効く
