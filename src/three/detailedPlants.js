@@ -187,36 +187,65 @@ export function detailedConifer(seed = 1) {
 export function detailedGrass(seed = 1) {
   const rand = mulberry32(seed * 31 + 5);
   const pos = [], nrm = [], col = [];
+  const up = new THREE.Vector3(0, 1, 0);
   for (let i = 0; i < 48; i++) {
     const a = rand() * Math.PI * 2;
     const r0 = Math.sqrt(rand()) * 0.24;
     const bx = Math.cos(a) * r0, bz = Math.sin(a) * r0;
     const lean = 0.08 + rand() * 0.45;
     const la = a + (rand() - 0.5) * 1.2;
-    const h = 0.45 + rand() * 0.6;
+    const h = 0.4 + rand() * 0.7;
     const w = 0.012 + rand() * 0.01;
-    const segs = 4;
-    const v = 0.75 + rand() * 0.5;
+    const segs = 5;
+    // 葉ごとの色：明るさと色合いをばらつかせ、1 割ほどは枯れた黄土色の葉。先は枯れ色に
+    const v = 0.7 + rand() * 0.55;
+    const dry = rand() < 0.12;
+    const hue = (rand() - 0.5) * 0.3; // 正 = 黄み、負 = 青み
+    const tipDry = 0.6 + rand() * 0.3; // ここ（0..1）より先が枯れ始める
     const pts = [];
     for (let s = 0; s <= segs; s++) {
       const t = s / segs;
       const off = lean * t * t * h;
-      pts.push([bx + Math.cos(la) * off, t * h * (1 - lean * t * 0.25), bz + Math.sin(la) * off, w * (1 - t * 0.95), t]);
+      pts.push(new THREE.Vector3(bx + Math.cos(la) * off, t * h * (1 - lean * t * 0.25), bz + Math.sin(la) * off));
     }
-    const px = -Math.sin(la), pz = Math.cos(la);
+    const side = new THREE.Vector3(-Math.sin(la), 0, Math.cos(la));
     for (let s = 0; s < segs; s++) {
-      const [x0, y0, z0, w0, t0] = pts[s], [x1, y1, z1, w1, t1] = pts[s + 1];
-      const quad = [
-        [x0 - px * w0, y0, z0 - pz * w0, t0], [x0 + px * w0, y0, z0 + pz * w0, t0], [x1 + px * w1, y1, z1 + pz * w1, t1],
-        [x0 - px * w0, y0, z0 - pz * w0, t0], [x1 + px * w1, y1, z1 + pz * w1, t1], [x1 - px * w1, y1, z1 - pz * w1, t1],
-      ];
-      for (const [x, y, z, t] of quad) {
-        pos.push(x, y, z);
-        // 法線は上寄り（草原がふんわり明るく見える）
-        nrm.push(Math.cos(la) * 0.3, 0.9, Math.sin(la) * 0.3);
-        const c = v * (0.45 + 0.75 * t); // 根元は陰で暗く、先は明るい
-        col.push(c * (1 + t * 0.12), c, c * (1 - t * 0.15));
-      }
+      const t0 = s / segs, t1 = (s + 1) / segs;
+      const p0 = pts[s], p1 = pts[s + 1];
+      const tang = p1.clone().sub(p0).normalize();
+      // 葉の面の向き：横向きと伸びる向きから。上向きと半々に混ぜる（草原が暗くなりすぎないように）
+      const face = new THREE.Vector3().crossVectors(side, tang).normalize();
+      if (face.y < 0) face.negate();
+      const w0 = w * (1 - t0 * 0.95), w1 = w * (1 - t1 * 0.95);
+      // 中肋で左右に少し折る（左右の半面で光の当たり方が違う）
+      const fold = (wid) => face.clone().multiplyScalar(-wid * 0.35);
+      const m0 = p0, m1 = p1;
+      const l0 = p0.clone().addScaledVector(side, -w0).add(fold(w0)), r0 = p0.clone().addScaledVector(side, w0).add(fold(w0));
+      const l1 = p1.clone().addScaledVector(side, -w1).add(fold(w1)), r1 = p1.clone().addScaledVector(side, w1).add(fold(w1));
+      const nL = face.clone().addScaledVector(side, -0.35).normalize().lerp(up, 0.45).normalize();
+      const nR = face.clone().addScaledVector(side, 0.35).normalize().lerp(up, 0.45).normalize();
+      const colAt = (t) => {
+        let c = v * (0.42 + 0.78 * t); // 根元は陰で暗く、先は明るい
+        let r = c * (1 + hue + t * 0.1), g = c, bb = c * (1 - hue * 0.8 - t * 0.15);
+        const brown = dry ? 1 : Math.max(0, (t - tipDry) / (1 - tipDry)) * 0.8;
+        // 枯れ色（素材の緑に掛けて黄土色になる倍率）
+        r += (c * 1.9 - r) * brown;
+        g += (c * 1.35 - g) * brown;
+        bb += (c * 0.7 - bb) * brown;
+        return [r, g, bb];
+      };
+      const c0 = colAt(t0), c1 = colAt(t1);
+      const tri = (A, B, C, n, cA, cB, cC) => {
+        for (const [P, cc] of [[A, cA], [B, cB], [C, cC]]) {
+          pos.push(P.x, P.y, P.z);
+          nrm.push(n.x, n.y, n.z);
+          col.push(cc[0], cc[1], cc[2]);
+        }
+      };
+      tri(l0, m0, m1, nL, c0, c0, c1);
+      tri(l0, m1, l1, nL, c0, c1, c1);
+      tri(m0, r0, r1, nR, c0, c0, c1);
+      tri(m0, r1, m1, nR, c0, c1, c1);
     }
   }
   const g = new THREE.BufferGeometry();
