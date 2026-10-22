@@ -217,7 +217,10 @@ export function buildLodTerrain(terrain, water, view, { maxTriangles = 4_000_000
           (valueNoise(jx / 64, jz / 64, 11) - 0.5) * 0.5 +
           (valueNoise(jx / 8, jz / 8, 18) - 0.5) * 0.22 +
           (valueNoise(jx / 2, jz / 2, 25) - 0.5) * 0.12 +
-          (valueNoise(jx / 0.5, jz / 0.5, 32) - 0.5) * 0.06;
+          (valueNoise(jx / 0.5, jz / 0.5, 32) - 0.5) * 0.06 +
+          // 足元の土粒・小石の色むら（数 cm。頂点がそれより細かい近景でだけ見える）
+          (valueNoise(jx / 0.12, jz / 0.12, 39) - 0.5) * 0.12 * Math.min(1, Math.max(0, (0.06 - s) / 0.03)) +
+          (valueNoise(jx / 0.035, jz / 0.035, 46) - 0.5) * 0.1 * Math.min(1, Math.max(0, (0.018 - s) / 0.009));
         // くぼみの度合い：細かい起伏を足す前の地形で、周り 4 点の平均と比べる（区画の細かさによらず同じ値）
         let curv = 0;
         if (baseAt) {

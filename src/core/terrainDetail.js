@@ -54,3 +54,33 @@ export function detailHeight(x, z, cell, spacing, amount) {
   }
   return s * amount;
 }
+
+// 足元の細かな凹凸（一枚絵の近景だけ）：土の塊・小石の盛り上がり。波長 20 cm〜2.5 cm。
+// 頂点の間隔（spacing）がそれより十分細かい所だけに足すので、遠景には効かない。
+// 細かいほど相対的に急な凹凸にして（波長の 12%）、つるりとした面に見えないように
+const MICRO = [0.2, 0.1, 0.05, 0.025];
+export function microHeight(x, z, spacing) {
+  if (!(spacing < 0.1)) return 0;
+  let s = 0;
+  for (let o = 0; o < MICRO.length; o++) {
+    const lambda = MICRO[o];
+    const w = smooth(spacing * 2, spacing * 4, lambda);
+    if (w <= 0) break;
+    s += gradNoise(x / lambda, z / lambda, DETAIL_SEED + 50 + o) * lambda * 0.12 * w;
+  }
+  // 小石：15 cm 四方に 1 つほど、丸く盛り上がる（大きさはまちまち、ない所も多い）
+  const c = 0.15, ci = Math.floor(x / c), cj = Math.floor(z / c);
+  const wP = smooth(spacing * 2, spacing * 4, 0.06);
+  if (wP > 0) {
+    for (let dj = -1; dj <= 1; dj++)
+      for (let di = -1; di <= 1; di++) {
+        const i = ci + di, j = cj + dj;
+        if (hash2(i, j, DETAIL_SEED + 71) > 0.45) continue;
+        const px = (i + hash2(i, j, DETAIL_SEED + 72)) * c, pz = (j + hash2(i, j, DETAIL_SEED + 73)) * c;
+        const r = 0.015 + hash2(i, j, DETAIL_SEED + 74) * 0.035;
+        const d2 = ((x - px) ** 2 + (z - pz) ** 2) / (r * r);
+        if (d2 < 1) s += Math.sqrt(1 - d2) * r * 0.55 * wP;
+      }
+  }
+  return s;
+}

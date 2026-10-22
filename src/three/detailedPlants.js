@@ -253,8 +253,7 @@ export function detailedRock(seed = 1) {
   // 20 面体は頂点を共有しないので、そのままでは面ごとに平らな陰（角ばった多面体）になる。頂点をつないでなめらかな陰に
   const g0 = new THREE.IcosahedronGeometry(0.5, 4);
   g0.deleteAttribute('normal');
-  g0.deleteAttribute('uv');
-  const g = mergeVertices(g0);
+  const g = mergeVertices(g0); // uv（球の緯度経度）は残す：岩肌の模様の地図を貼る
   const p = g.attributes.position;
   // 方向ごとの凹凸：ランダムな方向の波を重ねる
   const waves = Array.from({ length: 9 }, (_, k) => ({ d: randDir(rand), f: 2 + k * 1.6 + rand() * 2, a: 0.16 / (1 + k * 0.7), ph: rand() * 6.28 }));
@@ -282,6 +281,7 @@ export function detailedRock(seed = 1) {
   }
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
   g.computeVertexNormals();
+  g.computeTangents(); // 凹凸の地図に使う
   return g.toNonIndexed();
 }
 

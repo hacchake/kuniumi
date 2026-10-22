@@ -1,7 +1,7 @@
 import { createNoiseSampler, generateNoiseFieldWithRange, sampleField, edgeFade } from './heightfield.js';
 import { applyErosion, erosionParams } from './erosion.js';
 import { applySculpt, roundPeaks } from './sculpt.js';
-import { detailHeight, shoreFade } from './terrainDetail.js';
+import { detailHeight, shoreFade, microHeight } from './terrainDetail.js';
 import { hash2 } from './noise.js';
 import { mixHeightmap, MIX_WEAR_RES } from './heightmapMix.js';
 
@@ -38,7 +38,8 @@ export function createTerrainSurface(terrain, heightmapImage = null, sea = null,
     let h = (raw(u, v, nyq) - base.min) / span;
     h = Math.pow(Math.max(0, h), noise.valley) * edgeFade(u, v, noise.falloff);
     if (wear) h += sampleField(wear, BASE, u, v);
-    return baseHeight + Math.max(0, h) * heightScale + deltaAt(u, v) * heightScale;
+    // 足元の細かな凹凸（頂点が数 cm より細かい近景だけ。一枚絵の地面がつるりとした面に見えないように）
+    return baseHeight + Math.max(0, h) * heightScale + deltaAt(u, v) * heightScale + microHeight(x, z, spacing);
   };
   const wearAt = (x, z) => (wear ? sampleField(wear, BASE, x / size + 0.5, z / size + 0.5) : 0);
   const gh0 = (u, v) => sampleField(base.field, BASE, u, v) + (wear ? sampleField(wear, BASE, u, v) : 0);
@@ -133,7 +134,7 @@ function heightmapSurface(terrain, img, sea, wear = null) {
   const heightAt = (x, z, spacing) => {
     const u = x / size + 0.5, v = z / size + 0.5;
     const h = baseHeight + (bicubic(u, v) + deltaAt(u, v)) * heightScale;
-    return h + detailAt(x, z, spacing) * shoreFade(h, sea);
+    return h + (detailAt(x, z, spacing) + microHeight(x, z, spacing)) * shoreFade(h, sea);
   };
   const wearAt = wear ? (x, z) => sampleField(wear, MIX_WEAR_RES, x / size + 0.5, z / size + 0.5) : () => 0;
   return { heightAt, wearAt, coarse: coarseFrom((u, v) => bicubic(u, v) + deltaAt(u, v), Math.max(W, H), terrain, wearAt) };

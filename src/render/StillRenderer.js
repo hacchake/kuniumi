@@ -22,6 +22,7 @@ import { STILL_SEA_FLOOR } from '../core/terrainLod.js';
 import { lakeMeshData } from '../core/lakes.js';
 import { loadPlantModel } from '../three/customPlants.js';
 import { loadMoonMap, sampleMoon } from '../three/moonTexture.js';
+import { gradNoise } from '../core/terrainDetail.js';
 
 // 川・湖の印（PNG）から、粗さの地図（水 = なめらか）と、水の所を暗くした写真を作る（どちらも行 0 = 北、flipY のまま）
 async function waterTextures(maskUrl, photoTex) {
@@ -532,6 +533,26 @@ export class StillJob {
       new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 1, specularIntensity: inlandWater ? 1 : 0.15, metalness: 0, map: innerPhoto, roughnessMap: inlandWater?.rough ?? null, emissiveMap: lightsTex, emissive: lightsTex ? new THREE.Color(1, 0.8, 0.55) : new THREE.Color(0), emissiveIntensity: lightsTex ? nf * 4 : 0 }),
     );
     terrainMesh.name = 'Terrain';
+    // 足元の細かな凹凸と色むら（土粒・小石・小さな窪み）：カメラの前の W m 四方にだけ、繰り返さない凹凸の地図と
+    // 明るさの地図を貼る（地形の頂点は 10 cm ほどより細かくならず、近景がつるりとした面に見えるため）。
+    // 衛星写真を貼る地形は uv を写真に使うので除く。カメラが高い所にあるときも要らない
+    {
+      const camGround = this.view.gpuTerrain?.heightAt?.(s.camera.position[0], s.camera.position[2]) ?? -Infinity;
+      const camAbove = s.camera.position[1] - Math.max(camGround, s.water.enabled ? s.water.level : -Infinity);
+      if (!innerPhoto && camAbove < 40 && !this.tuning.noGroundDetail) {
+        const W = Math.min(40, Math.max(16, camAbove * 4 + 14));
+        const fx = s.camera.target[0] - s.camera.position[0], fz = s.camera.target[2] - s.camera.position[2];
+        const fl = Math.hypot(fx, fz) || 1;
+        const c = [s.camera.position[0] - this.place.ox + (fx / fl) * W * 0.38, s.camera.position[2] - this.place.oz + (fz / fl) * W * 0.38];
+        const maps = groundDetailMaps(2048, W, c, (t.noise?.seed ?? 1) + 5);
+        addWaveUV(geo, c, W);
+        terrainMesh.material.normalMap = maps.normal;
+        terrainMesh.material.normalScale = new THREE.Vector2(1, 1);
+        terrainMesh.material.map = maps.albedo;
+        terrainMesh.material.needsUpdate = true;
+        this.disposers.push(() => (maps.normal.dispose(), maps.albedo.dispose()));
+      }
+    }
     scene.add(terrainMesh);
     this.disposers.push(() => (geo.dispose(), terrainMesh.material.dispose()));
     let surroundMesh = null;
@@ -730,7 +751,7 @@ export class StillJob {
       const white = new THREE.Color(1, 1, 1);
       const add = (geo, color, list, opts = {}) => {
         if (!list.length) return;
-        const mat = new THREE.MeshStandardMaterial({ color, roughness: opts.roughness ?? 0.85, metalness: 0, side: opts.side ?? THREE.FrontSide, vertexColors: !!geo.attributes.color });
+        const mat = new THREE.MeshStandardMaterial({ color, roughness: opts.roughness ?? 0.85, metalness: 0, side: opts.side ?? THREE.FrontSide, vertexColors: !!geo.attributes.color, map: opts.map ?? null, normalMap: opts.normalMap ?? null });
         const mesh = new THREE.InstancedMesh(geo, mat, list.length / 5);
         fillInstances(mesh, list, opts.colorVar ?? 0, opts.seed ?? 1);
         scene.add(mesh);
@@ -862,7 +883,12 @@ export class StillJob {
       // 岩の色：大地の岩肌の色に少しだけ明るい灰色を混ぜる（強く寄せると草の斜面で白く光って浮く）
       const rockCol = new THREE.Color(s.terrain.palette.rock).lerp(new THREE.Color('#8e8880'), 0.3);
       if (custom.rock) add(custom.rock.clone(), white, P.rocks ?? [], { roughness: 0.9, colorVar: 0.25, seed: 21 });
-      else split(P.rocks ?? [], 4).forEach((list, i) => add(detailedRock(i + 1), rockCol, list, { roughness: 0.9, colorVar: 0.25, seed: 21 + i }));
+      else if ((P.rocks ?? []).length) {
+        // 岩肌の模様：細かな割れ目と粒の凹凸、明るさのむら、地衣類の斑点（球の緯度経度で 1 枚。繰り返さない）
+        const rm = rockDetailMaps(1024, (s.terrain.noise?.seed ?? 1) + 31);
+        this.disposers.push(() => (rm.normal.dispose(), rm.albedo.dispose()));
+        split(P.rocks ?? [], 4).forEach((list, i) => add(detailedRock(i + 1), rockCol, list, { roughness: 0.9, colorVar: 0.25, seed: 21 + i, map: rm.albedo, normalMap: rm.normal }));
+      }
       // シダ（森の下草）
       const fernCol = new THREE.Color(s.terrain.season === 'autumn' ? '#5a6a26' : '#3a6a22');
       if (s.terrain.season !== 'winter') {
@@ -1254,6 +1280,136 @@ function waveNormalMap(size, W, distortion, waveScale, seed) {
   tex.colorSpace = THREE.NoColorSpace;
   tex.needsUpdate = true;
   return tex;
+}
+
+// 岩肌の模様（等距円筒、size × size/2）。凹凸：割れ目（尾根型の雑音）と粒。明るさ：むら・割れ目の暗さ・地衣類の斑点
+function rockDetailMaps(size, seed) {
+  const Wd = size, Hd = size / 2;
+  const h = new Float32Array(Wd * Hd), alb = new Float32Array(Wd * Hd * 3);
+  const s0 = seed * 0.37;
+  for (let j = 0; j < Hd; j++) {
+    const lat = ((j + 0.5) / Hd - 0.5) * Math.PI, cl = Math.cos(lat), y = Math.sin(lat); // 行 0 = 南極（球の uv の v = 0）
+    for (let i = 0; i < Wd; i++) {
+      const lon = ((i + 0.5) / Wd) * Math.PI * 2;
+      const x = cl * Math.cos(lon), z = cl * Math.sin(lon);
+      const n = (f, o) => mwNoise(x * f + o + s0, y * f + o * 1.3, z * f - o);
+      // 割れ目：尾根型（1 − |2n − 1|）の細い谷
+      const crack = 1 - Math.abs(2 * n(9, 1.7) - 1);
+      const grain = n(60, 3.1) * 0.5 + n(140, 5.3) * 0.5;
+      const k = j * Wd + i;
+      h[k] = n(4, 0.3) * 0.5 - Math.pow(1 - crack, 6) * 0.35 + grain * 0.08;
+      const mott = n(6, 7.7) * 0.6 + n(22, 2.9) * 0.4;
+      const lichen = THREE.MathUtils.smoothstep(n(14, 4.4) * 0.7 + n(40, 8.8) * 0.3, 0.62, 0.72);
+      let r = 0.75 + mott * 0.35 + grain * 0.1, g = r, b = r * 0.97;
+      const dark = 1 - Math.pow(1 - crack, 6) * 0.45;
+      r *= dark; g *= dark; b *= dark;
+      // 地衣類：くすんだ黄緑と灰白のまだら
+      r += (0.78 - r) * lichen * 0.6; g += (0.82 - g) * lichen * 0.6; b += (0.55 - b) * lichen * 0.6;
+      alb[k * 3] = r; alb[k * 3 + 1] = g; alb[k * 3 + 2] = b;
+    }
+  }
+  const nData = new Uint8Array(Wd * Hd * 4), aData = new Uint8Array(Wd * Hd * 4);
+  const scale = 2.2; // 凹凸の強さ
+  for (let j = 0; j < Hd; j++) {
+    const cl = Math.max(0.15, Math.cos(((j + 0.5) / Hd - 0.5) * Math.PI));
+    for (let i = 0; i < Wd; i++) {
+      const k = j * Wd + i;
+      const hx = (h[j * Wd + ((i + 1) % Wd)] - h[j * Wd + ((i - 1 + Wd) % Wd)]) * scale * (Wd / (2 * Math.PI)) / cl / 6;
+      const hz = (h[Math.min(Hd - 1, j + 1) * Wd + i] - h[Math.max(0, j - 1) * Wd + i]) * scale * (Hd / Math.PI) / 6;
+      const l = Math.hypot(hx, 1, hz);
+      const o = k * 4;
+      nData[o] = ((-hx / l) * 0.5 + 0.5) * 255;
+      nData[o + 1] = ((hz / l) * 0.5 + 0.5) * 255;
+      nData[o + 2] = ((1 / l) * 0.5 + 0.5) * 255;
+      nData[o + 3] = 255;
+      for (let c = 0; c < 3; c++) aData[o + c] = Math.min(1, Math.max(0, alb[k * 3 + c])) * 255;
+      aData[o + 3] = 255;
+    }
+  }
+  const mk = (data) => {
+    const tex = new THREE.DataTexture(data, Wd, Hd, THREE.RGBAFormat, THREE.UnsignedByteType);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.magFilter = tex.minFilter = THREE.LinearFilter;
+    tex.colorSpace = THREE.NoColorSpace;
+    tex.needsUpdate = true;
+    return tex;
+  };
+  return { normal: mk(nData), albedo: mk(aData) };
+}
+
+// 足元の細かな凹凸の地図と明るさの地図（size 画素四方で W m 四方。中心 c は地形の座標）。
+// 凹凸：波長 60 cm〜2 cm の起伏を重ね、小石（半径 1.5〜5 cm）を盛り上げる。明るさ：窪みは暗く、小石はまちまち。
+// 縁の 20% で平ら・明るさ 1 へ（範囲の外とつなぐ）
+function groundDetailMaps(size, W, c, seed) {
+  const texel = W / size;
+  const h = new Float32Array(size * size), lo = new Float32Array(size * size), alb = new Float32Array(size * size).fill(0);
+  const OCT = [[0.6, 0.05], [0.3, 0.06], [0.15, 0.08], [0.075, 0.1], [0.038, 0.12], [0.02, 0.12]];
+  for (let j = 0; j < size; j++) {
+    const z = c[1] + (j / (size - 1) - 0.5) * W;
+    for (let i = 0; i < size; i++) {
+      const x = c[0] + (i / (size - 1) - 0.5) * W;
+      let v = 0, vl = 0;
+      for (let o = 0; o < OCT.length; o++) {
+        const [lam, a] = OCT[o];
+        if (lam < texel * 2.5) break;
+        const n = gradNoise(x / lam, z / lam, seed + o * 13) * lam * a;
+        v += n;
+        if (lam >= 0.15) vl += n;
+      }
+      h[j * size + i] = v;
+      lo[j * size + i] = vl;
+      alb[j * size + i] = (gradNoise(x / 0.09, z / 0.09, seed + 101) + gradNoise(x / 0.025, z / 0.025, seed + 102) * 0.6) * 0.09;
+    }
+  }
+  // 小石：12 cm 四方の升に半分ほど、丸く盛り上げる（明るさは石ごとに違う）
+  let st = seed * 7919 + 1;
+  const rnd = () => ((st = (st * 16807) % 2147483647) / 2147483647);
+  const cells = Math.ceil(W / 0.12);
+  for (let q = 0; q < cells * cells * 0.5; q++) {
+    const px = rnd() * size, pz = rnd() * size;
+    const r = (0.015 + Math.pow(rnd(), 2) * 0.035) / texel;
+    const tone = (rnd() - 0.5) * 0.35;
+    for (let j = Math.max(0, Math.floor(pz - r)); j <= Math.min(size - 1, Math.ceil(pz + r)); j++)
+      for (let i = Math.max(0, Math.floor(px - r)); i <= Math.min(size - 1, Math.ceil(px + r)); i++) {
+        const d2 = ((i - px) ** 2 + (j - pz) ** 2) / (r * r);
+        if (d2 >= 1) continue;
+        const k = j * size + i, dome = Math.sqrt(1 - d2);
+        h[k] = Math.max(h[k], lo[k] + dome * r * texel * 0.6);
+        alb[k] += tone * Math.min(1, dome * 3);
+      }
+  }
+  const nData = new Uint8Array(size * size * 4), aData = new Uint8Array(size * size * 4);
+  for (let j = 0; j < size; j++) {
+    for (let i = 0; i < size; i++) {
+      const k = j * size + i;
+      const hx = (h[j * size + Math.min(size - 1, i + 1)] - h[j * size + Math.max(0, i - 1)]) / (2 * texel);
+      const hz = (h[Math.min(size - 1, j + 1) * size + i] - h[Math.max(0, j - 1) * size + i]) / (2 * texel);
+      const e = Math.min(i, j, size - 1 - i, size - 1 - j) / (size * 0.2);
+      const f = Math.min(1, e) * Math.min(1, e);
+      const l = Math.hypot(hx * f, 1, hz * f);
+      const o = k * 4;
+      nData[o] = ((-hx * f / l) * 0.5 + 0.5) * 255;
+      nData[o + 1] = ((hz * f / l) * 0.5 + 0.5) * 255;
+      nData[o + 2] = ((1 / l) * 0.5 + 0.5) * 255;
+      nData[o + 3] = 255;
+      // 窪み（細かい起伏が、粗い起伏より低い所）は土や影で暗く
+      const cav = Math.max(-0.25, Math.min(0.1, (h[k] - lo[k]) * 25));
+      const a = Math.min(1, Math.max(0.55, 0.93 + alb[k] + cav));
+      const av = 1 + (a - 1) * f;
+      aData[o] = aData[o + 1] = aData[o + 2] = av * 255;
+      aData[o + 3] = 255;
+    }
+  }
+  const mk = (data) => {
+    const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat, THREE.UnsignedByteType);
+    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.magFilter = tex.minFilter = THREE.LinearFilter;
+    tex.colorSpace = THREE.NoColorSpace;
+    tex.needsUpdate = true;
+    return tex;
+  };
+  return { normal: mk(nData), albedo: mk(aData) };
 }
 
 // 水面に、波の法線マップ用の UV（c を中心に W m 四方で 0..1）と接線（+x を面に沿わせたもの）を付ける
