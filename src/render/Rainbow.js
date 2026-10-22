@@ -92,6 +92,6 @@ export class Rainbow {
     if (!this.mesh.visible) return;
     this.mesh.position.copy(at);
     this.uniforms.antiSun.value.copy(sunDir).negate();
-    this.uniforms.strength.value = this.level * (1 - 0.6 * clouds) * (0.15 / Math.max(0.02, exposure));
+    this.uniforms.strength.value = this.level * (1 - 0.6 * clouds) * (1 - THREE.MathUtils.smoothstep(clouds, 0.7, 0.95)) * (0.15 / Math.max(0.02, exposure)); // 空一面の雲の下では虹は出ない
   }
 }

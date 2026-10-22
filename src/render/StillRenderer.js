@@ -418,6 +418,13 @@ export class StillJob {
     }
     this.#applyAtmosphere(hdr, s, built, objectMeshes, celestial, camera, W, H);
     mark('atmosphere');
+    // 雷雨：稲妻を 1 本（雲の下から地面へ、枝分かれしながら）。雲の下で光るので、大気を重ねた後に描く
+    // （先に描くと、空の画素では雲の透過率が掛かって消える）
+    if (s.atmosphere.precip === 'storm') {
+      const solid = [built.terrainMesh, built.surroundMesh, built.water, built.lakeMesh, ...built.plants, ...(built.buildingMeshes ?? []), ...objectMeshes].filter(Boolean);
+      const hit = renderMask(this.view.renderer, solid, [], camera, W, H);
+      addLightningScreen(hdr, W, H, hit, (s.terrain.noise?.seed ?? 1) + 17, 3 / Math.max(0.02, s.atmosphere.exposure));
+    }
     if (st.bloom > 0) applyBloom(hdr, W, H, st.bloom);
     // 自動露出：絵の明るさの対数平均を、晴れた景色のふつうの明るさ（0.12）へ寄せる。
     // 寄せ方は控えめ（比の 0.6 乗、0.7〜6 倍）で、暗い森は開けた所よりは暗く残る。
@@ -936,7 +943,7 @@ export class StillJob {
       const aur = (a.aurora ?? 0) * (1 - 0.85 * (a.clouds ?? 0)) * night * (0.35 / exposure);
       const rainy = a.precip === 'rain' || a.precip === 'storm';
       const el = s.sun.elevation;
-      const bow = rainy && withBow ? THREE.MathUtils.smoothstep(el, 1, 5) * (1 - THREE.MathUtils.smoothstep(el, 34, 42)) * (1 - 0.6 * (a.clouds ?? 0)) * (0.15 / exposure) : 0;
+      const bow = rainy && withBow ? THREE.MathUtils.smoothstep(el, 1, 5) * (1 - THREE.MathUtils.smoothstep(el, 34, 42)) * (1 - 0.6 * (a.clouds ?? 0)) * (1 - THREE.MathUtils.smoothstep(a.clouds ?? 0, 0.7, 0.95)) * (0.15 / exposure) : 0; // 空一面の雲の下では日が差さず虹は出ない
       if (aur <= 0.001 && bow <= 0.001) return;
       const S = sunDirection(el, s.sun.azimuth);
       const anti = [-S[0], -S[1], -S[2]];
@@ -1448,6 +1455,55 @@ function addMoonScreen(hdr, W, H, camera, sky, moon, map) {
       hdr[q + 1] += k * 0.97;
       hdr[q + 2] += k * 0.9;
     }
+  }
+}
+
+// 稲妻を画面に描く。solid: 地面や物が写っている割合（画素ごと）。稲妻は空から下りて、地面に当たる所で止まる
+function addLightningScreen(hdr, W, H, solid, seed, gain) {
+  let st = (seed * 9301 + 49297) % 233280;
+  const rnd = () => ((st = (st * 9301 + 49297) % 233280) / 233280);
+  const segs = [];
+  // 枝分かれしながら下へ進む折れ線（主幹と、細く短い枝）
+  const walk = (x, y, w, depth, maxLen) => {
+    let len = 0, dir = (rnd() - 0.5) * 0.6;
+    while (y < H - 1 && len < maxLen) {
+      const step = H * (0.01 + rnd() * 0.02);
+      dir = Math.max(-1.2, Math.min(1.2, dir * 0.4 + (rnd() - 0.5) * 1.6));
+      const nx = x + Math.sin(dir) * step, ny = y + Math.cos(dir) * step;
+      segs.push([x, y, nx, ny, w]);
+      x = nx;
+      y = ny;
+      len += step;
+      const xi = Math.min(W - 1, Math.max(0, Math.round(x))), yi = Math.min(H - 1, Math.max(0, Math.round(y)));
+      if (solid[yi * W + xi] > 0.5) break; // 地面に当たった
+      if (depth < 2 && rnd() < 0.12) walk(x, y, w * 0.45, depth + 1, maxLen * 0.3);
+    }
+  };
+  // 始まりは画面の上の方の、空が写っている所
+  let x0 = W * (0.3 + rnd() * 0.4), y0 = 0;
+  for (let k = 0; k < 20; k++) {
+    const xi = Math.round(x0), yi = Math.round(H * 0.05);
+    if (solid[yi * W + xi] < 0.5) break;
+    x0 = W * (0.15 + rnd() * 0.7);
+  }
+  walk(x0, y0, 1, 0, H * 1.5);
+  // 線分ごとに、芯（細く明るい）と光のにじみ（太く淡い）を足す
+  const glowR = Math.max(6, H * 0.015);
+  for (const [ax, ay, bx, by, w] of segs) {
+    const x0b = Math.max(0, Math.floor(Math.min(ax, bx) - glowR * 2)), x1b = Math.min(W - 1, Math.ceil(Math.max(ax, bx) + glowR * 2));
+    const y0b = Math.max(0, Math.floor(Math.min(ay, by) - glowR * 2)), y1b = Math.min(H - 1, Math.ceil(Math.max(ay, by) + glowR * 2));
+    const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1;
+    for (let y = y0b; y <= y1b; y++)
+      for (let x = x0b; x <= x1b; x++) {
+        const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2));
+        const d = Math.hypot(x - (ax + dx * t), y - (ay + dy * t));
+        const v = gain * w * (Math.exp(-(d * d) / (2 * 0.8 * 0.8)) * 1.0 + Math.exp(-(d * d) / (2 * glowR * glowR)) * 0.025);
+        if (v < 1e-4) continue;
+        const q = (y * W + x) * 4;
+        hdr[q] += v * 0.85;
+        hdr[q + 1] += v * 0.9;
+        hdr[q + 2] += v;
+      }
   }
 }
 
