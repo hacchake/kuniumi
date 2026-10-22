@@ -812,7 +812,25 @@ export class StillJob {
         col.needsUpdate = true;
         return c;
       };
-      split(conNear, 3).forEach((list, i) => {
+      // カメラのすぐそばの針葉樹（針葉の房が画面で 16 画素より大きく見えるもの、近い順に 6 本まで）は細かい形に
+      const conHero = [], conRest = [];
+      {
+        const cand = [];
+        for (let k = 0; k < conNear.length; k += 5) {
+          const d = Math.hypot(conNear[k] - camL[0], conNear[k + 1] - camL[1], conNear[k + 2] - camL[2]);
+          cand.push([0.034 * conNear[k + 3] * focalPx >= 16 * d ? d : Infinity, k]);
+        }
+        cand.sort((a, b) => a[0] - b[0]);
+        cand.forEach(([d, k], r) => (d < Infinity && r < 6 ? conHero : conRest).push(...conNear.slice(k, k + 5)));
+      }
+      this.stats.treesHero = conHero.length / 5;
+      split(conHero, 2, 2.9).forEach((list, i) => {
+        if (!list.length) return;
+        const g = detailedConifer(i + 1, true);
+        add(g.trunk, trunk, list);
+        add(winter && list[1] > wsY ? snowyCrown(g.crown) : g.crown, winter && list[1] > wsY ? new THREE.Color(1, 1, 1) : conCol, list, { side: THREE.DoubleSide, colorVar: 0.25, seed: 3 + i });
+      });
+      split(conRest, 3).forEach((list, i) => {
         const g = detailedConifer(i + 1);
         add(g.trunk, trunk, list);
         if (!winter) return add(g.crown, conCol, list, { side: THREE.DoubleSide, colorVar: 0.25, seed: 3 + i });

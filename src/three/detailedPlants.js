@@ -148,7 +148,9 @@ export function detailedBroadleaf(seed = 1) {
 }
 
 // 針葉樹：まっすぐな幹と、下ほど長く垂れる枝の段。枝に沿って針葉の房のカード
-export function detailedConifer(seed = 1) {
+// hero: カメラのすぐそばの木用。枝の両側に互い違いの小枝を出し、小枝に沿って小さな針葉の房を並べる
+// （ふつうの房は実寸で 1 m ほどあり、目の前では段々の板に見えるため。三角形は 20 倍ほどになる）
+export function detailedConifer(seed = 1, hero = false) {
   const rand = mulberry32(seed * 104729 + 7);
   // 針葉樹の樹皮は細かく浅い縦の割れ目
   const wood = [barkLimb(new THREE.Vector3(0, -0.02, 0), new THREE.Vector3(0, 0.97, 0), 0.026, 0.004, seed + 50, { ridges: 18, depth: 0.18, flare: 0.3 })];
@@ -162,7 +164,41 @@ export function detailedConifer(seed = 1) {
       const droop = -0.15 - (1 - t) * 0.35 + rand() * 0.1;
       const dir = new THREE.Vector3(Math.cos(a), droop, Math.sin(a)).normalize();
       const s = new THREE.Vector3(0, y, 0), e = s.clone().addScaledVector(dir, len);
-      if (len > 0.08) wood.push(limb(s, e, 0.004, 0.0015, 4));
+      if (len > 0.08) wood.push(limb(s, e, 0.004, 0.0015, hero ? 6 : 4));
+      if (hero) {
+        const nb = Math.max(3, Math.round(len / 0.006));
+        for (let k = 1; k <= nb; k++) {
+          const f = (k - 0.5 * rand()) / nb;
+          const c = s.clone().lerp(e, f);
+          c.y += Math.sin(f * Math.PI) * 0.01 - f * f * 0.02;
+          for (const sd of [-1, 1]) {
+            const bl = len * 0.3 * (1 - f * 0.65) * (0.7 + rand() * 0.6) + 0.006;
+            const bd = dir.clone().applyAxisAngle(up, sd * (0.7 + rand() * 0.4));
+            bd.y -= 0.1 + rand() * 0.25;
+            bd.normalize();
+            const nt = Math.max(2, Math.round(bl / 0.0034));
+            for (let j = 1; j <= nt; j++) {
+              const g = j / nt;
+              const q = c.clone().addScaledVector(bd, bl * g);
+              q.y -= g * g * bl * 0.3;
+              const out = new THREE.Vector3(q.x, (q.y - 0.5) * 0.4 + 0.35, q.z).normalize();
+              // 小枝の先は新芽で明るく、枝の奥（幹に近い所）は暗い
+              const v = (0.5 + rand() * 0.35) * (0.75 + 0.35 * f) * (0.85 + 0.3 * g) + t * 0.12;
+              for (const s2 of [-1, 1]) {
+                const ld = bd.clone().applyAxisAngle(up, s2 * (0.6 + rand() * 0.5));
+                ld.y += (rand() - 0.3) * 0.5;
+                ld.normalize();
+                const nrm = new THREE.Vector3().crossVectors(ld, bd);
+                if (nrm.lengthSq() < 1e-6) nrm.set(0, 1, 0);
+                nrm.normalize();
+                if (nrm.y < 0) nrm.negate();
+                leaves.add(q.clone().addScaledVector(ld, 0.0018), ld, nrm.add(new THREE.Vector3(0, 0.5, 0)).normalize(), 0.0042 * (1 - g * 0.3), 0.0016, v, out, rand() - 0.5);
+              }
+            }
+          }
+        }
+        continue;
+      }
       // 針葉の房：枝に沿って 2 列、先ほど細かく
       const nn = Math.max(3, Math.round(len / 0.009));
       for (let k = 1; k <= nn; k++) {
@@ -400,43 +436,100 @@ export function detailedLitter(seed = 1, needles = false) {
   return g;
 }
 
-// シダの株：弓なりに広がる葉（7〜10 枚）。葉は中軸の左右に小葉が並び、先と根元ほど小さい
+// シダの株：弓なりに広がる葉（8〜11 枚）。葉は茶色い葉柄から中軸が伸び、左右に互い違いの小葉が並ぶ。
+// 小葉は付け根から先へ細る槍形で、縁は小さな裂片の凹凸。中筋で山なりに反り、先は少し垂れる。
+// 葉は先ほど若く明るい黄緑、古い葉は小葉の先から黄ばむ。三角形の切り絵に見えないように
 export function detailedFern(seed = 1) {
   const rand = mulberry32(seed * 101 + 29);
   const pos = [], nrm = [], col = [];
-  const tri = (a, b, c, n, v) => {
-    for (const p of [a, b, c]) {
-      pos.push(p.x, p.y, p.z);
-      nrm.push(n.x, n.y, n.z);
-      col.push(v * 0.92, v, v * 0.85);
-    }
+  const vert = (p, n, c) => {
+    pos.push(p.x, p.y, p.z);
+    nrm.push(n.x, n.y, n.z);
+    col.push(c[0], c[1], c[2]);
   };
-  const fronds = 7 + Math.floor(rand() * 4);
+  const tri = (a, b, c) => {
+    for (const q of [a, b, c]) vert(q.p, q.n, q.c);
+  };
+  // 緑から枯れ色（黄土）へ d だけ寄せた色。v は明るさ、y は黄み
+  const tone = (v, y, d) => [v * (0.86 + y * 0.3) * (1 - d) + v * 1.9 * d, v * (1 - d) + v * 1.4 * d, v * (0.78 - y * 0.25) * (1 - d) + v * 0.6 * d];
+  const fronds = 8 + Math.floor(rand() * 4);
   for (let f = 0; f < fronds; f++) {
-    const az = (f / fronds) * Math.PI * 2 + rand() * 0.5;
-    const L = 0.75 + rand() * 0.35;
-    const rise = 0.55 + rand() * 0.35; // 立ち上がり
+    const az = (f / fronds) * Math.PI * 2 + rand() * 0.6;
+    const L = 0.7 + rand() * 0.4;
+    const rise = 0.6 + rand() * 0.45; // 立ち上がり
+    const curl = (rand() - 0.5) * 0.25; // 横への曲がり
+    const roll = (rand() - 0.5) * 1.1; // 先へ向かうねじれ
+    const old = rand() < 0.2 ? 0.35 + rand() * 0.4 : rand() * 0.08; // 古い葉ほど枯れ色
+    const v0 = 0.78 + rand() * 0.4;
     const dir = new THREE.Vector3(Math.cos(az), 0, Math.sin(az));
-    const side = new THREE.Vector3(-dir.z, 0, dir.x);
-    const at = (t) => new THREE.Vector3().addScaledVector(dir, L * t).setY(L * (rise * t - (rise + 0.15) * t * t));
-    const segs = 24;
-    const v0 = 0.8 + rand() * 0.4;
-    for (let s = 0; s < segs; s++) {
-      const t0 = s / segs, t1 = (s + 1) / segs, tm = (t0 + t1) / 2;
-      const a = at(t0), b = at(t1);
-      const tang = b.clone().sub(a).normalize();
-      const n = new THREE.Vector3().crossVectors(side, tang).normalize();
+    const side0 = new THREE.Vector3(-dir.z, 0, dir.x);
+    const at = (t) => new THREE.Vector3().addScaledVector(dir, L * t).addScaledVector(side0, L * curl * t * t).setY(L * (rise * t - (rise + 0.2) * t * t));
+    // 中軸の向きの枠（接線・横・面の法線）。横はねじれで回す
+    const frame = (t) => {
+      const tang = at(Math.min(1, t + 0.01)).sub(at(Math.max(0, t - 0.01))).normalize();
+      let side = side0.clone().addScaledVector(tang, -side0.dot(tang)).normalize();
+      let n = new THREE.Vector3().crossVectors(side, tang).normalize();
       if (n.y < 0) n.negate();
-      // 小葉の長さ：中ほどが最大、先へ細る
-      const ll = 0.2 * L * Math.sin(Math.PI * Math.min(1, tm * 1.1 + 0.05)) * (1 - tm * 0.4);
-      const v = v0 * (0.6 + 0.5 * tm);
-      // 小葉は細長い葉（付け根は節の間の一部だけ、先は丸めず細く）
-      const a2 = a.clone().lerp(b, 0.15), b2 = a.clone().lerp(b, 0.65);
+      const r = roll * t;
+      side = side.multiplyScalar(Math.cos(r)).addScaledVector(n, Math.sin(r)).normalize();
+      n = new THREE.Vector3().crossVectors(side, tang).normalize();
+      if (n.y < 0) n.negate();
+      return { tang, side, n };
+    };
+    // 中軸（細い帯。根元は茶色い葉柄）
+    const RS = 20;
+    for (let k = 0; k < RS; k++) {
+      const q = [k / RS, (k + 1) / RS].map((t) => {
+        const { side, n } = frame(t);
+        const w = L * 0.008 * (1 - t * 0.7);
+        const c = t < 0.15 ? tone(v0 * 0.55, 0.6, 0.7) : tone(v0 * 0.85, 0.3, old * 0.6);
+        const p = at(t);
+        return [{ p: p.clone().addScaledVector(side, -w), n, c }, { p: p.clone().addScaledVector(side, w), n, c }];
+      });
+      tri(q[0][0], q[1][0], q[1][1]);
+      tri(q[0][0], q[1][1], q[0][1]);
+    }
+    // 小葉：根元 12% は葉柄で小葉なし。左右で半歩ずらす（互い違い）
+    const P = 20 + Math.floor(rand() * 5);
+    const K = 8; // 小葉の長さ方向の分割（偶数番が裂片の山、奇数番が谷）
+    for (let i = 0; i < P; i++) {
       for (const sg of [-1, 1]) {
-        const tip = a.clone().lerp(b, 0.4).addScaledVector(side, sg * ll).addScaledVector(tang, ll * 0.3).addScaledVector(n, -ll * 0.2);
-        const mid = a2.clone().lerp(tip, 0.5).addScaledVector(n, ll * 0.05);
-        tri(a2, b2, mid, n, v);
-        tri(mid, b2, tip, n, v * 1.05);
+        const t = 0.13 + (0.85 * (i + (sg > 0 ? 0.5 : 0))) / P;
+        if (t > 0.985) continue;
+        const { tang, side, n } = frame(t);
+        // 小葉の長さ：下から 1/3 ほどで最大、先へ細る（先端は小さな小葉が詰まる）
+        const ll = 0.2 * L * Math.pow(Math.sin(Math.PI * Math.min(1, (t - 0.08) * 1.05)), 0.8) * (1 - t * 0.45) * (0.9 + rand() * 0.2);
+        if (ll < 0.006) continue;
+        const sweep = 0.35 + t * 0.5; // 先の小葉ほど前へ向く
+        const d = side.clone().multiplyScalar(sg * Math.cos(sweep)).addScaledVector(tang, Math.sin(sweep)).normalize();
+        const wd = new THREE.Vector3().crossVectors(n, d).normalize(); // 小葉の幅の向き
+        const base = at(t);
+        const droop = 0.18 + rand() * 0.15;
+        const lobes = ll > 0.05 * L;
+        const vp = v0 * (0.85 + rand() * 0.25) * (0.75 + 0.45 * t);
+        const yel = 0.25 + t * 0.6; // 先ほど若い黄緑
+        const mids = [], edges = [[], []];
+        for (let k = 0; k <= K; k++) {
+          const u = k / K;
+          const p = base.clone().addScaledVector(d, ll * u).addScaledVector(n, -droop * ll * u * u);
+          // 幅：付け根で少しくびれ、先へ細る。縁は裂片の山と谷
+          const w = ll * 0.13 * Math.min(1, 0.45 + u * 4) * Math.pow(1 - u, 0.85) * (lobes && k % 2 ? 0.62 : 1);
+          const dry = Math.min(1, old * (0.4 + 1.2 * u * u) + (rand() < 0.04 ? 0.3 : 0));
+          const cm = tone(vp * (0.9 + 0.2 * u), yel, dry);
+          mids.push({ p, n, c: cm });
+          for (const e of [0, 1]) {
+            const s2 = e ? 1 : -1;
+            const pe = p.clone().addScaledVector(wd, s2 * w).addScaledVector(n, -w * 0.35); // 縁は下へ反る
+            const ne = n.clone().addScaledVector(wd, s2 * 0.45).normalize();
+            edges[e].push({ p: pe, n: ne, c: tone(vp * 0.92, yel, Math.min(1, dry * 1.2)) });
+          }
+        }
+        for (let k = 0; k < K; k++) {
+          tri(mids[k], edges[1][k], edges[1][k + 1]);
+          tri(mids[k], edges[1][k + 1], mids[k + 1]);
+          tri(mids[k], mids[k + 1], edges[0][k + 1]);
+          tri(mids[k], edges[0][k + 1], edges[0][k]);
+        }
       }
     }
   }
