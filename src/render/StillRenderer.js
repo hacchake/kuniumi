@@ -796,6 +796,18 @@ export class StillJob {
       const lite = {};
       const liteConifer = () => (lite.c ??= (({ trunk, crown }) => ({ trunk: shade(trunk, 1), crown: shade(crown, 0.72) }))(coniferGeometry()));
       const liteBroadleaf = () => (lite.b ??= (({ trunk, crown }) => ({ trunk: shade(trunk, 1), crown: shade(crown, 0.75) }))(broadleafGeometry()));
+      // カメラのすぐそばの木（葉・針葉の房 card（高さに対する大きさ）が画面で 16 画素より大きく見えるもの、近い順に 6 本まで）は
+      // 細かい形にする。ふつうの形の房は実寸で 0.5〜1 m あり、目の前では板や菱形に見えるため
+      const heroPick = (list, card) => {
+        const cand = [], hero = [], rest = [];
+        for (let k = 0; k < list.length; k += 5) {
+          const d = Math.hypot(list[k] - camL[0], list[k + 1] - camL[1], list[k + 2] - camL[2]);
+          cand.push([card * list[k + 3] * focalPx >= 16 * d ? d : Infinity, k]);
+        }
+        cand.sort((a, b) => a[0] - b[0]);
+        cand.forEach(([d, k], r) => (d < Infinity && r < 6 ? hero : rest).push(...list.slice(k, k + 5)));
+        return [hero, rest];
+      };
       const [conNear, conFar] = custom.conifer ? [[], []] : nearFar(P.conifer);
       if (custom.conifer) add(custom.conifer.clone(), white, P.conifer, { side: THREE.DoubleSide, colorVar: 0.25, seed: 3 });
       // 冬：雪の積もる高さより上の針葉樹は、上を向いた葉に雪を乗せる（素材の色は頂点の色に掛かるので、
@@ -812,17 +824,7 @@ export class StillJob {
         col.needsUpdate = true;
         return c;
       };
-      // カメラのすぐそばの針葉樹（針葉の房が画面で 16 画素より大きく見えるもの、近い順に 6 本まで）は細かい形に
-      const conHero = [], conRest = [];
-      {
-        const cand = [];
-        for (let k = 0; k < conNear.length; k += 5) {
-          const d = Math.hypot(conNear[k] - camL[0], conNear[k + 1] - camL[1], conNear[k + 2] - camL[2]);
-          cand.push([0.034 * conNear[k + 3] * focalPx >= 16 * d ? d : Infinity, k]);
-        }
-        cand.sort((a, b) => a[0] - b[0]);
-        cand.forEach(([d, k], r) => (d < Infinity && r < 6 ? conHero : conRest).push(...conNear.slice(k, k + 5)));
-      }
+      const [conHero, conRest] = heroPick(conNear, 0.034);
       this.stats.treesHero = conHero.length / 5;
       split(conHero, 2, 2.9).forEach((list, i) => {
         if (!list.length) return;
@@ -863,27 +865,31 @@ export class StillJob {
         this.stats.treesLite += broadFar.length / 5;
       }
       // 冬の落葉樹は葉を落とす：葉は 4 枚に 1 枚だけ残し（梢の細い枝先と、わずかに残る枯れ葉）、枝ぶりが見える裸の木に
-      const bareCrown = (g) => {
+      // per: 葉 1 枚の数値の数（菱形 18、細かい形の葉の形 54）
+      const bareCrown = (g, per = 18) => {
         const src = g.attributes.position.array, nrm = g.attributes.normal.array, col = g.attributes.color.array;
         const keep = [];
-        for (let f = 0; f < src.length / 18; f++) if (f % 4 === 0) keep.push(f);
+        for (let f = 0; f < src.length / per; f++) if (f % 4 === 0) keep.push(f);
         const out = new THREE.BufferGeometry();
-        const P = new Float32Array(keep.length * 18), N = new Float32Array(keep.length * 18), C = new Float32Array(keep.length * 18);
+        const P = new Float32Array(keep.length * per), N = new Float32Array(keep.length * per), C = new Float32Array(keep.length * per);
         keep.forEach((f, k) => {
-          P.set(src.subarray(f * 18, f * 18 + 18), k * 18);
-          N.set(nrm.subarray(f * 18, f * 18 + 18), k * 18);
-          C.set(col.subarray(f * 18, f * 18 + 18), k * 18);
+          P.set(src.subarray(f * per, f * per + per), k * per);
+          N.set(nrm.subarray(f * per, f * per + per), k * per);
+          C.set(col.subarray(f * per, f * per + per), k * per);
         });
         out.setAttribute('position', new THREE.BufferAttribute(P, 3));
         out.setAttribute('normal', new THREE.BufferAttribute(N, 3));
         out.setAttribute('color', new THREE.BufferAttribute(C, 3));
         return out;
       };
-      split(broadNear, 3).forEach((list, i) => {
-        const g = detailedBroadleaf(i + 1);
+      const [broadHero, broadRest] = heroPick(broadNear, 0.022);
+      this.stats.treesHero += broadHero.length / 5;
+      [...split(broadRest, 3).map((list, i) => [list, i, false]), ...split(broadHero, 2, 2.9).map((list, i) => [list, i, true])].forEach(([list, i, hero]) => {
+        if (!list.length) return;
+        const g = detailedBroadleaf(i + 1, hero);
         add(g.trunk, trunk, list);
         if (s.terrain.season === 'winter') {
-          add(bareCrown(g.crown), new THREE.Color('#4a3e33'), list, { side: THREE.DoubleSide, colorVar: 0.25, seed: 5 + i, roughness: 0.8 });
+          add(bareCrown(g.crown, hero ? 54 : 18), new THREE.Color('#4a3e33'), list, { side: THREE.DoubleSide, colorVar: 0.25, seed: 5 + i, roughness: 0.8 });
           g.crown.dispose();
           return;
         }

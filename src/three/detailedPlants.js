@@ -39,6 +39,20 @@ class Leaves {
       this.col.push(v * (1 + hue * 0.25), v, v * (1 - hue * 0.3));
     }
   }
+  // 葉の形の葉（付け根・左右 2 点ずつ・先の 6 点、三角形 4 枚）。中筋で少し折り、先は反る。葉柄側は少し暗く
+  addLeaf(c, dir, n, L, W, v, out, hue = 0) {
+    const side = new THREE.Vector3().crossVectors(dir, n).normalize();
+    const P = (u, w, lift) => c.clone().addScaledVector(dir, (u - 0.5) * L).addScaledVector(side, w * W * 0.5).addScaledVector(n, lift * W);
+    const base = P(0, 0, 0), tip = P(1, 0, 0.12);
+    const l1 = P(0.3, -1, 0.18), l2 = P(0.68, -0.8, 0.2), r1 = P(0.3, 1, 0.18), r2 = P(0.68, 0.8, 0.2);
+    const mid = P(0.5, 0, 0);
+    const cb = [v * 0.85 * (1 + hue * 0.25), v * 0.85, v * 0.85 * (1 - hue * 0.3)], ct = [v * (1 + hue * 0.25), v, v * (1 - hue * 0.3)];
+    for (const [p, k] of [[base, cb], [l1, ct], [mid, ct], [mid, ct], [l1, ct], [l2, ct], [mid, ct], [l2, ct], [tip, ct], [base, cb], [mid, ct], [r1, ct], [mid, ct], [r2, ct], [r1, ct], [mid, ct], [tip, ct], [r2, ct]]) {
+      this.pos.push(p.x, p.y, p.z);
+      this.nrm.push(out.x, out.y, out.z);
+      this.col.push(k[0], k[1], k[2]);
+    }
+  }
   geometry() {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
@@ -95,7 +109,8 @@ const randDir = (rand) => {
 };
 
 // 広葉樹：幹 → 主枝 5〜6 本 → 小枝 → 葉の房。樹冠は高さ 0.35〜0.95、幅およそ ±0.32（リアルタイム表示の木と同じ大きさ）
-export function detailedBroadleaf(seed = 1) {
+// hero: カメラのすぐそばの木用。1 枚の大きな菱形のかわりに、葉の形の小さな葉を 5 枚ずつ寄せる（葉 1 枚は 6 頂点 ×3）
+export function detailedBroadleaf(seed = 1, hero = false) {
   const rand = mulberry32(seed * 7919 + 13);
   const wood = [];
   const leaves = new Leaves();
@@ -138,7 +153,18 @@ export function detailedBroadleaf(seed = 1) {
       const ld = new THREE.Vector3().crossVectors(n, randDir(rand)).normalize();
       // 外側・上ほど日が当たって明るく、内側は暗い
       const v = (0.55 + rand() * 0.4) * (0.75 + r * 0.3) + Math.max(0, lo.y) * 0.15;
-      leaves.add(lc, ld, n, 0.022 + rand() * 0.01, 0.012 + rand() * 0.006, v, lo.clone().lerp(out, 0.5).normalize(), (rand() - 0.5) * 2);
+      const hue = (rand() - 0.5) * 2;
+      if (!hero) {
+        leaves.add(lc, ld, n, 0.022 + rand() * 0.01, 0.012 + rand() * 0.006, v, lo.clone().lerp(out, 0.5).normalize(), hue);
+        continue;
+      }
+      for (let m = 0; m < 5; m++) {
+        const mc = lc.clone().addScaledVector(randDir(rand), 0.004 + rand() * 0.008);
+        const mn = n.clone().addScaledVector(randDir(rand), 0.5).normalize();
+        const md = new THREE.Vector3().crossVectors(mn, randDir(rand)).normalize();
+        const L = 0.008 + rand() * 0.005;
+        leaves.addLeaf(mc, md, mn, L, L * (0.5 + rand() * 0.15), v * (0.85 + rand() * 0.3), lo.clone().lerp(out, 0.5).normalize(), hue + (rand() - 0.5) * 0.6);
+      }
     }
   }
   return {
